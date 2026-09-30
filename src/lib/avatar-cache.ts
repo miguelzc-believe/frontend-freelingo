@@ -1,4 +1,4 @@
-import { useAuthStore } from '@/store/auth'
+import { refreshAccessToken } from '@/lib/session'
 
 type Subscriber = (src: string | null) => void
 
@@ -57,15 +57,8 @@ export function loadAvatar(avatar: string, accessToken: string | null) {
   pending = fetchAvatar(accessToken)
     .then(async (res) => {
       if (res.status === 401 && accessToken) {
-        const refresh = await fetch('/api/auth/refresh', {
-          method: 'POST',
-          credentials: 'include',
-        })
-        if (refresh.ok) {
-          const { access_token } = await refresh.json()
-          useAuthStore.getState().setTokens(access_token)
-          res = await fetchAvatar(access_token)
-        }
+        const token = await refreshAccessToken()
+        if (token) res = await fetchAvatar(token)
       }
       if (!res.ok) return null
       const blob = await res.blob()

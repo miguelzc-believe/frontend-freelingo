@@ -1,3 +1,5 @@
+import { refreshAccessToken } from '@/lib/session'
+
 interface LandingSubscriptionState {
   subscribed: boolean
   trialUsed: boolean
@@ -10,16 +12,11 @@ export async function getLandingSubscriptionState(): Promise<LandingSubscription
 
   subscriptionStatusPromise = (async () => {
     try {
-      const refreshRes = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'include',
-      })
-      if (!refreshRes.ok) return { subscribed: false, trialUsed: false }
-
-      const { access_token } = await refreshRes.json()
+      const token = await refreshAccessToken()
+      if (!token) return { subscribed: false, trialUsed: false }
 
       const meRes = await fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
         credentials: 'include',
       })
       if (!meRes.ok) return { subscribed: false, trialUsed: false }

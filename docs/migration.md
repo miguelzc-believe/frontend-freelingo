@@ -49,6 +49,37 @@ Rollback consists of keeping the original Next.js frontend in service and removi
 
 ## Maintainer acceptance
 
+### Real local backend follow-up
+
+On 2026-09-30, the frontend was exercised against the unchanged FastAPI source with real PostgreSQL 16 and Redis 7 in dedicated local containers. The cached backend image has Python 3.14.7, FastAPI 0.141.1 and SQLAlchemy 2.0.52. No existing database, deployment or original repository file was changed.
+
+The isolated harness initializes its empty database directly from the ORM metadata instead of running Alembic. This validates current API behavior and persistence, and does not validate migration history or an existing deployment database.
+
+The production frontend passed browser registration, onboarding with the en-GB default and learning goals, cookie rotation on reload, login/logout, memory creation/persistence/duplicate rejection/deletion and a 19-URL authenticated route sweep. Administrative paths in that sweep exercised the normal-user access gate. The real admin health endpoint separately confirmed PostgreSQL and Redis as healthy.
+
+Development-mode validation exposed simultaneous session-restoration requests that replayed the same rotating refresh cookie. All seven browser callers now use `src/lib/session.ts`, which coalesces pending refresh requests, validates the returned access token and stores it only in browser memory. The authenticated layout ignores initialization results after cleanup. FastAPI cookie rotation and authorization remain unchanged.
+
+After the fix, mobile Chromium passed login, navigation, adding Spanish, switching back to British English, persistence across reload, global memories across language switches and logout. The development WebSocket proxy reached FastAPI and returned its expected `auth_failed` response and close code 1008 for an invalid token. This checks transport and authorization, not a spoken conversation.
+
+Additional desktop/mobile checks waited for the loaded dashboard, confirmed no horizontal overflow and measured exactly one refresh request per hard reload under development StrictMode. Sanitized results are in `restoration-results.json`; loaded screenshots are `ready-desktop.png` and `ready-mobile.png` in the local evidence directory.
+
+Verification for this work unit:
+
+- `pnpm exec vitest run tests/lib/api.test.ts tests/lib/session.test.ts tests/app/billing-success.test.tsx`: 3 files, 14 tests passed, including concurrent cold restoration, API retry sharing and recovery after a malformed token payload.
+- `pnpm test:run`: 69 files, 691 tests passed.
+- `pnpm lint` and `pnpm typecheck`: passed.
+- `pnpm test:e2e`: production build/start succeeded; 11 passed and the duplicate mobile route sweep was intentionally skipped.
+- `node /tmp/freelingo-live-validation/check-frontend.mjs`: 8 real-backend scenario groups passed on the production server before the session fix.
+- `node /tmp/freelingo-live-validation/check-mobile.mjs`: 5 real-backend scenario groups passed in development after the session fix.
+
+Local evidence lives in `/tmp/freelingo-live-validation`: sanitized desktop/mobile/service result files, browser logs and screenshots. Temporary account credentials and runtime secrets remain outside Git. The running development frontend is at `http://127.0.0.1:3000`; FastAPI is at `http://127.0.0.1:8000` with `/health` and `/docs` available. These services use the dedicated `freelingo-live-validation` Docker network and `freelingo-live-*` containers.
+
+TTS and STT health checks report unavailable, and no LLM provider is running in this isolated environment. AI-generated plans/lessons/chat, real speech, email delivery and Stripe transactions were not validated. No user audio was captured.
+
+Rollback of this fix restores the previous refresh callers in the app layout, onboarding, billing success/pricing, API retry helper, avatar cache and landing subscription helper, and removes the shared session helper and its regression tests. It does not require reverting the independent migration or changing FastAPI.
+
+### Before switching infrastructure
+
 Before replacing the original frontend, verify the prepared container on the deployment network, production TLS/CSP and `/ws` routing; then exercise live login, refresh rotation, logout, email recovery, billing returns, administrative authorization and language isolation against FastAPI.
 
 Verify microphone permission, VAD initialization, STT plan/language context, incremental chat, binary TTS, voice cancellation/barge-in and browser/device audio behavior with the real providers. No local mocked result proves physical-device or production speech acceptance.

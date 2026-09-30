@@ -4,6 +4,7 @@ import Image from '@/components/ui/app-image'
 import { useLocale, useTranslations } from 'use-intl'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
+import { refreshAccessToken } from '@/lib/session'
 import { splitYearlyCta, type BillingInterval } from '@/lib/billing-copy'
 import { mapUser } from '@/lib/mappers'
 import { useAuthStore, isSubscribed, isFreemiumTrialActive } from '@/store/auth'
@@ -137,16 +138,11 @@ export default function OnboardingPage() {
     setCheckoutError('')
     try {
       if (!useAuthStore.getState().accessToken) {
-        const refreshRes = await fetch('/api/auth/refresh', {
-          method: 'POST',
-          credentials: 'include',
-        })
-        if (!refreshRes.ok) {
+        const refreshed = await refreshAccessToken()
+        if (!refreshed) {
           router.push('/login')
           return
         }
-        const { access_token } = await refreshRes.json()
-        useAuthStore.getState().setTokens(access_token)
       }
 
       const res = await apiFetch('/api/billing/checkout', {

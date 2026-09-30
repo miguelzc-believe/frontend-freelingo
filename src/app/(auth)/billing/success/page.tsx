@@ -3,6 +3,7 @@ import { useRouter } from '@/lib/navigation'
 import Link from '@/components/ui/app-link'
 import { useTranslations } from 'use-intl'
 import { apiFetch } from '@/lib/api'
+import { refreshAccessToken } from '@/lib/session'
 import { mapUser } from '@/lib/mappers'
 import { useAuthStore } from '@/store/auth'
 
@@ -33,16 +34,11 @@ export default function BillingSuccessPage() {
     async function confirmSubscription() {
       try {
         if (!useAuthStore.getState().accessToken) {
-          const refreshRes = await fetch('/api/auth/refresh', {
-            method: 'POST',
-            credentials: 'include',
-          })
-          if (!refreshRes.ok) {
+          const refreshed = await refreshAccessToken()
+          if (!refreshed) {
             if (!cancelled) setStatus('error')
             return
           }
-          const { access_token } = await refreshRes.json()
-          useAuthStore.getState().setTokens(access_token)
         }
 
         for (let attempt = 0; attempt < CONFIRMATION_ATTEMPTS; attempt += 1) {

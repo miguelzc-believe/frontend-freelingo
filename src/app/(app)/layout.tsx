@@ -5,6 +5,7 @@ import { useTranslations } from 'use-intl'
 import { useAuthStore, isSubscribed } from '@/store/auth'
 import { useConfigStore } from '@/store/config'
 import { apiFetch } from '@/lib/api'
+import { refreshAccessToken } from '@/lib/session'
 import { mapUser } from '@/lib/mappers'
 import { useLogout } from '@/hooks/useLogout'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -46,8 +47,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
-  const accessToken = useAuthStore((s) => s.accessToken)
-  const setTokens = useAuthStore((s) => s.setTokens)
   const setUser = useAuthStore((s) => s.setUser)
   const logout = useAuthStore((s) => s.logout)
   const handleLogout = useLogout()
@@ -80,31 +79,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // On every page load, Zustand is empty. Use the httpOnly refresh cookie
   // to silently get a new access token, then fetch /me to populate the user.
   useEffect(() => {
+    let cancelled = false
     async function init() {
       // Load Stripe config once (non-blocking)
       loadConfig()
       try {
-        if (!accessToken) {
-          const res = await fetch('/api/auth/refresh', {
-            method: 'POST',
-            credentials: 'include',
-          })
-          if (!res.ok) {
-            logout()
-            router.push('/login')
+        if (!useAuthStore.getState().accessToken) {
+          if (!(await refreshAccessToken())) {
+            if (!cancelled) {
+              logout()
+              router.push('/login')
+            }
             return
           }
-          const { access_token } = await res.json()
-          setTokens(access_token)
         }
+        if (cancelled) return
         // Fetch user info if not already loaded
         const meRes = await apiFetch('/api/auth/me')
+        if (cancelled) return
         if (!meRes.ok) {
           logout()
           router.push('/login')
           return
         }
         const me = await meRes.json()
+        if (cancelled) return
         setUser(mapUser(me))
 
         if (me.learning_goals === null) {
@@ -112,13 +111,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           return
         }
       } catch {
+        if (cancelled) return
         logout()
         router.push('/login')
       } finally {
-        setInitializing(false)
+        if (!cancelled) setInitializing(false)
       }
     }
-    init()
+    void init()
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
