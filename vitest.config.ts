@@ -8,6 +8,12 @@ export default defineConfig({
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     globals: true,
     maxWorkers: 2,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'lcov'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/routeTree.gen.ts'],
+    },
   },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
 })

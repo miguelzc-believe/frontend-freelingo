@@ -11,3 +11,4 @@ public/vad/
 *.tsbuildinfo
 
 .tanstack/
+.scannerwork/

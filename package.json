@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "quality": "tsx scripts/quality.ts",
     "format": "prettier --write src tests scripts *.ts *.json *.mjs",
     "postinstall": "tsx scripts/copy-vad-models.ts"
   },
@@ -58,7 +60,9 @@
     "tsx": "^4",
     "@playwright/test": "^1.55",
     "@tailwindcss/vite": "^4.3.3",
-    "shadcn": "^4.21.0"
+    "shadcn": "^4.21.0",
+    "@sonar/scan": "5.0.1",
+    "@vitest/coverage-v8": "4.1.11"
   },
   "type": "module",
   "packageManager": "pnpm@12.5.1",

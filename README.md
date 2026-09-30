@@ -65,6 +65,53 @@ The visual system retains Tailwind 4, shadcn/Base UI, Lucide, the `fl-*` tokens,
 
 VAD models, worklet code and matching ONNX runtime assets are copied during postinstall. pnpm's build-script allowlist is explicit in `pnpm-workspace.yaml` and the models are excluded from Git. Assets are packaged in the production build.
 
+## SonarQube quality analysis
+
+Run `pnpm quality` to execute lint, type checking and tests with V8 coverage,
+then upload source and tests to the private
+[FreeLingo Frontend project](https://sonar.miguel-zapata.com/dashboard?id=frontend-freelingo).
+The command stops on a failed local check, waits for the server Quality Gate,
+and returns a nonzero exit code if the gate fails. It requires network access;
+the scanner downloads its runtime on the first run.
+
+Credentials stay outside Git. The command reads `SONAR_TOKEN` first, otherwise
+`SONAR_TOKEN_FILE`, defaulting to
+`${XDG_CONFIG_HOME:-$HOME/.config}/freelingo/sonar-token`. Keep that file at mode
+`600`. On this workstation a project analysis token is already stored there;
+it expires on 2026-12-30. Renew it in SonarQube before expiration and replace
+the local file. In CI, supply `SONAR_TOKEN` from a secret store.
+
+Coverage is generated fresh at `coverage/lcov.info` and imported by SonarQube.
+`pnpm test:coverage` generates it without uploading. Only the generated
+`src/routeTree.gen.ts` is excluded from source analysis and coverage;
+application code without tests remains in the coverage denominator.
+Sources are `src` and `scripts`; tests are classified separately under `tests`.
+Scanner output and coverage are ignored by Git. The quality gate and rule
+profiles are managed in SonarQube; this command does not change them.
+
+This Community Build project has one analysis branch, `development`. Running
+the command from a task branch updates that same dashboard with the local
+checkout; it does not create a separate branch or PR analysis. E2E, build and
+real device/provider acceptance remain the separate checks described above.
+
+Validated on 2026-09-30 with Node 24.21.0 and pnpm 12.5.1: `pnpm quality`
+completed successfully (lint, typecheck, 70 test files / 692 tests, fresh LCOV
+import and remote analysis). The missing-credential regression test also proves
+that no checks or upload run without a token. Vitest line coverage was 49.04%;
+SonarQube reported 48.0% combined coverage, 50.3% line coverage and 5.6%
+duplication. Its baseline recorded 21 bugs, 4 vulnerabilities and 404 code
+smells; these are findings to review, not fixes included in this integration.
+The initial `Sonar way` gate returned `OK` with no evaluated conditions because
+this first analysis establishes the new-code baseline. A passing initial gate
+does not mean the existing code has no findings. Dependency analysis was
+skipped by the scanner; this command does not establish dependency security.
+
+To remove this integration, remove `scripts/quality.ts`,
+`sonar-project.properties`, the `quality` and `test:coverage` scripts, the scanner
+and coverage dependencies, and the Vitest coverage configuration. Revoke the
+project token and remove its local file independently. Runtime app behavior is
+unaffected.
+
 ## Delivery
 
 The repository uses local `development` as its integration branch. Work happens on task branches with tests and documentation kept together. Publishing, switching infrastructure and retiring Next.js are separate authorized actions.
