@@ -1,0 +1,344 @@
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import '@fontsource-variable/noto-sans-jp';
+@import '@fontsource-variable/noto-sans-kr';
+@import '@fontsource-variable/noto-sans-sc';
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:where(html:not([data-theme='light']), html:not([data-theme='light']) *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  /* Legacy UI alias: existing font-mono classes follow the interface font. */
+  --font-mono: var(--font-geist-sans);
+  --font-heading: var(--font-geist-sans);
+  /* Explicit fixed-width font for branding and technical content. */
+  --font-code: var(--font-geist-mono);
+  /* FreeLingo semantic font-size tokens */
+  --text-fl-hint: 10px;
+  --text-fl-label: 11px;
+  --text-fl-caption: 12px;
+  /* FreeLingo semantic color tokens */
+  --color-fl-bg: var(--fl-bg);
+  --color-fl-bg-alt: var(--fl-bg-alt);
+  --color-fl-surface: var(--fl-surface);
+  --color-fl-surface-2: var(--fl-surface-2);
+  --color-fl-border: var(--fl-border);
+  --color-fl-border-2: var(--fl-border-2);
+  --color-fl-muted: var(--fl-muted-1);
+  --color-fl-muted-4: var(--fl-muted-4);
+  --color-fl-muted-3: var(--fl-muted-3);
+  --color-fl-muted-2: var(--fl-muted-2);
+  --color-fl-muted-1: var(--fl-muted-1);
+  --color-fl-muted-0: var(--fl-muted-0);
+  --color-fl-fg-2: var(--fl-fg-2);
+  --color-fl-fg: var(--fl-fg);
+  --color-fl-fg-bright: var(--fl-fg-bright);
+  /* FreeLingo error/danger tokens */
+  --color-fl-error: var(--fl-error);
+  --color-fl-error-fg: var(--fl-error-fg);
+  --color-fl-error-dim: var(--fl-error-dim);
+  --color-fl-error-hover: var(--fl-error-hover);
+  --color-fl-success: var(--fl-success);
+  --color-fl-warning: var(--fl-warning);
+  /* FreeLingo accent tokens */
+  --color-fl-accent: var(--fl-accent);
+  --color-fl-accent-fg: var(--fl-accent-fg);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  /* Avatar halo animations */
+  --animate-halo-idle: halo-idle 3s ease-in-out infinite;
+  --animate-halo-speaking: halo-speaking 0.65s ease-in-out infinite;
+}
+
+:root {
+  --font-geist-sans: 'Geist Variable';
+  --font-geist-mono: 'Geist Mono Variable';
+  --font-noto-ja: 'Noto Sans JP Variable';
+  --font-noto-ko: 'Noto Sans KR Variable';
+  --font-noto-zh: 'Noto Sans SC Variable';
+  /* FreeLingo semantic tokens — dark (default) */
+  --fl-bg: #0c1316;
+  --fl-bg-alt: #0d0d0d;
+  --fl-surface: #131d22;
+  --fl-surface-2: #1a1a1a;
+  --fl-border: #29383f;
+  --fl-border-2: #444444;
+  --fl-muted-4: #666666;
+  --fl-muted-3: #777777;
+  --fl-muted-2: #888888;
+  --fl-muted-1: #999999;
+  --fl-muted-0: #aaaaaa;
+  --fl-fg-2: #e0e0e0;
+  --fl-fg: #f5f5f5;
+  --fl-fg-bright: #ffffff;
+  --fl-error: #ff3b3b;
+  --fl-error-fg: #ff6b6b;
+  --fl-error-dim: #cc6666;
+  --fl-error-hover: #ff5555;
+  --fl-success: #4ade80;
+  --fl-warning: #fbbf24;
+  --fl-accent: #75b7c5;
+  --fl-accent-fg: #0a0a0a;
+  /* shadcn tokens */
+  --background: var(--fl-bg);
+  --foreground: #f5f5f5;
+  --card: var(--fl-surface);
+  --card-foreground: #f5f5f5;
+  --popover: var(--fl-surface);
+  --popover-foreground: #f5f5f5;
+  --primary: #f5f5f5;
+  --primary-foreground: var(--fl-bg);
+  --secondary: #1a1a1a;
+  --secondary-foreground: #f5f5f5;
+  --muted: #1a1a1a;
+  --muted-foreground: #666666;
+  --accent: #1a1a1a;
+  --accent-foreground: #f5f5f5;
+  --destructive: #ff3b3b;
+  --border: var(--fl-border);
+  --input: #1a1a1a;
+  --ring: #444444;
+  --radius: 0px;
+  --sidebar: var(--fl-bg);
+  --sidebar-foreground: #f5f5f5;
+  --sidebar-primary: #f5f5f5;
+  --sidebar-primary-foreground: var(--fl-bg);
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #f5f5f5;
+  --sidebar-border: var(--fl-border);
+  --sidebar-ring: #444444;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+
+  html {
+    @apply scroll-smooth font-sans;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp {
+    @apply font-code;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    letter-spacing: -0.02em;
+  }
+}
+
+@utility font-target-latin {
+  font-family:
+    var(--font-geist-sans),
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+@utility font-target-ja {
+  font-family:
+    var(--font-noto-ja), 'Hiragino Sans', 'Yu Gothic', Meiryo, system-ui,
+    sans-serif;
+}
+
+@utility font-target-ko {
+  font-family:
+    var(--font-noto-ko), 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui,
+    sans-serif;
+}
+
+@utility font-target-zh {
+  font-family:
+    var(--font-noto-zh), 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC',
+    system-ui, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--fl-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--fl-border);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fl-border-2);
+}
+
+/* ── Light theme ── */
+html[data-theme='light'] {
+  --fl-bg: #f2f6f7;
+  --fl-bg-alt: #f0f0f0;
+  --fl-surface: #fbfcfc;
+  --fl-surface-2: #eeeeee;
+  --fl-border: #d7e1e5;
+  --fl-border-2: #aaaaaa;
+  --fl-muted-4: #999999;
+  --fl-muted-3: #888888;
+  --fl-muted-2: #777777;
+  --fl-muted-1: #666666;
+  --fl-muted-0: #555555;
+  --fl-fg-2: #1a1a1a;
+  --fl-fg: #0a0a0a;
+  --fl-fg-bright: #000000;
+  --fl-error: #e03030;
+  --fl-error-fg: #cc3333;
+  --fl-error-dim: #994444;
+  --fl-error-hover: #c02020;
+  --fl-success: #15803d;
+  --fl-warning: #92400e;
+  --fl-accent: #286779;
+  --fl-accent-fg: #ffffff;
+  /* shadcn token overrides (light) */
+  --background: var(--fl-bg);
+  --foreground: #0a0a0a;
+  --card: var(--fl-surface);
+  --card-foreground: #0a0a0a;
+  --popover: var(--fl-surface);
+  --popover-foreground: #0a0a0a;
+  --primary: #0a0a0a;
+  --primary-foreground: var(--fl-bg);
+  --secondary: #eeeeee;
+  --secondary-foreground: #0a0a0a;
+  --muted: #eeeeee;
+  --muted-foreground: #666666;
+  --accent: #eeeeee;
+  --accent-foreground: #0a0a0a;
+  --border: var(--fl-border);
+  --input: #eeeeee;
+  --ring: #aaaaaa;
+  --sidebar: var(--fl-bg);
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-primary: #0a0a0a;
+  --sidebar-primary-foreground: var(--fl-bg);
+  --sidebar-accent: #eeeeee;
+  --sidebar-accent-foreground: #0a0a0a;
+  --sidebar-border: var(--fl-border);
+  --sidebar-ring: #aaaaaa;
+}
+
+/* ── Avatar halo keyframes ── */
+@keyframes halo-idle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.32;
+    transform: scale(1.07);
+  }
+}
+
+@keyframes halo-speaking {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  40% {
+    opacity: 0.92;
+    transform: scale(1.14);
+  }
+}
+
+.word-selectable::selection,
+.word-selectable *::selection {
+  background: rgba(217, 119, 6, 0.35);
+}
+
+/* ── Scroll-reveal animation ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.6s ease-out,
+    transform 0.6s ease-out;
+}
+
+.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Language bubbles floating animation ── */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-bubble-in {
+  animation: bubble-in 0.4s ease-out forwards;
+  opacity: 0;
+}

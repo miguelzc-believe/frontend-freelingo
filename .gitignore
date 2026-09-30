@@ -1,0 +1,13 @@
+node_modules/
+.output/
+.vite/
+.nitro/
+coverage/
+playwright-report/
+test-results/
+public/vad/
+.env*
+!.env.example
+*.tsbuildinfo
+
+.tanstack/

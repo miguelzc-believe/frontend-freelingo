@@ -1,0 +1,20 @@
+import { useState } from 'react'
+import { useTranslations } from 'use-intl'
+import { ContactFormModal } from '@/components/ui/contact-form-modal'
+
+export function ContactButton() {
+  const t = useTranslations('landing')
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="text-fl-hint text-fl-muted-3 hover:text-fl-muted-1 w-full text-left font-mono tracking-widest uppercase transition-colors"
+      >
+        {t('contact')}
+      </button>
+      <ContactFormModal open={open} onClose={() => setOpen(false)} />
+    </>
+  )
+}
