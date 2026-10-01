@@ -11,7 +11,12 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'lcov', 'json', 'json-summary'],
-      include: ['src/**/*.{ts,tsx}', 'scripts/crap.ts', 'scripts/dead-code.ts'],
+      include: [
+        'src/**/*.{ts,tsx}',
+        'scripts/crap.ts',
+        'scripts/dead-code.ts',
+        'scripts/quality.ts',
+      ],
       exclude: ['src/routeTree.gen.ts'],
       thresholds: { statements: 48, branches: 44, functions: 43, lines: 49 },
     },

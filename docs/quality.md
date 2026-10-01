@@ -75,6 +75,9 @@ Local runtime validation uses Node 24.21.0 and pnpm 12.5.1.
 authenticated SonarQube scan, waiting for the existing server Quality Gate.
 SonarQube supplies duplication, security and maintainability analysis. See the
 [README](../README.md#sonarqube-quality-analysis) for token storage and renewal.
+The runner resolves an absolute pnpm launcher before executing checks and passes
+the analysis token only to the scanner. Regression tests cover failure at each
+stage, credential loading and isolation, and JavaScript/standalone launchers.
 
 GitHub Actions runs coverage, CRAP, both Knip modes, E2E and critical-code mutation
 testing on pushes and PRs. Full mutation testing is a manual workflow option.
@@ -88,10 +91,11 @@ and secret configuration were not validated because this checkout has no remote.
 
 ## Measured checks
 
-Validated on 2026-09-30: four focused script test files passed eight tests;
-the complete coverage suite passed 73 files / 699 tests with 49.26% line coverage.
+Validated on 2026-09-30: five focused script test files passed 17 tests;
+the complete coverage suite passed 74 files / 708 tests with 49.52% line coverage.
 The CRAP and Knip utilities are included in LCOV, with 94.73% and 90.90% line
-coverage respectively. Knip executes its installed CLI using absolute paths.
+coverage respectively; the quality runner has 97.05%. Knip executes its
+installed CLI using absolute paths.
 CRAP measured 1703 functions, 91 above 30 and a maximum of 1185.7607041840743.
 Negative controls proved that adding an unused file exceeds the Knip budget,
 insufficient coverage fails Vitest, and risky untested code fails the CRAP CLI.
