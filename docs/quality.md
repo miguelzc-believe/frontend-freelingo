@@ -127,6 +127,11 @@ Manual-only mutation execution was checked with `pnpm exec vitest run tests/scri
 (five files / 18 tests). The runner regression verifies exactly local checks and
 the scanner, with no mutation command. Workflow validation confirms both mutation
 flags default to false, require `workflow_dispatch` and are not Sonar dependencies.
+The complete `direnv exec . pnpm quality` run passed 74 files / 709 tests,
+lint, types, Knip and CRAP, with 49.53% Vitest line coverage and no Stryker
+invocation. SonarQube returned `OK`: new-code coverage 95.2%, new duplication
+0% and zero new issues. Existing findings total 21 bugs, three security warnings
+and 404 code smells; overall combined coverage is 48.6%, duplication 5.5%.
 
 ## Removal
 
