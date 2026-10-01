@@ -69,14 +69,23 @@ were checked directly. New dependencies are pinned exactly.
 
 Local runtime validation uses Node 24.21.0 and pnpm 12.5.1.
 
-Validated on 2026-09-30: the three focused script test files passed four tests;
-the complete coverage suite passed 72 files / 695 tests with 49.04% line coverage.
+## Measured checks
+
+Validated on 2026-09-30: four focused script test files passed eight tests;
+the complete coverage suite passed 73 files / 699 tests with 49.26% line coverage.
+The CRAP and Knip utilities are included in LCOV, with 94.73% and 90.90% line
+coverage respectively. Knip executes its installed CLI using absolute paths.
 CRAP measured 1703 functions, 91 above 30 and a maximum of 1185.7607041840743.
 Negative controls proved that adding an unused file exceeds the Knip budget,
 insufficient coverage fails Vitest, and risky untested code fails the CRAP CLI.
 The full Stryker dry run instrumented 202 files / 17507 mutants and passed 672
 related tests. It validates instrumentation and runner compatibility; it does
 not measure the full mutation score.
+Critical-code mutation testing measured 81.94% across 155 mutants: 127 detected,
+25 surviving and three uncovered. E2E completed 11 tests with one intentional
+mobile route-sweep skip, using a production build and the fixture backend.
+
+## Removal
 
 To remove these controls, remove the Knip/Stryker configs, quality budgets,
 `scripts/crap.ts`, `scripts/dead-code.ts`, their tests, added dependencies and
