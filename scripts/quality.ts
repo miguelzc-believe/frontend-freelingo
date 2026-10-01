@@ -32,9 +32,8 @@ if (!token) {
 const checkEnv = { ...process.env }
 delete checkEnv.SONAR_TOKEN
 for (const args of [
-  ['lint'],
-  ['typecheck'],
-  ['test:coverage'],
+  ['quality:local'],
+  ['test:mutation:core'],
   ['exec', 'sonar-scanner-npm'],
 ]) {
   const isScanner = args[0] === 'exec'

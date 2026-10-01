@@ -69,6 +69,23 @@ were checked directly. New dependencies are pinned exactly.
 
 Local runtime validation uses Node 24.21.0 and pnpm 12.5.1.
 
+## Automation and SonarQube
+
+`pnpm quality` runs the local checks, critical-code mutation testing and the
+authenticated SonarQube scan, waiting for the existing server Quality Gate.
+SonarQube supplies duplication, security and maintainability analysis. See the
+[README](../README.md#sonarqube-quality-analysis) for token storage and renewal.
+
+GitHub Actions runs coverage, CRAP, both Knip modes, E2E and critical-code mutation
+testing on pushes and PRs. Full mutation testing is a manual workflow option.
+Reports are retained for seven days. SonarQube runs after checks and mutations
+on `development`, when the repository secret `SONAR_TOKEN` exists; otherwise
+the scan step explicitly reports a skip. Community Build uses one analysis
+branch. CI uses Node 24.21.0, matching local validation and the project's engine
+requirement; the previous Node 25 is [end of life](https://nodejs.org/en/about/previous-releases).
+The workflow configuration was parsed locally; live GitHub Actions execution
+and secret configuration were not validated because this checkout has no remote.
+
 ## Measured checks
 
 Validated on 2026-09-30: four focused script test files passed eight tests;

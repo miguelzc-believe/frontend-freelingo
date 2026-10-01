@@ -1,5 +1,13 @@
 name: Frontend checks
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full_mutation:
+        description: Run mutation testing across all application source
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -11,11 +19,87 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '25'
+          node-version: '24.21.0'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm test:run
+      - run: pnpm quality:dead-code
+      - run: pnpm quality:dead-code:production
+      - run: pnpm test:coverage
+      - run: pnpm quality:crap
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-reports
+          path: |
+            coverage/
+            reports/quality/
+          retention-days: 7
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+  mutations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:mutation:core
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-core
+          path: reports/mutation/
+          retention-days: 7
+  full-mutations:
+    if: github.event_name == 'workflow_dispatch' && inputs.full_mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:mutation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-full
+          path: reports/mutation/
+          retention-days: 7
+  sonar:
+    needs: [checks, mutations]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/development'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: quality-reports
+          path: .
+      - name: Analyze the integration branch in SonarQube
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo 'SONAR_TOKEN is not configured; remote analysis skipped.'
+            exit 0
+          fi
+          pnpm exec sonar-scanner-npm

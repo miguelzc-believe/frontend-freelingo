@@ -67,12 +67,17 @@ VAD models, worklet code and matching ONNX runtime assets are copied during post
 
 ## SonarQube quality analysis
 
-Run `pnpm quality` to execute lint, type checking and tests with V8 coverage,
-then upload source and tests to the private
+Run `pnpm quality` to execute lint, type checking, dead-code checks, tests with
+V8 coverage, CRAP and mutation testing of critical code, then upload to the private
 [FreeLingo Frontend project](https://sonar.miguel-zapata.com/dashboard?id=frontend-freelingo).
 The command stops on a failed local check, waits for the server Quality Gate,
 and returns a nonzero exit code if the gate fails. It requires network access;
 the scanner downloads its runtime on the first run.
+
+Use `pnpm quality:local` for the checks without mutation testing or upload;
+`pnpm test:mutation` analyzes mutation resistance across all application code.
+See [the quality guide](docs/quality.md) for commands, thresholds, compatibility
+and measured results. SonarQube measures code duplication during each upload.
 
 Credentials stay outside Git. The command reads `SONAR_TOKEN` first, otherwise
 `SONAR_TOKEN_FILE`, defaulting to
@@ -94,7 +99,7 @@ the command from a task branch updates that same dashboard with the local
 checkout; it does not create a separate branch or PR analysis. E2E, build and
 real device/provider acceptance remain the separate checks described above.
 
-Validated on 2026-09-30 with Node 24.21.0 and pnpm 12.5.1: `pnpm quality`
+The initial integration was validated on 2026-09-30 with Node 24.21.0 and pnpm 12.5.1: `pnpm quality`
 completed successfully (lint, typecheck, 70 test files / 692 tests, fresh LCOV
 import and remote analysis). The missing-credential regression test also proves
 that no checks or upload run without a token. Vitest line coverage was 49.04%;
