@@ -46,13 +46,12 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true })
 })
 
-test('runs checks and critical mutations before upload, isolating the token to the scanner', () => {
+test('runs local checks before upload without starting Stryker, isolating the token to the scanner', () => {
   expect(runQuality()).toBe(0)
   const calls = vi.mocked(spawnSync).mock.calls
-  expect(calls.map((call) => call[0])).toEqual(Array(3).fill(process.execPath))
+  expect(calls.map((call) => call[0])).toEqual(Array(2).fill(process.execPath))
   expect(calls.map((call) => call[1])).toEqual([
     [launcher, 'quality:local'],
-    [launcher, 'test:mutation:core'],
     [
       launcher,
       'exec',
@@ -62,14 +61,12 @@ test('runs checks and critical mutations before upload, isolating the token to t
     ],
   ])
   expect(calls[0]?.[2]?.env?.SONAR_TOKEN).toBeUndefined()
-  expect(calls[1]?.[2]?.env?.SONAR_TOKEN).toBeUndefined()
-  expect(calls[2]?.[2]?.env?.SONAR_TOKEN).toBe('test-only-token')
+  expect(calls[1]?.[2]?.env?.SONAR_TOKEN).toBe('test-only-token')
 })
 
 test.each([
   { phase: 0, status: 5 },
   { phase: 1, status: 3 },
-  { phase: 2, status: 2 },
   { phase: 0, status: null },
 ])(
   'stops after failed phase $phase with status $status',

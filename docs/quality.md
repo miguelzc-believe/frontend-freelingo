@@ -1,8 +1,9 @@
 # Run the quality checks
 
 Use `pnpm quality:local` for lint, strict types, dead-code checks, fresh coverage
-and CRAP. Run `pnpm test:mutation:core` for mutation testing of the critical
-session, API, assessment-answer and language-state code.
+and CRAP. Mutation testing is manual: run `pnpm test:mutation:core` for the
+critical session, API, assessment-answer and language-state code, or
+`pnpm test:mutation` for the full application. `pnpm quality` does not run Stryker.
 
 | Command                             | Scope and result                                                                                  |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -71,7 +72,7 @@ Local runtime validation uses Node 24.21.0 and pnpm 12.5.1.
 
 ## Automation and SonarQube
 
-`pnpm quality` runs the local checks, critical-code mutation testing and the
+`pnpm quality` runs the local checks and the
 authenticated SonarQube scan, waiting for the existing server Quality Gate.
 SonarQube supplies duplication, security and maintainability analysis. See the
 [README](../README.md#sonarqube-quality-analysis) for environment configuration.
@@ -81,9 +82,11 @@ stage, required environment variables, token isolation and JavaScript/standalone
 launchers. Connection settings come exclusively from `SONAR_TOKEN`,
 `SONAR_HOST_URL` and `SONAR_PROJECT_KEY`. No token-file fallback is supported.
 
-GitHub Actions runs coverage, CRAP, both Knip modes, E2E and critical-code mutation
-testing on pushes and PRs. Full mutation testing is a manual workflow option.
-Reports are retained for seven days. SonarQube runs after checks and mutations
+GitHub Actions runs coverage, CRAP, both Knip modes and E2E on pushes and PRs.
+Both mutation profiles require an explicit manual workflow dispatch: select
+`core_mutation` or `full_mutation`; both options default to false. Mutation jobs
+are independent of SonarQube, which runs after the checks job.
+Reports are retained for seven days. SonarQube runs
 on `development`, when the repository secret `SONAR_TOKEN` and variables
 `SONAR_HOST_URL`/`SONAR_PROJECT_KEY` exist; otherwise
 the scan step explicitly reports a skip. Community Build uses one analysis
@@ -120,6 +123,11 @@ code 1 before checks when `SONAR_TOKEN` is absent, even with a populated legacy
 token file. The runner's tests verify host/project overrides and token isolation.
 No new remote analysis was required for this credential-source change.
 
+Manual-only mutation execution was checked with `pnpm exec vitest run tests/scripts`
+(five files / 18 tests). The runner regression verifies exactly local checks and
+the scanner, with no mutation command. Workflow validation confirms both mutation
+flags default to false, require `workflow_dispatch` and are not Sonar dependencies.
+
 ## Removal
 
 To remove these controls, remove the Knip/Stryker configs, quality budgets,
@@ -130,3 +138,6 @@ unaffected.
 To roll back only the environment requirement, restore the runner and its tests,
 connection properties, Sonar CI environment and corresponding README/guide
 instructions together. The local budgets and mutation profiles are independent.
+To roll back only manual mutation scheduling, restore the runner sequence, its
+regression test and workflow job conditions/dependencies with their README/guide
+instructions. Stryker's mutation scopes and score thresholds are independent.

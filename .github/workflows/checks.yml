@@ -4,6 +4,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      core_mutation:
+        description: Run mutation testing for critical application code
+        type: boolean
+        default: false
       full_mutation:
         description: Run mutation testing across all application source
         type: boolean
@@ -39,6 +43,7 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
   mutations:
+    if: github.event_name == 'workflow_dispatch' && inputs.core_mutation
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -76,7 +81,7 @@ jobs:
           path: reports/mutation/
           retention-days: 7
   sonar:
-    needs: [checks, mutations]
+    needs: [checks]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/development'
     runs-on: ubuntu-latest
     timeout-minutes: 10

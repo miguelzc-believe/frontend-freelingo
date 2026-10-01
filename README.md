@@ -68,14 +68,15 @@ VAD models, worklet code and matching ONNX runtime assets are copied during post
 ## SonarQube quality analysis
 
 Run `pnpm quality` to execute lint, type checking, dead-code checks, tests with
-V8 coverage, CRAP and mutation testing of critical code, then upload to the private
+V8 coverage and CRAP, then upload to the private
 [FreeLingo Frontend project](https://sonar.miguel-zapata.com/dashboard?id=frontend-freelingo).
 The command stops on a failed local check, waits for the server Quality Gate,
 and returns a nonzero exit code if the gate fails. It requires network access;
 the scanner downloads its runtime on the first run.
 
-Use `pnpm quality:local` for the checks without mutation testing or upload;
-`pnpm test:mutation` analyzes mutation resistance across all application code.
+Use `pnpm quality:local` for the checks without upload. Mutation testing is
+manual: run `pnpm test:mutation:core` for critical code or `pnpm test:mutation`
+for all application code. Neither SonarQube analysis nor pushes/PRs run Stryker.
 See [the quality guide](docs/quality.md) for commands, thresholds, compatibility
 and measured results. SonarQube measures code duplication during each upload.
 

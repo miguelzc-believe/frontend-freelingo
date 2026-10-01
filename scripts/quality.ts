@@ -45,7 +45,6 @@ export function runQuality() {
   delete checkEnv.SONAR_TOKEN
   for (const args of [
     ['quality:local'],
-    ['test:mutation:core'],
     [
       'exec',
       'sonar-scanner-npm',
