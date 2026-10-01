@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { float32ToWav } from '@/lib/audio'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { createAudioQueue, float32ToWav } from '@/lib/audio'
 
 describe('float32ToWav', () => {
   it('produces a valid WAV header', () => {
@@ -112,5 +112,162 @@ describe('float32ToWav', () => {
 
     expect(view.getUint32(24, true)).toBe(44100)
     expect(view.getUint32(28, true)).toBe(88200)
+  })
+})
+
+describe('createAudioQueue', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function setup() {
+    const sources: ReturnType<typeof makeSource>[] = []
+    function makeSource() {
+      return {
+        buffer: null,
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        onended: null as (() => void) | null,
+      }
+    }
+    const decoded = {
+      duration: 2,
+      sampleRate: 16000,
+      numberOfChannels: 1,
+    } as AudioBuffer
+    const ctx = {
+      state: 'running',
+      currentTime: 10,
+      destination: {},
+      resume: vi.fn().mockResolvedValue(undefined),
+      decodeAudioData: vi.fn().mockResolvedValue(decoded),
+      createBufferSource: vi.fn(() => {
+        const source = makeSource()
+        sources.push(source)
+        return source
+      }),
+    }
+    const idle = vi.fn()
+    const queue = createAudioQueue(ctx as unknown as AudioContext, idle)
+    return { ctx, sources, idle, queue, decoded }
+  }
+
+  it('serializes decoding, schedules gapless chunks and waits for all playback to end', async () => {
+    const { ctx, sources, idle, queue, decoded } = setup()
+    const first = new ArrayBuffer(4)
+    let resolveDecode!: (value: AudioBuffer) => void
+    ctx.decodeAudioData.mockReturnValueOnce(
+      new Promise<AudioBuffer>((resolve) => {
+        resolveDecode = resolve
+      })
+    )
+    const pending = queue.enqueue(first)
+    void queue.enqueue(new ArrayBuffer(8))
+    await Promise.resolve()
+    expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1)
+    expect(ctx.decodeAudioData.mock.calls[0]?.[0]).not.toBe(first)
+    resolveDecode(decoded)
+    await pending
+    expect(ctx.decodeAudioData).toHaveBeenCalledTimes(2)
+    expect(sources[0]?.connect).toHaveBeenCalledWith(ctx.destination)
+    expect(sources[0]?.start).toHaveBeenCalledWith(10.005)
+    expect(sources[1]?.start).toHaveBeenCalledWith(12.005)
+    sources[0]?.onended?.()
+    expect(idle).not.toHaveBeenCalled()
+    sources[1]?.onended?.()
+    expect(idle).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['closed', 'resume', 'create', 'start'])(
+    'handles %s context failures without rejecting',
+    async (failure) => {
+      const { ctx, queue, idle, sources } = setup()
+      if (failure === 'closed') ctx.state = 'closed'
+      if (failure === 'resume') {
+        ctx.state = 'suspended'
+        ctx.resume.mockRejectedValue(new Error('Resume denied'))
+      }
+      if (failure === 'create')
+        ctx.createBufferSource.mockImplementation(() => {
+          throw new Error('Unavailable')
+        })
+      if (failure === 'start')
+        ctx.createBufferSource.mockImplementationOnce(() => {
+          const source = {
+            buffer: null,
+            connect: vi.fn(),
+            start: vi.fn(() => {
+              throw new Error('Cannot start')
+            }),
+            stop: vi.fn(),
+            onended: null,
+          }
+          return source
+        })
+      await expect(queue.enqueue(new ArrayBuffer(4))).resolves.toBeUndefined()
+      if (failure === 'closed')
+        expect(ctx.decodeAudioData).not.toHaveBeenCalled()
+      if (failure === 'resume') {
+        expect(ctx.resume).toHaveBeenCalledTimes(1)
+        expect(sources[0]?.start).toHaveBeenCalledTimes(1)
+        sources[0]?.onended?.()
+      }
+      expect(idle).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it.each(['ended', 'error', 'rejected'])(
+    'cleans up decode fallback on %s and becomes idle',
+    async (outcome) => {
+      const { ctx, queue, idle } = setup()
+      const audio = document.createElement('audio')
+      const play = vi.spyOn(audio, 'play').mockResolvedValue(undefined)
+      if (outcome === 'rejected')
+        play.mockRejectedValue(new Error('Playback denied'))
+      const revoke = vi.fn()
+      vi.stubGlobal('URL', {
+        createObjectURL: vi.fn(() => 'blob:test'),
+        revokeObjectURL: revoke,
+      })
+      vi.stubGlobal(
+        'Audio',
+        vi.fn(function () {
+          return audio
+        })
+      )
+      ctx.decodeAudioData.mockRejectedValue(new Error('Invalid audio'))
+      const pending = queue.enqueue(new ArrayBuffer(4))
+      await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(1))
+      if (outcome !== 'rejected') {
+        expect(idle).not.toHaveBeenCalled()
+        audio.dispatchEvent(new Event(outcome))
+      }
+      await pending
+      expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:test')
+      expect(idle).toHaveBeenCalledTimes(1)
+      expect(ctx.createBufferSource).not.toHaveBeenCalled()
+    }
+  )
+
+  it('cancels active, decoding and pending chunks, then accepts fresh playback', async () => {
+    const { ctx, queue, sources, idle, decoded } = setup()
+    await queue.enqueue(new ArrayBuffer(4))
+    let resolveDecode!: (value: AudioBuffer) => void
+    ctx.decodeAudioData.mockReturnValueOnce(
+      new Promise<AudioBuffer>((resolve) => {
+        resolveDecode = resolve
+      })
+    )
+    const pending = queue.enqueue(new ArrayBuffer(8))
+    void queue.enqueue(new ArrayBuffer(12))
+    await Promise.resolve()
+    queue.cancel()
+    expect(sources[0]?.stop).toHaveBeenCalledWith(0)
+    expect(idle).toHaveBeenCalledTimes(1)
+    resolveDecode(decoded)
+    await pending
+    expect(ctx.decodeAudioData).toHaveBeenCalledTimes(2)
+    expect(ctx.createBufferSource).toHaveBeenCalledTimes(1)
+    await queue.enqueue(new ArrayBuffer(16))
+    expect(sources[1]?.start).toHaveBeenCalledWith(10.005)
   })
 })
