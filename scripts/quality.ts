@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { accessSync, constants, readFileSync, realpathSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { accessSync, constants, realpathSync } from 'node:fs'
 import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -21,25 +20,19 @@ export function findPnpm() {
 }
 
 export function runQuality() {
-  const tokenFile =
-    process.env.SONAR_TOKEN_FILE ||
-    join(
-      process.env.XDG_CONFIG_HOME || join(homedir(), '.config'),
-      'freelingo',
-      'sonar-token'
-    )
-  let token = process.env.SONAR_TOKEN?.trim()
-  if (!token) {
-    try {
-      token = readFileSync(tokenFile, 'utf8').trim()
-    } catch {
-      // Report how to supply credentials without logging their contents.
-    }
-  }
-  if (!token) {
+  const token = process.env.SONAR_TOKEN?.trim()
+  const host = process.env.SONAR_HOST_URL?.trim()
+  const project = process.env.SONAR_PROJECT_KEY?.trim()
+  const missing = [
+    ['SONAR_TOKEN', token],
+    ['SONAR_HOST_URL', host],
+    ['SONAR_PROJECT_KEY', project],
+  ]
+    .filter(([, value]) => !value)
+    .map(([name]) => name)
+  if (missing.length) {
     console.error(
-      'Missing SonarQube token. Set SONAR_TOKEN or store it in SONAR_TOKEN_FILE ' +
-        `(default: ${tokenFile}).`
+      `Missing SonarQube environment variables: ${missing.join(', ')}.`
     )
     return 1
   }
@@ -53,7 +46,12 @@ export function runQuality() {
   for (const args of [
     ['quality:local'],
     ['test:mutation:core'],
-    ['exec', 'sonar-scanner-npm'],
+    [
+      'exec',
+      'sonar-scanner-npm',
+      `-Dsonar.host.url=${host}`,
+      `-Dsonar.projectKey=${project}`,
+    ],
   ]) {
     const isScanner = args[0] === 'exec'
     const result = spawnSync(executable, [...prefix, ...args], {

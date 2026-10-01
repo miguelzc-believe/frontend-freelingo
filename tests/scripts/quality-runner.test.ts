@@ -35,6 +35,8 @@ beforeEach(() => {
   vi.stubEnv('PATH', directory)
   vi.stubEnv('npm_execpath', '')
   vi.stubEnv('SONAR_TOKEN', '  test-only-token  ')
+  vi.stubEnv('SONAR_HOST_URL', '  https://sonar.example.test  ')
+  vi.stubEnv('SONAR_PROJECT_KEY', '  example-project  ')
   vi.mocked(spawnSync).mockReset().mockReturnValue(success)
 })
 
@@ -51,7 +53,13 @@ test('runs checks and critical mutations before upload, isolating the token to t
   expect(calls.map((call) => call[1])).toEqual([
     [launcher, 'quality:local'],
     [launcher, 'test:mutation:core'],
-    [launcher, 'exec', 'sonar-scanner-npm'],
+    [
+      launcher,
+      'exec',
+      'sonar-scanner-npm',
+      '-Dsonar.host.url=https://sonar.example.test',
+      '-Dsonar.projectKey=example-project',
+    ],
   ])
   expect(calls[0]?.[2]?.env?.SONAR_TOKEN).toBeUndefined()
   expect(calls[1]?.[2]?.env?.SONAR_TOKEN).toBeUndefined()
@@ -86,24 +94,23 @@ test('reports startup failure without exposing the token', () => {
   expect(error).toHaveBeenCalledWith('Could not start pnpm quality:local.')
 })
 
-test('reads the default external token file and rejects absent credentials before checks', () => {
-  vi.stubEnv('SONAR_TOKEN', '')
-  vi.stubEnv('SONAR_TOKEN_FILE', '')
-  vi.stubEnv('XDG_CONFIG_HOME', directory)
-  mkdirSync(join(directory, 'freelingo'))
-  writeFileSync(join(directory, 'freelingo/sonar-token'), 'file-token\n')
-  expect(runQuality()).toBe(0)
-  expect(vi.mocked(spawnSync).mock.calls[2]?.[2]?.env?.SONAR_TOKEN).toBe(
-    'file-token'
-  )
-  vi.mocked(spawnSync).mockClear()
-  vi.stubEnv('SONAR_TOKEN_FILE', join(directory, 'missing-token'))
-  vi.stubEnv('XDG_CONFIG_HOME', '')
-  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-  expect(runQuality()).toBe(1)
-  expect(spawnSync).not.toHaveBeenCalled()
-  expect(error.mock.calls[0]?.[0]).toContain('Missing SonarQube token')
-})
+test.each(['SONAR_TOKEN', 'SONAR_HOST_URL', 'SONAR_PROJECT_KEY'])(
+  'requires %s in the environment even when legacy token files exist',
+  (variable) => {
+    vi.stubEnv(variable, '   ')
+    vi.stubEnv('XDG_CONFIG_HOME', directory)
+    mkdirSync(join(directory, 'freelingo'))
+    const tokenFile = join(directory, 'freelingo/sonar-token')
+    writeFileSync(tokenFile, 'file-token\n')
+    vi.stubEnv('SONAR_TOKEN_FILE', tokenFile)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(runQuality()).toBe(1)
+    expect(spawnSync).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith(
+      `Missing SonarQube environment variables: ${variable}.`
+    )
+  }
+)
 
 test('resolves absolute launchers and ignores relative PATH entries', () => {
   vi.stubEnv('npm_execpath', launcher)

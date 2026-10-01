@@ -74,15 +74,18 @@ Local runtime validation uses Node 24.21.0 and pnpm 12.5.1.
 `pnpm quality` runs the local checks, critical-code mutation testing and the
 authenticated SonarQube scan, waiting for the existing server Quality Gate.
 SonarQube supplies duplication, security and maintainability analysis. See the
-[README](../README.md#sonarqube-quality-analysis) for token storage and renewal.
+[README](../README.md#sonarqube-quality-analysis) for environment configuration.
 The runner resolves an absolute pnpm launcher before executing checks and passes
 the analysis token only to the scanner. Regression tests cover failure at each
-stage, credential loading and isolation, and JavaScript/standalone launchers.
+stage, required environment variables, token isolation and JavaScript/standalone
+launchers. Connection settings come exclusively from `SONAR_TOKEN`,
+`SONAR_HOST_URL` and `SONAR_PROJECT_KEY`. No token-file fallback is supported.
 
 GitHub Actions runs coverage, CRAP, both Knip modes, E2E and critical-code mutation
 testing on pushes and PRs. Full mutation testing is a manual workflow option.
 Reports are retained for seven days. SonarQube runs after checks and mutations
-on `development`, when the repository secret `SONAR_TOKEN` exists; otherwise
+on `development`, when the repository secret `SONAR_TOKEN` and variables
+`SONAR_HOST_URL`/`SONAR_PROJECT_KEY` exist; otherwise
 the scan step explicitly reports a skip. Community Build uses one analysis
 branch. CI uses Node 24.21.0, matching local validation and the project's engine
 requirement; the previous Node 25 is [end of life](https://nodejs.org/en/about/previous-releases).
@@ -111,6 +114,12 @@ new issues. Overall SonarQube combined coverage is 48.6% and duplication 5.5%;
 existing application debt remains visible. SonarQube's combined coverage and
 Vitest's line coverage are different metrics.
 
+The environment-only change was checked with `pnpm exec vitest run tests/scripts`
+(five files / 19 tests), `pnpm lint` and `pnpm typecheck`. The real CLI exits with
+code 1 before checks when `SONAR_TOKEN` is absent, even with a populated legacy
+token file. The runner's tests verify host/project overrides and token isolation.
+No new remote analysis was required for this credential-source change.
+
 ## Removal
 
 To remove these controls, remove the Knip/Stryker configs, quality budgets,
@@ -118,3 +127,6 @@ To remove these controls, remove the Knip/Stryker configs, quality budgets,
 package commands; restore Vitest's previous coverage settings and remove the
 report/sandbox ignore entries. Application behavior and backend contracts are
 unaffected.
+To roll back only the environment requirement, restore the runner and its tests,
+connection properties, Sonar CI environment and corresponding README/guide
+instructions together. The local budgets and mutation profiles are independent.

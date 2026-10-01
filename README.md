@@ -79,12 +79,12 @@ Use `pnpm quality:local` for the checks without mutation testing or upload;
 See [the quality guide](docs/quality.md) for commands, thresholds, compatibility
 and measured results. SonarQube measures code duplication during each upload.
 
-Credentials stay outside Git. The command reads `SONAR_TOKEN` first, otherwise
-`SONAR_TOKEN_FILE`, defaulting to
-`${XDG_CONFIG_HOME:-$HOME/.config}/freelingo/sonar-token`. Keep that file at mode
-`600`. On this workstation a project analysis token is already stored there;
-it expires on 2026-12-30. Renew it in SonarQube before expiration and replace
-the local file. In CI, supply `SONAR_TOKEN` from a secret store.
+The command requires `SONAR_TOKEN`, `SONAR_HOST_URL` and `SONAR_PROJECT_KEY`
+in its inherited environment. Load the local `.envrc` with direnv before running
+`pnpm quality`; the runner does not load credential files or `.envrc` itself.
+Missing or blank variables stop execution before any checks or upload.
+Keep `.envrc` outside Git. In CI, supply `SONAR_TOKEN` from a secret store and
+the host/project settings from repository variables.
 
 Coverage is generated fresh at `coverage/lcov.info` and imported by SonarQube.
 `pnpm test:coverage` generates it without uploading. Only the generated
@@ -114,7 +114,7 @@ skipped by the scanner; this command does not establish dependency security.
 To remove this integration, remove `scripts/quality.ts`,
 `sonar-project.properties`, the `quality` and `test:coverage` scripts, the scanner
 and coverage dependencies, and the Vitest coverage configuration. Revoke the
-project token and remove its local file independently. Runtime app behavior is
+project token and remove its local environment configuration independently. Runtime app behavior is
 unaffected.
 
 ## Delivery
