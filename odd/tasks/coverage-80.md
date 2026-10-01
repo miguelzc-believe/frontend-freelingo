@@ -23,7 +23,8 @@ Raise trustworthy global SonarQube coverage for the frontend to at least 80%, us
 - [x] T1: Generate fresh baseline and rank coverage gaps.
 - [x] T2: Cover critical audio, library, and VAD behavior.
 - [x] T3: Cover auth, layout, providers, and error boundaries.
-- [ ] T4: Cover core learning flows.
+- [x] T4: Cover core learning flows (assessment and conversation slice).
+- [ ] T4b: Cover Reading and Listening flows (deferred from T4 by slice budget).
 - [ ] T5: Cover remaining UI, routes, and server behavior.
 - [ ] T6: Verify quality gates, update thresholds/docs, and record final Sonar result.
 
@@ -48,7 +49,11 @@ Raise trustworthy global SonarQube coverage for the frontend to at least 80%, us
 - T3 checks observed: focused suites 12 passed; full `pnpm test:coverage -- --silent` green; `pnpm typecheck` clean; `eslint . --max-warnings 0` clean. Parent spot check re-ran both focused suites: 12 passed.
 - T3 residual gap: layout branches stay at 42.56% because desktop sidebar and mobile dropdown duplicate JSX; covering both variants needs near-duplicate assertions of limited behavioral value.
 - Pre-existing prettier warnings remain on `odd/tasks/coverage-80.md` and `pnpm-lock.yaml`; unrelated to this feature and outside the writer surfaces.
-- Native review of the pre-existing `.gitignore` change (target sha256:37e7e11b) completed with state `approved` and the authority is burned. It is unrelated to this feature and was not committed.
+- T4 done on `feature/coverage-80-audio` (commit `241f316`): 24 new tests in 4 files. `src/app/(app)/assessment/page.tsx` 0% -> 82.47% lines, `src/app/(app)/assessment/level-test/page.tsx` 0% -> 95.76%, `src/app/(app)/conversation/page.tsx` 0% -> 94.11%. `BeginnerGate.tsx` and `SessionTimeoutBanner.tsx` reach 100%, `DurationSelector.tsx` 83.33%. Project lines 58.35%, branches 51.84%, functions 50.55%, statements 57.38%. No production change.
+- T4 checks observed: 4 focused suites 24 passed; full `pnpm test:coverage -- --silent` 80 files / 754 tests passed; `pnpm typecheck` clean; eslint and prettier clean. Parent spot check re-ran the 4 focused suites: 24 passed.
+- T4 partial: assessment and conversation slices done (commit `241f316`); Reading and Listening deferred to T4b by slice budget (~683 lines already authored).
+- T4 production finding, not fixed: `assessment/page.tsx` sets `error` on the duration step when plan creation fails, but the error renders only on the existing and result steps; a failed plan creation is invisible to the user. Flagged for a follow-up decision, not part of this feature's scope.
+- Known pitfall documented by the worker: a `use-intl` mock that returns a new function per render causes an infinite reload effect in pages whose hooks depend on `t`; use a stable function reference.
 - Planning baseline came from the existing stale report: documented Sonar overall 48.6%, new code 95.2%.
 - Sonar sources are `src,scripts`; Vitest includes only selected quality scripts in addition to `src`.
 - Branch policy: work proceeds on `feature/coverage-80-audio` for the T2 slice, created from local `development`. Later slices branch from the last merged slice or from `development` as appropriate.
