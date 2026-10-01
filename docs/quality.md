@@ -105,6 +105,11 @@ not measure the full mutation score.
 Critical-code mutation testing measured 81.94% across 155 mutants: 127 detected,
 25 surviving and three uncovered. E2E completed 11 tests with one intentional
 mobile route-sweep skip, using a production build and the fixture backend.
+`pnpm quality` completed end to end. The existing Sonar way gate returned `OK`:
+new-code coverage 95.5% (minimum 80%), new duplication 0% (maximum 3%) and zero
+new issues. Overall SonarQube combined coverage is 48.6% and duplication 5.5%;
+existing application debt remains visible. SonarQube's combined coverage and
+Vitest's line coverage are different metrics.
 
 ## Removal
 
