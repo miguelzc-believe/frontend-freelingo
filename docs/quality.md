@@ -1,0 +1,85 @@
+# Run the quality checks
+
+Use `pnpm quality:local` for lint, strict types, dead-code checks, fresh coverage
+and CRAP. Run `pnpm test:mutation:core` for mutation testing of the critical
+session, API, assessment-answer and language-state code.
+
+| Command                             | Scope and result                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `pnpm quality:dead-code`            | Knip across source, tooling and tests; fails above the legacy issue budget.                       |
+| `pnpm quality:dead-code:production` | Knip on shipped source without test-only reachability.                                            |
+| `pnpm quality:dead-code:report`     | Unbudgeted Knip report; returns nonzero while findings remain.                                    |
+| `pnpm test:coverage`                | V8 coverage, LCOV and JSON; enforces global minimums.                                             |
+| `pnpm quality:crap`                 | CRAP from fresh `coverage/coverage-final.json`; writes `reports/quality/crap.json`.               |
+| `pnpm test:mutation:core`           | Four critical files; HTML/JSON under `reports/mutation/core.*`.                                   |
+| `pnpm test:mutation`                | All application TS/TSX, excluding generated routes; separate full reports.                        |
+| `pnpm test:mutation:incremental`    | Full scope with reusable local results; force a fresh run after dependency/configuration changes. |
+
+## Limits and existing debt
+
+Coverage minimums are statements 48%, branches 44%, functions 43% and lines 49%.
+These floors preserve the measured starting point; raise them as coverage improves.
+Application files without tests remain included. Generated `src/routeTree.gen.ts`
+is the only source exclusion from coverage, CRAP and mutation analysis.
+
+`quality-budgets.json` records 19 Knip issues in each mode and CRAP caps of 91
+functions above 30 and a maximum score of 1185.77 (the measured maximum rounded
+up to two decimals). These aggregate budgets fail
+when counts or the maximum exceed the baseline; inspect individual findings
+even when totals pass, and reduce budgets after removing debt. Budget changes
+belong in reviewed commits with new measurement evidence. Existing unused UI
+components and high-risk screens stay visible in reports.
+
+Knip uses its TanStack Router, Vite, Tailwind, Vitest, Playwright and Stryker
+plugins. CSS is included so local font imports are reachable. The fixture server
+is an explicit tooling entry. `ignoreExportsUsedInFile` permits internal-only
+exports; the one dependency exception, `@sonar/scan`, is invoked through a
+dynamic argument array in the quality runner. Generated routes remain in Knip's
+graph so they connect every screen. [Knip's gradual-adoption guide](https://knip.dev/guides/adopt-gradually)
+supports using issue budgets after resolving entry-point gaps.
+
+CRAP uses `C² × (1 − coverage/100)³ + C`, cyclomatic complexity and a warning
+threshold of 30, following [the original metric](https://testing.googleblog.com/2011/02/this-code-is-crap.html).
+`crap4ts` extracts functions from the TypeScript AST and approximates coverage
+with statement hits within each function's line range. Missing measurements are
+zero coverage. This is a prioritization metric; its statement coverage is an
+approximation of basis-path coverage. [Tool behavior and limitations](https://github.com/danibram/crap4ts#how-it-works)
+are documented upstream.
+
+Both mutation profiles enforce a global mutation score of 80%, with 90% as the
+high band. Uncovered and surviving mutants count against the score. The Vitest
+runner uses per-test coverage and its own single-worker pool; Stryker limits
+concurrency to two workers. Fresh runs are the default. [Incremental mode](https://stryker-mutator.io/docs/stryker-js/incremental/)
+does not detect every environment or dependency change. Sandboxes, coverage and
+reports are ignored by Git and Docker; `.env*` and local runtime state are not
+copied into mutation sandboxes. No Stryker dashboard publishing is configured.
+
+## Compatibility
+
+Context7 was consulted for Knip/TanStack entries, Stryker's Vitest 4 pool handling
+and Vitest V8 reporting/thresholds; registry metadata and installed versions
+were checked directly. New dependencies are pinned exactly.
+
+| Tool                           | Version | Requirement verified                                                                     |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------------------- |
+| Knip                           | 6.38.0  | Node `^20.19.0` or `>=22.12.0`; selected after its release-age window.                   |
+| Stryker core and Vitest runner | 10.0.0  | Matching versions, Node `>=22`, Vitest `>=2`; explicit Vitest 4.1 pool support.          |
+| crap4ts                        | 0.6.0   | Node `>=18`; TS/TSX AST parsing and V8 JSON tested with fixtures and application source. |
+| Vitest and coverage-v8         | 4.1.11  | Matching versions; existing Vite 8.3.1 and TypeScript 5.9.3 retained.                    |
+
+Local runtime validation uses Node 24.21.0 and pnpm 12.5.1.
+
+Validated on 2026-09-30: the three focused script test files passed four tests;
+the complete coverage suite passed 72 files / 695 tests with 49.04% line coverage.
+CRAP measured 1703 functions, 91 above 30 and a maximum of 1185.7607041840743.
+Negative controls proved that adding an unused file exceeds the Knip budget,
+insufficient coverage fails Vitest, and risky untested code fails the CRAP CLI.
+The full Stryker dry run instrumented 202 files / 17507 mutants and passed 672
+related tests. It validates instrumentation and runner compatibility; it does
+not measure the full mutation score.
+
+To remove these controls, remove the Knip/Stryker configs, quality budgets,
+`scripts/crap.ts`, `scripts/dead-code.ts`, their tests, added dependencies and
+package commands; restore Vitest's previous coverage settings and remove the
+report/sandbox ignore entries. Application behavior and backend contracts are
+unaffected.

@@ -12,3 +12,5 @@ public/vad/
 
 .tanstack/
 .scannerwork/
+.stryker-tmp/
+reports/

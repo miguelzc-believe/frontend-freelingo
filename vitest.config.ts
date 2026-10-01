@@ -10,9 +10,10 @@ export default defineConfig({
     maxWorkers: 2,
     coverage: {
       provider: 'v8',
-      reporter: ['text-summary', 'lcov'],
+      reporter: ['text-summary', 'lcov', 'json', 'json-summary'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/routeTree.gen.ts'],
+      thresholds: { statements: 48, branches: 44, functions: 43, lines: 49 },
     },
   },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },

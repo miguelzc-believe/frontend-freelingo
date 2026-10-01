@@ -9,3 +9,7 @@ public/vad
 test-results
 playwright-report
 coverage
+.stryker-tmp
+reports
+.scannerwork
+.atl

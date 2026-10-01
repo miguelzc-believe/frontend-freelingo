@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@6.38.0/schema.json",
+  "entry": ["src/start.ts!", "src/router.tsx!", "scripts/mock-backend.ts"],
+  "project": [
+    "src/**/*.{ts,tsx,css}!",
+    "scripts/**/*.ts",
+    "tests/**/*.{ts,tsx}",
+    "*.{ts,mjs}"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "ignoreDependencies": ["@sonar/scan"],
+  "tanstack-router": true,
+  "stryker": true
+}

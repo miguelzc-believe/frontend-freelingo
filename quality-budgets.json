@@ -1,0 +1,4 @@
+{
+  "deadCode": { "full": 19, "production": 19 },
+  "crap": { "maxHighRiskFunctions": 91, "maxScore": 1185.77 }
+}

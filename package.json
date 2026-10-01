@@ -14,7 +14,15 @@
     "test:e2e": "playwright test",
     "quality": "tsx scripts/quality.ts",
     "format": "prettier --write src tests scripts *.ts *.json *.mjs",
-    "postinstall": "tsx scripts/copy-vad-models.ts"
+    "postinstall": "tsx scripts/copy-vad-models.ts",
+    "quality:dead-code": "tsx scripts/dead-code.ts",
+    "quality:dead-code:production": "tsx scripts/dead-code.ts --production",
+    "test:mutation": "stryker run",
+    "test:mutation:core": "stryker run stryker.core.config.mjs",
+    "test:mutation:incremental": "stryker run --incremental",
+    "quality:local": "pnpm lint && pnpm typecheck && pnpm quality:dead-code && pnpm quality:dead-code:production && pnpm test:coverage && pnpm quality:crap",
+    "quality:dead-code:report": "knip",
+    "quality:crap": "tsx scripts/crap.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -62,7 +70,11 @@
     "@tailwindcss/vite": "^4.3.3",
     "shadcn": "^4.21.0",
     "@sonar/scan": "5.0.1",
-    "@vitest/coverage-v8": "4.1.11"
+    "@vitest/coverage-v8": "4.1.11",
+    "@danibram/crap4ts": "0.6.0",
+    "knip": "6.38.0",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0"
   },
   "type": "module",
   "packageManager": "pnpm@12.5.1",
