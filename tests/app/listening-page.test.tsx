@@ -128,6 +128,8 @@ interface ApiOptions {
   nextRejects?: boolean
   attempt?: unknown
   attemptStatus?: number
+  history?: unknown
+  historyRejects?: boolean
 }
 
 function mockApi({
@@ -144,8 +146,14 @@ function mockApi({
     ],
   },
   attemptStatus = 200,
+  history = { items: [], total: 0 },
+  historyRejects = false,
 }: ApiOptions = {}) {
   mockApiFetch.mockImplementation(async (url: string) => {
+    if (url.startsWith('/api/listening/history?')) {
+      if (historyRejects) throw new Error('history unavailable')
+      return jsonResponse(history)
+    }
     if (url === '/api/listening/next') {
       if (nextRejects) throw new Error('network down')
       return jsonResponse(next, nextStatus)
@@ -210,6 +218,97 @@ describe('ListeningPage', () => {
     expect(screen.getByText('B1 · mcq')).toBeInTheDocument()
     expect(screen.getByTestId('audio-player')).toHaveTextContent('12')
     expect(mockApiFetch).toHaveBeenCalledWith('/api/listening/next')
+  })
+
+  it('loads and shows an empty history with the first-page API contract', async () => {
+    mockApi()
+    render(<ListeningPage />)
+
+    await screen.findByText('Am Bahnhof')
+    fireEvent.click(screen.getByRole('button', { name: 'history' }))
+
+    expect(await screen.findByText('historyEmpty')).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/listening/history?skip=0&limit=10'
+    )
+    expect(screen.queryByText('next')).not.toBeInTheDocument()
+    expect(screen.queryByText('back')).not.toBeInTheDocument()
+  })
+
+  it('shows populated history details and replays without XP', async () => {
+    mockApi({
+      history: {
+        items: [
+          {
+            id: 91,
+            score: 1,
+            xp_earned: 8,
+            completed_at: '2025-01-01T00:00:00Z',
+            exercise,
+            text: 'Der Zug fährt um zehn Uhr ab.',
+            answers: { '0': 'a' },
+          },
+        ],
+        total: 1,
+      },
+    })
+    render(<ListeningPage />)
+
+    await screen.findByText('Am Bahnhof')
+    fireEvent.click(screen.getByRole('button', { name: 'history' }))
+    expect(
+      await screen.findByText('Der Zug fährt um zehn Uhr ab.')
+    ).toBeInTheDocument()
+    expect(screen.getByText('1/2')).toBeInTheDocument()
+    expect(screen.getByText('+8 XP')).toBeInTheDocument()
+  })
+
+  it('submits a replay attempt with no XP reward', async () => {
+    mockApi({
+      history: {
+        items: [
+          {
+            id: 91,
+            score: 1,
+            xp_earned: 8,
+            completed_at: '2025-01-01T00:00:00Z',
+            exercise,
+            text: 'Der Zug fährt um zehn Uhr ab.',
+            answers: { '0': 'a' },
+          },
+        ],
+        total: 1,
+      },
+    })
+    render(<ListeningPage />)
+
+    await screen.findByText('Am Bahnhof')
+    fireEvent.click(screen.getByRole('button', { name: 'history' }))
+    await screen.findByText('Der Zug fährt um zehn Uhr ab.')
+    fireEvent.click(screen.getByRole('button', { name: 'practiceAgain' }))
+    await screen.findByTestId('audio-player')
+    await answerExercise(['a', 'b'])
+
+    expect(await screen.findByText('replayNoXp')).toBeInTheDocument()
+    expect(screen.queryByText('+12')).not.toBeInTheDocument()
+    expect(attemptBody()).toEqual({
+      exercise_id: 12,
+      answers: { '0': 'a', '1': 'b' },
+      replay: true,
+    })
+  })
+
+  it('treats a failed history request as an empty history', async () => {
+    mockApi({ historyRejects: true })
+    render(<ListeningPage />)
+
+    await screen.findByText('Am Bahnhof')
+    fireEvent.click(screen.getByRole('button', { name: 'history' }))
+
+    expect(await screen.findByText('historyEmpty')).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/listening/history?skip=0&limit=10'
+    )
   })
 
   it('reports a rejected exercise request', async () => {
