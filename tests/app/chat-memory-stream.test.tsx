@@ -1,6 +1,15 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ElementType, HTMLAttributes, ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -8,12 +17,16 @@ const mocks = vi.hoisted(() => ({
   decrementFreemium: vi.fn(),
   dismissTooltip: vi.fn(),
   handleTextSelection: vi.fn(),
+  push: vi.fn(),
 }))
 
 vi.mock('use-intl', () => ({
   useTranslations: () => (key: string) => key,
 }))
 vi.mock('@/lib/api', () => ({ apiFetch: mocks.apiFetch }))
+vi.mock('@/lib/navigation', () => ({
+  useRouter: () => ({ push: mocks.push }),
+}))
 vi.mock('@/store/auth', () => ({
   useAuthStore: (selector: (state: object) => unknown) =>
     selector({
@@ -54,7 +67,13 @@ vi.mock('@/components/billing/FreemiumQuotaBanner', () => ({
 }))
 vi.mock('@/components/ui/AudioPlayer', () => ({ AudioPlayer: () => null }))
 vi.mock('@/components/ui/confirm-dialog', () => ({
-  ConfirmDialog: () => null,
+  ConfirmDialog: ({
+    open,
+    onConfirm,
+  }: {
+    open: boolean
+    onConfirm: () => void
+  }) => (open ? <button onClick={onConfirm}>confirmDelete</button> : null),
 }))
 vi.mock('@/components/ui/WordTooltip', () => ({
   WordTooltip: () => null,
@@ -150,8 +169,24 @@ function controlledChatStreamResponse() {
 
 describe('chat memory stream', () => {
   let chatEvents: Array<Record<string, unknown>>
+  let originalInnerWidth: number
+  let originalScrollIntoViewDescriptor: PropertyDescriptor | undefined
+
+  beforeAll(() => {
+    originalScrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      'scrollIntoView'
+    )
+  })
 
   beforeEach(() => {
+    originalInnerWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 1024,
+    })
+    sessionStorage.clear()
+    mocks.push.mockReset()
     mocks.apiFetch.mockReset()
     mocks.fetchFreemium.mockReset()
     mocks.decrementFreemium.mockReset()
@@ -171,6 +206,186 @@ describe('chat memory stream', () => {
       }
       return Promise.resolve(jsonResponse([]))
     })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: originalInnerWidth,
+    })
+    sessionStorage.clear()
+  })
+
+  afterAll(() =>
+    originalScrollIntoViewDescriptor
+      ? Object.defineProperty(
+          Element.prototype,
+          'scrollIntoView',
+          originalScrollIntoViewDescriptor
+        )
+      : Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  )
+
+  it('retries a failed conversation list and selects the newest conversation', async () => {
+    const latest = { id: 9, title: 'Latest', source: 'text' }
+    const older = { id: 4, title: 'Older', source: 'text' }
+    let listCalls = 0
+    mocks.apiFetch.mockImplementation((path: string) => {
+      if (path === '/api/chat/conversations') {
+        listCalls += 1
+        return Promise.resolve(
+          listCalls === 1
+            ? new Response(null, { status: 503 })
+            : jsonResponse([latest, older])
+        )
+      }
+      if (path === '/api/chat/conversations/9/messages') {
+        return Promise.resolve(
+          jsonResponse({
+            messages: [{ role: 'assistant', content: 'Newest history' }],
+          })
+        )
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    render(<ChatPage />)
+
+    expect(await screen.findByText('error')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+
+    expect(await screen.findByText('Newest history')).toBeInTheDocument()
+    expect(screen.getAllByText('Latest')).toHaveLength(2)
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      '/api/chat/conversations/9/messages'
+    )
+  })
+
+  it('starts a new chat without creating a conversation and sends a null id', async () => {
+    mocks.apiFetch.mockImplementation((path: string) => {
+      if (path === '/api/chat/conversations') {
+        return Promise.resolve(
+          jsonResponse([{ id: 7, title: 'Existing', source: 'text' }])
+        )
+      }
+      if (path === '/api/chat/conversations/7/messages') {
+        return Promise.resolve(
+          jsonResponse({
+            messages: [{ role: 'assistant', content: 'Old message' }],
+          })
+        )
+      }
+      if (path === '/api/chat') {
+        return Promise.resolve(chatStreamResponse([{ done: true }]))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    render(<ChatPage />)
+    await screen.findByText('Old message')
+
+    fireEvent.click(screen.getByRole('button', { name: /newConversation/ }))
+    expect(screen.queryByText('Old message')).not.toBeInTheDocument()
+    expect(mocks.apiFetch).not.toHaveBeenCalledWith(
+      '/api/chat/conversations',
+      expect.objectContaining({ method: 'POST' })
+    )
+    const input = screen.getByPlaceholderText('placeholder')
+    fireEvent.change(input, { target: { value: 'Start fresh' } })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    await waitFor(() =>
+      expect(mocks.apiFetch).toHaveBeenCalledWith(
+        '/api/chat',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            message: 'Start fresh',
+            conversation_id: null,
+          }),
+        })
+      )
+    )
+  })
+
+  it('deletes the active conversation and selects the next available one', async () => {
+    let listCalls = 0
+    mocks.apiFetch.mockImplementation((path: string) => {
+      if (path === '/api/chat/conversations') {
+        listCalls += 1
+        return Promise.resolve(
+          jsonResponse(
+            listCalls === 1
+              ? [
+                  { id: 7, title: 'Current', source: 'text' },
+                  { id: 3, title: 'Next', source: 'text' },
+                ]
+              : [{ id: 3, title: 'Next', source: 'text' }]
+          )
+        )
+      }
+      if (path === '/api/chat/conversations/7/messages') {
+        return Promise.resolve(
+          jsonResponse({
+            messages: [{ role: 'assistant', content: 'Current history' }],
+          })
+        )
+      }
+      if (path === '/api/chat/conversations/3/messages') {
+        return Promise.resolve(
+          jsonResponse({
+            messages: [{ role: 'assistant', content: 'Next history' }],
+          })
+        )
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    render(<ChatPage />)
+    await screen.findByText('Current history')
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'deleteConfirm' })[0]!
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'confirmDelete' }))
+
+    expect(await screen.findByText('Next history')).toBeInTheDocument()
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/api/chat/conversations/7', {
+      method: 'DELETE',
+    })
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      '/api/chat/conversations/3/messages'
+    )
+  })
+
+  it('passes only the last 20 nonblank messages to voice and navigates', async () => {
+    const messages = [
+      ...Array.from({ length: 21 }, (_, index) => ({
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `message ${index}`,
+      })),
+      { role: 'assistant', content: '   ' },
+    ]
+    mocks.apiFetch.mockImplementation((path: string) => {
+      if (path === '/api/chat/conversations') {
+        return Promise.resolve(
+          jsonResponse([{ id: 7, title: 'History', source: 'text' }])
+        )
+      }
+      if (path === '/api/chat/conversations/7/messages') {
+        return Promise.resolve(jsonResponse({ messages }))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    render(<ChatPage />)
+    await screen.findByText('message 20')
+    fireEvent.click(screen.getByRole('button', { name: 'continueInVoice' }))
+
+    expect(JSON.parse(sessionStorage.getItem('voice_context') ?? '{}')).toEqual(
+      {
+        messages: messages.slice(1, 21),
+      }
+    )
+    expect(mocks.push).toHaveBeenCalledWith('/conversation')
+    expect(
+      JSON.parse(sessionStorage.getItem('voice_context') ?? '{}')
+    ).not.toHaveProperty('conversation_id')
   })
 
   it('replaces a partial incompatible-tools response with the complete fallback', async () => {
