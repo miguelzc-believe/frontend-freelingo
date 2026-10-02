@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import React from 'react'
 
@@ -116,6 +116,17 @@ function resetStores() {
     levelTestResult: null,
   })
 }
+
+const originalLocationDescriptor = Object.getOwnPropertyDescriptor(
+  window,
+  'location'
+)
+
+afterEach(() => {
+  if (originalLocationDescriptor) {
+    Object.defineProperty(window, 'location', originalLocationDescriptor)
+  }
+})
 
 beforeEach(() => {
   localeState.value = 'en'
@@ -373,6 +384,41 @@ describe('billing paywall UI', () => {
     )
     expect(window.location.assign).toHaveBeenCalledWith(
       'https://billing.stripe.com/session/paused'
+    )
+  })
+
+  it('submits yearly PaywallBanner checkout, disables both plans while pending, then redirects', async () => {
+    let resolveCheckout!: (response: Response) => void
+    mockApiFetch.mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveCheckout = resolve
+      })
+    )
+
+    render(<PaywallBanner />)
+
+    const [yearlyButton] = screen.getAllByRole('button')
+    fireEvent.click(yearlyButton!)
+
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/billing/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: 'yearly' }),
+    })
+    await waitFor(() => {
+      const [yearlyPending, monthlyPending] = screen.getAllByRole('button')
+      expect(yearlyPending).toBeDisabled()
+      expect(monthlyPending).toBeDisabled()
+      expect(yearlyPending).toHaveTextContent('...')
+    })
+
+    resolveCheckout(
+      jsonResponse({ url: 'https://checkout.stripe.com/pay/yearly' })
+    )
+    await waitFor(() =>
+      expect(window.location.assign).toHaveBeenCalledWith(
+        'https://checkout.stripe.com/pay/yearly'
+      )
     )
   })
 
