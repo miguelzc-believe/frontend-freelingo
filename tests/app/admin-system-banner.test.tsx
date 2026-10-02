@@ -318,4 +318,39 @@ describe('Admin system dashboard banner', () => {
     )
     expect(title).toHaveValue('Keep this')
   })
+
+  it('labels the active checkbox without folding the hint into its name', async () => {
+    mockApiFetch.mockReset()
+    mockApiFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          source_locale: 'en',
+          is_active: false,
+          revision: 1,
+          translations: generatedTranslations,
+          updated_at: '2026-08-06T10:00:00Z',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+
+    render(<AdminSystemPage />)
+    await screen.findByText('dashboardBanner.description')
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'dashboardBanner.activeLabel',
+    })
+    expect(checkbox).toHaveAttribute('id', 'dashboard-banner-active')
+    expect(checkbox).toHaveAttribute(
+      'aria-describedby',
+      'dashboard-banner-active-hint'
+    )
+    expect(
+      document.getElementById('dashboard-banner-active-hint')
+    ).toHaveTextContent('dashboardBanner.activeHint')
+
+    expect(checkbox).not.toBeChecked()
+    fireEvent.click(screen.getByText('dashboardBanner.activeLabel'))
+    expect(checkbox).toBeChecked()
+  })
 })

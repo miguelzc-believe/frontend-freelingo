@@ -328,22 +328,30 @@ export default function AdminSystemPage() {
                   ))}
                 </select>
               </label>
-              <label className="flex items-end gap-3 pb-2 font-mono text-xs">
+              <div className="flex items-end gap-3 pb-2 font-mono text-xs">
                 <input
+                  id="dashboard-banner-active"
                   type="checkbox"
                   checked={isActive}
                   onChange={(event) => setIsActive(event.target.checked)}
+                  aria-describedby="dashboard-banner-active-hint"
                   className="accent-fl-accent size-4"
                 />
-                <span>
-                  <span className="text-fl-fg block font-bold">
+                <span className="block">
+                  <label
+                    htmlFor="dashboard-banner-active"
+                    className="text-fl-fg block font-bold"
+                  >
                     {t('dashboardBanner.activeLabel')}
-                  </span>
-                  <span className="text-fl-muted-3 mt-1 block">
+                  </label>
+                  <span
+                    id="dashboard-banner-active-hint"
+                    className="text-fl-muted-3 mt-1 block"
+                  >
                     {t('dashboardBanner.activeHint')}
                   </span>
                 </span>
-              </label>
+              </div>
             </div>
 
             <div className="grid gap-4">
