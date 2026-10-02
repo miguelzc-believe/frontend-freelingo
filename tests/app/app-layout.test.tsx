@@ -15,6 +15,7 @@ const {
   mockReplace,
   mockHandleLogout,
   mockLoadConfig,
+  mockPathname,
 } = vi.hoisted(() => ({
   mockApiFetch: vi.fn(),
   mockRefresh: vi.fn(),
@@ -22,6 +23,7 @@ const {
   mockReplace: vi.fn(),
   mockHandleLogout: vi.fn(),
   mockLoadConfig: vi.fn(),
+  mockPathname: { value: '/dashboard' },
 }))
 
 vi.mock('use-intl', () => ({
@@ -32,7 +34,7 @@ vi.mock('use-intl', () => ({
 
 vi.mock('@/lib/navigation', () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
-  usePathname: () => '/dashboard',
+  usePathname: () => mockPathname.value,
   useSearchParams: () => new URLSearchParams(),
 }))
 
@@ -101,6 +103,7 @@ beforeEach(() => {
   mockReplace.mockReset()
   mockHandleLogout.mockReset()
   mockLoadConfig.mockReset()
+  mockPathname.value = '/dashboard'
   useAuthStore.setState({ accessToken: null, user: null })
   useConfigStore.setState({ stripeEnabled: false, load: mockLoadConfig })
 })
@@ -312,5 +315,56 @@ describe('AppLayout', () => {
       window.dispatchEvent(new Event('freelingo:feedback-read'))
     })
     expect(summaryRequests).toBe(2)
+  })
+
+  it('caps large feedback counts and closes the mobile menu after navigation', async () => {
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    mockAuthenticatedApi(mePayload, 123)
+    renderLayout()
+
+    expect(await screen.findByText('99+')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'openMenu' }))
+    const resourceButtons = screen.getAllByRole('button', { name: /resources/ })
+    fireEvent.click(resourceButtons.at(-1) as HTMLButtonElement)
+
+    const grammarLinks = screen.getAllByRole('link', { name: /grammar/ })
+    fireEvent.click(grammarLinks.at(-1) as HTMLAnchorElement)
+    expect(screen.getByRole('button', { name: 'openMenu' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'closeMenu' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the mobile admin link and premium badge for a freemium user', async () => {
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    useConfigStore.setState({ stripeEnabled: true, load: mockLoadConfig })
+    mockAuthenticatedApi({ ...mePayload, role: 'admin' })
+    renderLayout()
+
+    expect(await screen.findByText('page-content')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'openMenu' }))
+    expect(screen.getAllByText('admin')).toHaveLength(2)
+    expect(screen.getAllByText('★').length).toBeGreaterThan(0)
+    const adminLinks = screen.getAllByRole('link', { name: /admin/ })
+    fireEvent.click(adminLinks.at(-1) as HTMLAnchorElement)
+    expect(
+      screen.queryByRole('button', { name: 'closeMenu' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the feedback badge empty when its summary request fails', async () => {
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/me') return jsonResponse(mePayload)
+      if (url === '/api/feedback/unread-summary') return jsonResponse({}, 503)
+      throw new Error(`Unexpected apiFetch: ${url}`)
+    })
+    renderLayout()
+
+    expect(await screen.findByText('page-content')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/unread-summary')
+    )
+    expect(screen.queryByText('99+')).not.toBeInTheDocument()
   })
 })

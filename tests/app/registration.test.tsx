@@ -213,6 +213,71 @@ describe('registration availability', () => {
     }
   )
 
+  it.each([
+    ['Username already taken', 'usernameTaken'],
+    ['Email already taken', 'emailTaken'],
+    ['Registration is closed', 'registrationClosed'],
+    ['Invalid or expired invite', 'invalidInvite'],
+    ['Email domain not allowed', 'invalidEmail'],
+    ['Unexpected backend detail', 'error'],
+  ])('maps registration failure %s to %s', async (detail, message) => {
+    vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail }), { status: 409 })
+    )
+    const { container } = render(<RegisterPage />)
+    await screen.findByRole('button', { name: 'auth.register.submit' })
+
+    await fillAndSubmit(container)
+
+    expect(
+      await screen.findByText(new RegExp(`auth\\.register\\.${message}`))
+    ).toBeInTheDocument()
+  })
+
+  it.each([
+    [{ loc: ['body', 'email'], msg: 'value is invalid' }, 'invalidEmail'],
+    [{ loc: ['body', 'other'], msg: 'invalid email format' }, 'invalidEmail'],
+    [{ loc: ['body', 'password'], msg: 'value is invalid' }, 'invalidPassword'],
+  ])('maps structured validation detail to %s', async (detail, message) => {
+    vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: [detail] }), { status: 422 })
+    )
+    const { container } = render(<RegisterPage />)
+    await screen.findByRole('button', { name: 'auth.register.submit' })
+
+    await fillAndSubmit(container)
+
+    expect(
+      await screen.findByText(new RegExp(`auth\\.register\\.${message}`))
+    ).toBeInTheDocument()
+  })
+
+  it('toggles visibility of both password fields', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
+    const { container } = render(<RegisterPage />)
+    await screen.findByRole('button', { name: 'auth.register.submit' })
+
+    const passwords = container.querySelectorAll('input[type="password"]')
+    expect(passwords).toHaveLength(2)
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'auth.register.showPassword' })[0]!
+    )
+    expect(container.querySelectorAll('input[type="text"]')).toHaveLength(3)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'auth.register.showPassword' })
+    )
+    expect(container.querySelectorAll('input[type="text"]')).toHaveLength(4)
+    expect(
+      screen.getAllByRole('button', { name: 'auth.register.hidePassword' })
+    ).toHaveLength(2)
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'auth.register.hidePassword' })[0]!
+    )
+    expect(container.querySelectorAll('input[type="password"]')).toHaveLength(1)
+  })
+
   it.each([true, false])(
     'shows the login signup link only for registration=%s',
     async (allowRegistration) => {
