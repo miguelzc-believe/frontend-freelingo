@@ -115,9 +115,7 @@ async function selectWordInQuestion(word: string, questionText: string) {
   const question = await screen.findByText(questionText)
   mockSelection(word)
   fireEvent.pointerUp(question)
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  })
+  await screen.findByText('saveWord')
 }
 
 async function submitCurrentAnswer(answer: string) {
