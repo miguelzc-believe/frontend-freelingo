@@ -26,7 +26,8 @@ const {
 
 vi.mock('use-intl', () => ({
   useLocale: () => 'en',
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: { days?: number }) =>
+    key === 'trialDays' ? `${key} ${values?.days}` : key,
 }))
 
 vi.mock('@/lib/navigation', () => ({
@@ -134,6 +135,30 @@ describe('AppLayout', () => {
     expect(screen.getAllByText('3').length).toBeGreaterThan(0)
     expect(screen.queryByText('admin')).not.toBeInTheDocument()
     expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('renders the Stripe trial countdown without marking premium navigation as unsubscribed', async () => {
+    const dateNow = vi
+      .spyOn(Date, 'now')
+      .mockReturnValue(new Date('2025-01-01T12:00:00.000Z').getTime())
+    try {
+      mockRefresh.mockResolvedValue('fresh-token')
+      mockAuthenticatedApi({
+        ...mePayload,
+        subscription_status: 'trialing',
+        subscription_ends_at: '2025-01-04T12:00:00.000Z',
+      })
+      useConfigStore.setState({ stripeEnabled: true, load: mockLoadConfig })
+      renderLayout()
+
+      expect(await screen.findByText('page-content')).toBeInTheDocument()
+      expect(screen.getByText(/^★ trialDays 3$/)).toBeInTheDocument()
+      const tutorLink = screen.getByRole('link', { name: /^●tutor$/ })
+      expect(within(tutorLink).queryByText('★')).not.toBeInTheDocument()
+      expect(useAuthStore.getState().user?.subscription_status).toBe('trialing')
+    } finally {
+      dateNow.mockRestore()
+    }
   })
 
   it('skips the refresh call when an access token is already in memory', async () => {
