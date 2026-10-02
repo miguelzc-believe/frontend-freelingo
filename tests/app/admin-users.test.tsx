@@ -96,6 +96,25 @@ async function renderLoadedPage() {
   return { ...view, row: within(row) }
 }
 
+async function openCreateUserForm(username = 'New User') {
+  render(<AdminUsersPage />)
+  await screen.findByRole('row', { name: /Ada Lovelace|New User/ })
+  fireEvent.click(screen.getByRole('button', { name: 'createUserBtn' }))
+  fireEvent.change(screen.getByLabelText('fieldUsername'), {
+    target: { value: username },
+  })
+  fireEvent.change(screen.getByLabelText('fieldEmail'), {
+    target: { value: 'new@example.com' },
+  })
+  fireEvent.change(screen.getByLabelText('fieldPassword'), {
+    target: { value: 'password123' },
+  })
+  fireEvent.change(screen.getByLabelText('fieldDisplayName'), {
+    target: { value: 'New User' },
+  })
+  return screen.getByRole('dialog', { name: 'createUser' })
+}
+
 describe('AdminUsersPage', () => {
   beforeEach(() => {
     mockApiFetch.mockReset().mockImplementation(async () => listResponse())
@@ -212,6 +231,90 @@ describe('AdminUsersPage', () => {
         body: expect.stringContaining('ada_user'),
       })
     )
+  })
+
+  it('rejects invalid username characters without posting', async () => {
+    const dialog = await openCreateUserForm('bad/name')
+
+    fireEvent.click(screen.getByRole('button', { name: 'submitCreate' }))
+
+    expect(
+      await within(dialog).findByText('invalidUsernameChars')
+    ).toBeInTheDocument()
+    expect(
+      mockApiFetch.mock.calls.filter(
+        ([url, options]) =>
+          url === '/api/admin/users' && options?.method === 'POST'
+      )
+    ).toHaveLength(0)
+    expect(dialog).toBeInTheDocument()
+  })
+
+  it('shows the specific email conflict and keeps the create dialog open', async () => {
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url === '/api/admin/users'
+        ? jsonResponse({ detail: 'Email already taken' }, 409)
+        : listResponse()
+    )
+    const dialog = await openCreateUserForm()
+
+    fireEvent.click(screen.getByRole('button', { name: 'submitCreate' }))
+
+    expect(await within(dialog).findByText('emailTaken')).toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
+  })
+
+  it('shows a generic create error for other non-OK responses and keeps the dialog open', async () => {
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url === '/api/admin/users' ? jsonResponse({}, 503) : listResponse()
+    )
+    const dialog = await openCreateUserForm()
+
+    fireEvent.click(screen.getByRole('button', { name: 'submitCreate' }))
+
+    expect(
+      await within(dialog).findByText('createUserError')
+    ).toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
+  })
+
+  it('creates with a normalized username, closes and resets the form, then reloads users', async () => {
+    const createdUser = {
+      ...user,
+      username: 'new_user',
+      email: 'new@example.com',
+      display_name: 'New User',
+    }
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url === '/api/admin/users'
+        ? jsonResponse(createdUser)
+        : listResponse([createdUser])
+    )
+    await openCreateUserForm('New User')
+    const initialListCalls = usersCalls().length
+
+    fireEvent.click(screen.getByRole('button', { name: 'submitCreate' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
+    )
+    expect(
+      await screen.findByRole('row', { name: /New User/ })
+    ).toBeInTheDocument()
+    expect(usersCalls()).toHaveLength(initialListCalls + 1)
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/admin/users',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"username":"new_user"'),
+      })
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'createUserBtn' }))
+    expect(screen.getByLabelText('fieldUsername')).toHaveValue('')
+    expect(screen.getByLabelText('fieldEmail')).toHaveValue('')
+    expect(screen.getByLabelText('fieldPassword')).toHaveValue('')
+    expect(screen.getByLabelText('fieldDisplayName')).toHaveValue('')
   })
 
   it('reports a failed activation and does not reload the list', async () => {
