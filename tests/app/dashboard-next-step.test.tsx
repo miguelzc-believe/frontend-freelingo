@@ -31,14 +31,13 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('@/components/tour/OnboardingTour', () => ({ default: () => null }))
 vi.mock('@/components/whats-new/WhatsNew', () => ({ default: () => null }))
-vi.mock('@/components/dashboard/DashboardAnnouncement', () => ({
-  DashboardAnnouncement: () => null,
-}))
 vi.mock('@/components/billing/SubscriptionPlanButtons', () => ({
   default: () => null,
 }))
 
 import DashboardPage from '@/app/(app)/dashboard/page'
+import { useConfigStore } from '@/store/config'
+import { useProgressStore } from '@/store/progress'
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -65,10 +64,13 @@ function todayPayload(overrides: Record<string, unknown>) {
   }
 }
 
-function mockToday(payload: Record<string, unknown>) {
+function mockDashboard(
+  payload: Record<string, unknown>,
+  progress: Record<string, unknown> = {}
+) {
   mockApiFetch.mockImplementation((url: string) => {
     if (url === '/api/progress/summary') {
-      return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse(progress))
     }
     if (url === '/api/study-plan/today') {
       return Promise.resolve(jsonResponse(payload))
@@ -77,13 +79,28 @@ function mockToday(payload: Record<string, unknown>) {
   })
 }
 
+function mockToday(payload: Record<string, unknown>) {
+  mockDashboard(payload)
+}
+
 describe('dashboard end-of-plan next step', () => {
   beforeEach(() => {
     mockApiFetch.mockReset()
     mockPush.mockReset()
+    useConfigStore.setState({
+      stripeEnabled: false,
+      dashboardBanner: null,
+    })
+    useProgressStore.setState({
+      streak: 0,
+      xp: 0,
+      skills: {},
+      todayLessons: [],
+      completedToday: [],
+    })
   })
 
-  it('offers the real level test when the plan reached its final position', async () => {
+  it('offers the level test at the final plan position', async () => {
     mockToday(
       todayPayload({
         progress_day: 15,
@@ -106,7 +123,7 @@ describe('dashboard end-of-plan next step', () => {
     expect(link).toHaveAttribute('href', '/assessment/level-test?plan=7')
   })
 
-  it('shows the persisted result and the retake-assessment action after an advance', async () => {
+  it('shows the result and retake action after advancing', async () => {
     mockToday(
       todayPayload({
         progress_day: 15,
@@ -156,7 +173,7 @@ describe('dashboard end-of-plan next step', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('routes back to My Plan when the result recommends reinforcement', async () => {
+  it('routes to My Plan when the result recommends reinforcement', async () => {
     mockToday(
       todayPayload({
         progress_day: 15,
@@ -177,7 +194,7 @@ describe('dashboard end-of-plan next step', () => {
     )
   })
 
-  it('keeps the normal lesson next step while the plan is in progress', async () => {
+  it('keeps the lesson next step while the plan is in progress', async () => {
     mockToday(
       todayPayload({
         lessons: [
@@ -203,5 +220,178 @@ describe('dashboard end-of-plan next step', () => {
       .getAllByRole('link')
       .filter((link) => link.getAttribute('href') === '/lesson/5')
     expect(lessonLinks.length).toBeGreaterThan(0)
+  })
+
+  it('invites learners without a plan to take an assessment', async () => {
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/progress/summary'
+          ? jsonResponse({ current_streak: 3, total_xp: 45 })
+          : jsonResponse({}, 404)
+      )
+    )
+
+    render(<DashboardPage />)
+
+    expect(
+      (await screen.findAllByText('startWithAssessment')).length
+    ).toBeGreaterThan(0)
+    expect(screen.getByText('assessmentCreatesPlan')).toBeInTheDocument()
+    expect(
+      screen.getAllByRole('link', { name: 'takeAssessmentArrow' })
+    ).toHaveLength(2)
+    expect(screen.getByText('3d')).toBeInTheDocument()
+    expect(screen.getByText('45')).toBeInTheDocument()
+    expect(screen.getByText('noExercisesYet')).toBeInTheDocument()
+    expect(screen.getByText('noSkills')).toBeInTheDocument()
+    expect(screen.getByText('planProgress')).toBeInTheDocument()
+    expect(screen.getAllByText('startWithAssessment')).toHaveLength(3)
+    expect(screen.queryByText('0%')).not.toBeInTheDocument()
+  })
+
+  it('shows plan, vocabulary, and performance progress', async () => {
+    mockDashboard(
+      todayPayload({
+        progress_day: 4,
+        total_days: 10,
+        pending_count: 2,
+        lessons: [
+          {
+            id: 21,
+            title: 'Finished lesson',
+            lesson_type: 'reading',
+            week: 1,
+            day: 1,
+            objectives: [],
+            estimated_minutes: 20,
+            is_completed: false,
+          },
+          {
+            id: 22,
+            title: 'Current lesson',
+            lesson_type: 'grammar',
+            week: 1,
+            day: 2,
+            objectives: [],
+            estimated_minutes: 30,
+            is_completed: false,
+          },
+          {
+            id: null,
+            title: 'Completed without an id',
+            lesson_type: 'vocabulary',
+            week: 1,
+            day: 3,
+            objectives: [],
+            estimated_minutes: 25,
+            is_completed: true,
+          },
+        ],
+      }),
+      {
+        current_streak: 2,
+        total_xp: 120,
+        total_lessons: 8,
+        total_exercises: 10,
+        exercises_correct: 8,
+        accuracy: 0.8,
+        vocabulary_level: 'A2',
+        vocabulary_mastered: 30,
+        vocabulary_total: 100,
+        vocabulary_progress: 0.3,
+        skills: { speaking: 0.9, grammar: 0.4, reading: 0.7 },
+      }
+    )
+    useProgressStore.setState({ completedToday: [21] })
+
+    render(<DashboardPage />)
+
+    expect(await screen.findByText('dayProgress')).toBeInTheDocument()
+    expect(screen.getAllByText('40%').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('5 / 10')).toBeInTheDocument()
+    expect(screen.getByText('6')).toBeInTheDocument()
+    expect(screen.getByText('vocabularyProgress')).toBeInTheDocument()
+    expect(screen.getByText('30%')).toBeInTheDocument()
+    expect(screen.getByText('vocabularyWords')).toBeInTheDocument()
+    expect(screen.getByText('80%')).toBeInTheDocument()
+    expect(screen.getByText('exerciseStats')).toBeInTheDocument()
+    expect(screen.getByText('performanceNeedsPractice')).toBeInTheDocument()
+    expect(screen.getByText('performanceInProgress')).toBeInTheDocument()
+    expect(screen.getByText('performanceStrong')).toBeInTheDocument()
+    expect(screen.getAllByText('lessonDone')).toHaveLength(2)
+    expect(
+      screen
+        .getAllByRole('link', { name: 'startLesson' })
+        .every((link) => link.getAttribute('href') === '/lesson/22')
+    ).toBe(true)
+    expect(screen.getByText('2 pendingLessons →')).toBeInTheDocument()
+  })
+
+  it('shows an announcement when today is complete', async () => {
+    useConfigStore.setState({
+      dashboardBanner: {
+        revision: 4,
+        translations: {
+          en: {
+            title: 'A dashboard update',
+            subtitle: 'New this week',
+            description: 'A short announcement for learners.',
+          },
+        },
+      },
+    })
+    mockDashboard(
+      todayPayload({
+        pending_count: 3,
+        lessons: [
+          {
+            id: 31,
+            title: 'Already complete',
+            lesson_type: 'grammar',
+            week: 1,
+            day: 1,
+            objectives: [],
+            estimated_minutes: 25,
+            is_completed: true,
+          },
+        ],
+      })
+    )
+
+    render(<DashboardPage />)
+
+    expect(await screen.findByText('A dashboard update')).toBeInTheDocument()
+    expect(
+      screen.getByText('A short announcement for learners.')
+    ).toBeInTheDocument()
+    expect(screen.getByText('allCaughtUp')).toBeInTheDocument()
+    expect(screen.getByText('pendingStillAvailable')).toBeInTheDocument()
+    expect(screen.getByText('completedToday')).toBeInTheDocument()
+    expect(screen.getByText('lessonDone')).toBeInTheDocument()
+    expect(
+      screen
+        .getAllByRole('link', { name: 'goToMyPlan' })
+        .every((link) => link.getAttribute('href') === '/plan')
+    ).toBe(true)
+  })
+
+  it('shows an empty day after the progress request fails', async () => {
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/progress/summary'
+          ? jsonResponse({}, 503)
+          : jsonResponse(todayPayload({ lessons: [] }))
+      )
+    )
+
+    render(<DashboardPage />)
+
+    expect((await screen.findAllByText('allCaughtUp')).length).toBeGreaterThan(
+      0
+    )
+    expect(screen.getByText('noPendingToday')).toBeInTheDocument()
+    expect(screen.getByText('noExercisesYet')).toBeInTheDocument()
+    expect(screen.getByText('noSkills')).toBeInTheDocument()
+    expect(screen.queryByText('pendingLessons →')).not.toBeInTheDocument()
   })
 })
