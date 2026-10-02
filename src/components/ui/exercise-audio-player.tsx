@@ -7,6 +7,8 @@ interface ExerciseAudioPlayerProps {
   onFirstPlay?: () => void
 }
 
+const SEEK_STEP_SECONDS = 5
+
 export function ExerciseAudioPlayer({
   exerciseId,
   onFirstPlay,
@@ -77,13 +79,45 @@ export function ExerciseAudioPlayer({
     }
   }
 
-  function handleSeek(e: React.MouseEvent<HTMLDivElement>) {
+  function seekToRatio(ratio: number) {
     const audio = audioRef.current
     if (!audio || audio.duration === 0) return
+    const clamped = Math.min(1, Math.max(0, ratio))
+    audio.currentTime = clamped * audio.duration
+    setProgress(clamped * 100)
+  }
+
+  function handleSeek(e: React.MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect()
-    const ratio = (e.clientX - rect.left) / rect.width
-    audio.currentTime = ratio * audio.duration
-    setProgress(ratio * 100)
+    seekToRatio((e.clientX - rect.left) / rect.width)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const key = e.key
+    if (
+      key !== 'ArrowLeft' &&
+      key !== 'ArrowRight' &&
+      key !== 'ArrowUp' &&
+      key !== 'ArrowDown' &&
+      key !== 'Home' &&
+      key !== 'End'
+    ) {
+      return
+    }
+    e.preventDefault()
+    const audio = audioRef.current
+    if (!audio || audio.duration === 0) return
+    const step = SEEK_STEP_SECONDS / audio.duration
+    const current = audio.currentTime / audio.duration
+    if (key === 'Home') {
+      seekToRatio(0)
+    } else if (key === 'End') {
+      seekToRatio(1)
+    } else if (key === 'ArrowRight' || key === 'ArrowUp') {
+      seekToRatio(current + step)
+    } else {
+      seekToRatio(current - step)
+    }
   }
 
   useEffect(() => {
@@ -109,9 +143,12 @@ export function ExerciseAudioPlayer({
         </button>
 
         <div
-          className="bg-fl-border relative h-1.5 flex-1 cursor-pointer"
+          className="bg-fl-border relative h-1.5 flex-1 cursor-pointer focus-visible:outline-fl-fg focus-visible:outline-2 focus-visible:outline-offset-2"
           onClick={handleSeek}
-          role="progressbar"
+          onKeyDown={handleKeyDown}
+          role="slider"
+          tabIndex={0}
+          aria-label={t('seekLabel')}
           aria-valuenow={Math.round(progress)}
           aria-valuemin={0}
           aria-valuemax={100}

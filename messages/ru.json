@@ -1558,7 +1558,8 @@
     "practiceMore": "Практиковать",
     "moreInHistory": "+{count} ещё",
     "practiceAgain": "Практиковаться снова",
-    "replayNoXp": "Повтор (без XP)"
+    "replayNoXp": "Повтор (без XP)",
+    "seekLabel": "Перемотка"
   },
   "reading": {
     "title": "Чтение",

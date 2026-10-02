@@ -1558,7 +1558,8 @@
     "practiceMore": "Pratiquer",
     "moreInHistory": "+{count} de plus",
     "practiceAgain": "Pratiquer à nouveau",
-    "replayNoXp": "Répétition (sans XP)"
+    "replayNoXp": "Répétition (sans XP)",
+    "seekLabel": "Déplacer"
   },
   "reading": {
     "title": "Lecture",

@@ -1558,7 +1558,8 @@
     "practiceMore": "Harjoittele",
     "moreInHistory": "+{count} lisää",
     "practiceAgain": "Harjoittele uudelleen",
-    "replayNoXp": "Toista (ei XP-pisteitä)"
+    "replayNoXp": "Toista (ei XP-pisteitä)",
+    "seekLabel": "Etsi"
   },
   "reading": {
     "title": "Lukeminen",

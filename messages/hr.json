@@ -1558,7 +1558,8 @@
     "practiceMore": "Vježbaj",
     "moreInHistory": "+{count} više",
     "practiceAgain": "Vježbaj ponovno",
-    "replayNoXp": "Ponovi (bez XP-a)"
+    "replayNoXp": "Ponovi (bez XP-a)",
+    "seekLabel": "Pretraži"
   },
   "reading": {
     "title": "Čitanje",

@@ -1558,7 +1558,8 @@
     "practiceMore": "Practică",
     "moreInHistory": "+{count} mai multe",
     "practiceAgain": "Exersează din nou",
-    "replayNoXp": "Repetare (fără XP)"
+    "replayNoXp": "Repetare (fără XP)",
+    "seekLabel": "Caută"
   },
   "reading": {
     "title": "Lectură",

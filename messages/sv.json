@@ -1558,7 +1558,8 @@
     "practiceMore": "Öva",
     "moreInHistory": "+{count} till",
     "practiceAgain": "Öva igen",
-    "replayNoXp": "Gör om (inga XP)"
+    "replayNoXp": "Gör om (inga XP)",
+    "seekLabel": "Sök"
   },
   "reading": {
     "title": "Läsning",

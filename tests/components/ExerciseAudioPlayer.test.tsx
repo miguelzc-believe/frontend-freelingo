@@ -120,7 +120,7 @@ describe('ExerciseAudioPlayer', () => {
     expect(screen.getByText('11s')).toBeInTheDocument()
     audio.currentTime = 3
     await act(async () => audio.emit('timeupdate'))
-    const progress = screen.getByRole('progressbar')
+    const progress = screen.getByRole('slider')
     expect(progress).toHaveAttribute('aria-valuenow', '29')
 
     audio.duration = 0
@@ -178,7 +178,7 @@ describe('ExerciseAudioPlayer', () => {
 
   it('handles audio errors, guards seeking without duration, seeks by track ratio, and cleans up on unmount', async () => {
     const { unmount } = render(<ExerciseAudioPlayer exerciseId={23} />)
-    const progress = screen.getByRole('progressbar')
+    const progress = screen.getByRole('slider')
     fireEvent.click(progress, { clientX: 50 })
     expect(audio.currentTime).toBe(0)
 
@@ -202,5 +202,71 @@ describe('ExerciseAudioPlayer', () => {
     const idle = render(<ExerciseAudioPlayer exerciseId={24} />)
     idle.unmount()
     expect(revokedUrls).toEqual(['blob:exercise-1'])
+  })
+
+  it('exposes the seek slider as focusable with an accessible name', () => {
+    render(<ExerciseAudioPlayer exerciseId={30} />)
+    const slider = screen.getByRole('slider', { name: 'seekLabel' })
+    expect(slider).toHaveAttribute('tabindex', '0')
+  })
+
+  it('moves the seek position by five seconds with the arrow keys', async () => {
+    render(<ExerciseAudioPlayer exerciseId={31} />)
+    const slider = screen.getByRole('slider')
+    await startPlaying()
+    audio.duration = 10
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    expect(audio.currentTime).toBe(5)
+    fireEvent.keyDown(slider, { key: 'ArrowUp' })
+    expect(audio.currentTime).toBe(10)
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' })
+    expect(audio.currentTime).toBe(5)
+    fireEvent.keyDown(slider, { key: 'ArrowDown' })
+    expect(audio.currentTime).toBe(0)
+  })
+
+  it('seeks to the track bounds with Home and End', async () => {
+    render(<ExerciseAudioPlayer exerciseId={32} />)
+    const slider = screen.getByRole('slider')
+    await startPlaying()
+    audio.duration = 10
+    audio.currentTime = 4
+
+    fireEvent.keyDown(slider, { key: 'Home' })
+    expect(audio.currentTime).toBe(0)
+    fireEvent.keyDown(slider, { key: 'End' })
+    expect(audio.currentTime).toBe(10)
+  })
+
+  it('ignores keyboard seeking while the duration is unknown', async () => {
+    render(<ExerciseAudioPlayer exerciseId={33} />)
+    const slider = screen.getByRole('slider')
+    await startPlaying()
+    audio.duration = 0
+    audio.currentTime = 3
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' })
+    fireEvent.keyDown(slider, { key: 'Home' })
+    fireEvent.keyDown(slider, { key: 'End' })
+    expect(audio.currentTime).toBe(3)
+  })
+
+  it('clamps keyboard seeks so currentTime stays within the track bounds', async () => {
+    render(<ExerciseAudioPlayer exerciseId={34} />)
+    const slider = screen.getByRole('slider')
+    await startPlaying()
+    audio.duration = 10
+    audio.currentTime = 2
+
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' })
+    expect(audio.currentTime).toBe(0)
+    expect(audio.currentTime).toBeGreaterThanOrEqual(0)
+
+    audio.currentTime = 8
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    expect(audio.currentTime).toBe(10)
+    expect(audio.currentTime).toBeLessThanOrEqual(10)
   })
 })

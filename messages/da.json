@@ -1558,7 +1558,8 @@
     "practiceMore": "Øv dig",
     "moreInHistory": "+{count} mere",
     "practiceAgain": "Øv igen",
-    "replayNoXp": "Gentag (ingen XP)"
+    "replayNoXp": "Gentag (ingen XP)",
+    "seekLabel": "Søg"
   },
   "reading": {
     "title": "Læsning",

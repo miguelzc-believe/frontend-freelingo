@@ -1558,7 +1558,8 @@
     "practiceMore": "Pratik",
     "moreInHistory": "+{count} tane daha",
     "practiceAgain": "Tekrar pratik yap",
-    "replayNoXp": "Tekrar oyna (XP yok)"
+    "replayNoXp": "Tekrar oyna (XP yok)",
+    "seekLabel": "Ara"
   },
   "reading": {
     "title": "Okuma",

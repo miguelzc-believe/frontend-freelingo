@@ -1558,7 +1558,8 @@
     "practiceMore": "Oefenen",
     "moreInHistory": "+{count} meer",
     "practiceAgain": "Opnieuw oefenen",
-    "replayNoXp": "Herhaling (geen XP)"
+    "replayNoXp": "Herhaling (geen XP)",
+    "seekLabel": "Zoeken"
   },
   "reading": {
     "title": "Lezen",
