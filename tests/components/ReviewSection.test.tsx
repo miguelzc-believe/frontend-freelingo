@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ReviewSection } from '@/components/settings/ReviewSection'
 import type { ReviewAdmin } from '@/types/api'
 
@@ -28,6 +28,14 @@ vi.mock('@/lib/reviews', () => ({
 vi.mock('use-intl', () => ({
   useTranslations: () => mockTranslate,
 }))
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
 
 const review: ReviewAdmin = {
   id: 7,
@@ -82,6 +90,55 @@ describe('ReviewSection', () => {
       })
     )
     expect(mockCreateReview).not.toHaveBeenCalled()
+    expect(await screen.findByText('reviewSaved')).toBeInTheDocument()
+  })
+
+  it('keeps the loaded review form and selected rating through a pending update', async () => {
+    const fetch = deferred<{ has_review: boolean; review: ReviewAdmin }>()
+    const update = deferred<ReviewAdmin>()
+    const updatedReview = { ...review, rating: 5, comment: 'Updated comment' }
+    mockFetchMyReview.mockReturnValueOnce(fetch.promise)
+    mockUpdateMyReview.mockReturnValueOnce(update.promise)
+
+    render(<ReviewSection />)
+
+    expect(screen.getByText('checking')).toBeInTheDocument()
+    expect(screen.queryByLabelText('commentLabel')).not.toBeInTheDocument()
+    await act(async () => {
+      fetch.resolve({ has_review: true, review })
+      await fetch.promise
+    })
+
+    expect(await screen.findByText('reviewPending')).toBeInTheDocument()
+    expect(screen.getByLabelText('commentLabel')).toHaveValue('Useful lessons')
+    expect(screen.getByLabelText('3 out of 5 stars')).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+
+    const fiveStarRadio = screen.getByLabelText('5 out of 5 stars')
+    expect(fiveStarRadio.isConnected).toBe(true)
+    fireEvent.click(fiveStarRadio)
+    expect(fiveStarRadio).toHaveAttribute('aria-checked', 'true')
+    fireEvent.change(screen.getByLabelText('commentLabel'), {
+      target: { value: 'Updated comment' },
+    })
+    fireEvent.click(screen.getByText('reviewUpdate'))
+    await waitFor(() =>
+      expect(mockUpdateMyReview).toHaveBeenCalledWith({
+        rating: 5,
+        comment: 'Updated comment',
+      })
+    )
+    expect(fiveStarRadio.isConnected).toBe(true)
+
+    await act(async () => {
+      update.resolve(updatedReview)
+      await update.promise
+    })
+
+    expect(fiveStarRadio).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByLabelText('commentLabel')).toHaveValue('Updated comment')
     expect(await screen.findByText('reviewSaved')).toBeInTheDocument()
   })
 
