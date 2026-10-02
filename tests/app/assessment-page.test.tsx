@@ -74,12 +74,17 @@ function jsonResponse(data: unknown, status = 200) {
   })
 }
 
-function mockApi(plan: unknown, completeStatus = 200, voiceTrialStatus = 200) {
+function mockApi(
+  plan: unknown,
+  completeStatus = 200,
+  voiceTrialStatus = 200,
+  questions: AssessmentQuestion[] = bank
+) {
   mockApiFetch.mockImplementation(async (url: string) => {
     if (url === '/api/study-plan/current')
       return plan ? jsonResponse(plan) : jsonResponse({}, 404)
     if (url.startsWith('/api/assessment/bank'))
-      return jsonResponse({ questions: bank })
+      return jsonResponse({ questions })
     if (url === '/api/assessment/evaluate') return jsonResponse(evaluateResult)
     if (url === '/api/assessment/complete')
       return completeStatus === 200
@@ -245,5 +250,88 @@ describe('AssessmentPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /startMyPlan/ }))
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/plan'))
     expect(completeRequestBody()).toMatchObject({ cefr_level: 'B1' })
+  })
+
+  it('keeps the learner at the gate when the question bank is empty', async () => {
+    mockApi(null, 200, 200, [])
+    render(<AssessmentPage />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startWarningConfirm' }))
+
+    expect(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('step2')).not.toBeInTheDocument()
+  })
+
+  it('moves up after a correct streak and down after a wrong streak', async () => {
+    const questions: AssessmentQuestion[] = [
+      ...['a2-1', 'a2-2'].map((id) => ({
+        ...bank[0]!,
+        id,
+        difficulty: 'A2' as const,
+      })),
+      ...['b1-1', 'b1-2'].map((id) => ({
+        ...bank[0]!,
+        id,
+        difficulty: 'B1' as const,
+      })),
+      { ...bank[0]!, id: 'a1-1', difficulty: 'A1' },
+    ]
+    mockApi(null, 200, 200, questions)
+    render(<AssessmentPage />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startWarningConfirm' }))
+    fireEvent.click(await screen.findByRole('button', { name: /sind/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /sind/ }))
+    expect(await screen.findByText('B1')).toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: /haben/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /haben/ }))
+    expect(await screen.findByText('A1')).toBeInTheDocument()
+  })
+
+  it('does not step down below A1', async () => {
+    const questions: AssessmentQuestion[] = [
+      { ...bank[0]!, id: 'a2-1', difficulty: 'A2' },
+      { ...bank[0]!, id: 'a2-2', difficulty: 'A2' },
+      { ...bank[0]!, id: 'a1-1', difficulty: 'A1' },
+      { ...bank[0]!, id: 'a1-2', difficulty: 'A1' },
+      { ...bank[0]!, id: 'a1-3', difficulty: 'A1' },
+    ]
+    mockApi(null, 200, 200, questions)
+    render(<AssessmentPage />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startWarningConfirm' }))
+    fireEvent.click(await screen.findByRole('button', { name: /haben/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /haben/ }))
+    expect(
+      await screen.findByRole('button', { name: /sind/ })
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /haben/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /haben/ }))
+    expect(await screen.findByText('A1')).toBeInTheDocument()
+  })
+
+  it('backs out of the beginner duration flow to the beginner gate', async () => {
+    mockApi(null)
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /beginnerOption/ })
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /back/ }))
+
+    expect(
+      await screen.findByRole('button', { name: /beginnerOption/ })
+    ).toBeInTheDocument()
   })
 })

@@ -79,17 +79,28 @@ const planPayload = {
 
 function mockPlan(
   completionState: 'in_progress' | 'ready' | 'taken' | 'unavailable',
-  planOverrides: Record<string, unknown> = {}
+  planOverrides: Record<string, unknown> = {},
+  responses: {
+    planStatus?: number
+    competencies?: unknown
+    today?: unknown
+    pending?: unknown
+    lessons?: unknown
+    units?: unknown
+  } = {}
 ) {
   const currentPlan = { ...planPayload, ...planOverrides }
   mockApiFetch.mockImplementation((url: string) => {
     if (url === '/api/study-plan/current') {
-      return Promise.resolve(jsonResponse(currentPlan))
+      return Promise.resolve(jsonResponse(currentPlan, responses.planStatus))
     }
     if (url === '/api/progress/competencies') {
-      return Promise.resolve(jsonResponse([]))
+      return Promise.resolve(jsonResponse(responses.competencies ?? []))
     }
     if (url === '/api/study-plan/today') {
+      if (responses.today !== undefined) {
+        return Promise.resolve(jsonResponse(responses.today))
+      }
       if (completionState === 'unavailable') {
         return Promise.resolve(jsonResponse({}, 500))
       }
@@ -105,27 +116,29 @@ function mockPlan(
         })
       )
     }
-    if (
-      url === '/api/study-plan/pending-lessons' ||
-      url === '/api/study-plan/lessons'
-    ) {
-      return Promise.resolve(jsonResponse([]))
+    if (url === '/api/study-plan/pending-lessons') {
+      return Promise.resolve(jsonResponse(responses.pending ?? []))
+    }
+    if (url === '/api/study-plan/lessons') {
+      return Promise.resolve(jsonResponse(responses.lessons ?? []))
     }
     if (url.startsWith('/api/curriculum/')) {
       return Promise.resolve(
-        jsonResponse([
-          {
-            id: 'a1_unit_1',
-            level: 'A1',
-            unit_number: 1,
-            title: 'Unit One',
-            default_weeks: 2,
-            grammar_points: ['g1'],
-            vocabulary_set_ids: ['v1'],
-            lesson_types: ['grammar'],
-            competency_checklist: ['c1'],
-          },
-        ])
+        jsonResponse(
+          responses.units ?? [
+            {
+              id: 'a1_unit_1',
+              level: 'A1',
+              unit_number: 1,
+              title: 'Unit One',
+              default_weeks: 2,
+              grammar_points: ['g1'],
+              vocabulary_set_ids: ['v1'],
+              lesson_types: ['grammar'],
+              competency_checklist: ['c1'],
+            },
+          ]
+        )
       )
     }
     return Promise.resolve(jsonResponse({}, 404))
@@ -193,5 +206,140 @@ describe('My Plan level test node', () => {
     expect(cardButton).toBeDisabled()
     fireEvent.click(cardButton as HTMLButtonElement)
     expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('redirects to assessment when no study plan exists', async () => {
+    mockPlan('in_progress', {}, { planStatus: 404 })
+
+    render(<PlanPage />)
+
+    expect(await screen.findByText('noPlanTitle')).toBeInTheDocument()
+    expect(mockPush).toHaveBeenCalledWith('/assessment')
+  })
+
+  it('shows the no-plan state when loading the plan fails', async () => {
+    mockPlan('in_progress', {}, { planStatus: 503 })
+
+    render(<PlanPage />)
+
+    expect(await screen.findByText('noPlanTitle')).toBeInTheDocument()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('starts today’s lesson and opens it from the unit drawer', async () => {
+    mockPlan(
+      'in_progress',
+      {},
+      {
+        competencies: [{ unit_id: 'a1_unit_1', score: 0.4 }],
+        today: {
+          lessons: [
+            {
+              id: 44,
+              title: 'Day 1 Lesson',
+              lesson_type: 'grammar',
+              week: 1,
+              day: 1,
+              is_completed: false,
+            },
+          ],
+        },
+      }
+    )
+
+    render(<PlanPage />)
+
+    const unitTitle = await screen.findByText('Unit One')
+    fireEvent.click(unitTitle.closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('grammarCovered')).toBeInTheDocument()
+    expect(screen.getByText('Day 1 Lesson')).toBeInTheDocument()
+    const startButtons = screen.getAllByRole('button', { name: 'start →' })
+    const drawerStartButton = startButtons.at(-1)
+    expect(drawerStartButton).toBeDefined()
+    if (!drawerStartButton) throw new Error('Drawer start button is missing')
+    fireEvent.click(drawerStartButton)
+    expect(mockPush).toHaveBeenCalledWith('/lesson/44')
+  })
+
+  it('resumes pending lessons and marks completed generated lessons for review', async () => {
+    mockPlan(
+      'in_progress',
+      {},
+      {
+        pending: [
+          {
+            id: 51,
+            title: 'Catch-up Lesson',
+            lesson_type: 'reading',
+            week_number: 1,
+            day_number: 2,
+          },
+        ],
+        lessons: [
+          {
+            id: 52,
+            title: 'Day 1 Lesson',
+            lesson_type: 'grammar',
+            week_number: 1,
+            day_number: 1,
+            unit_id: 'a1_unit_1',
+            is_completed: true,
+          },
+        ],
+      }
+    )
+
+    render(<PlanPage />)
+
+    expect(await screen.findByText('1 pendingLessons')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'resume' }))
+    expect(mockPush).toHaveBeenCalledWith('/lesson/51')
+
+    const unitTitle = await screen.findByText('Unit One')
+    fireEvent.click(unitTitle.closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Day 1 Lesson')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'reviewLesson' })
+    ).toBeInTheDocument()
+  })
+
+  it('locks units whose prerequisite competency is incomplete', async () => {
+    mockPlan(
+      'in_progress',
+      {},
+      {
+        competencies: { a1_unit_1: 0.5 },
+        units: [
+          {
+            id: 'a1_unit_1',
+            level: 'A1',
+            unit_number: 1,
+            title: 'Unit One',
+            default_weeks: 2,
+            grammar_points: ['g1'],
+            vocabulary_set_ids: ['v1'],
+            lesson_types: ['grammar'],
+            competency_checklist: ['c1'],
+          },
+          {
+            id: 'a1_unit_2',
+            level: 'A1',
+            unit_number: 2,
+            title: 'Unit Two',
+            default_weeks: 2,
+            grammar_points: [],
+            vocabulary_set_ids: [],
+            lesson_types: ['reading'],
+            prerequisite_unit: 'a1_unit_1',
+            competency_checklist: [],
+          },
+        ],
+      }
+    )
+
+    render(<PlanPage />)
+
+    expect(await screen.findByText('Unit Two')).toBeInTheDocument()
+    expect(screen.getByText('Unit Two').closest('button')).toBeDisabled()
   })
 })

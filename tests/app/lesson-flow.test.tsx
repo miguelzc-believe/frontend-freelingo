@@ -46,7 +46,8 @@ vi.mock('@/store/progress', () => ({
     selector({ completeLesson: mocks.completeLesson }),
 }))
 vi.mock('@/data/grammar', () => ({
-  getGrammarTopics: () => Promise.resolve([]),
+  getGrammarTopics: () =>
+    Promise.resolve([{ slug: 'present-tense', title: 'Present tense' }]),
 }))
 vi.mock('@/components/billing/PaywallBanner', () => ({
   PaywallBanner: () => null,
@@ -307,6 +308,67 @@ describe('LessonPage lesson loading and answer flow', () => {
     ).toHaveLength(2)
   })
 
+  it('distinguishes a regeneration request rejected because it is not needed', async () => {
+    mockLessonLoad(jsonResponse(lessonPayload))
+    mocks.apiFetch.mockImplementation((url: string) =>
+      url === '/api/lessons/1'
+        ? Promise.resolve(jsonResponse(lessonPayload))
+        : url === '/api/lessons/exercises/10/regenerate'
+          ? Promise.resolve(jsonResponse({}, 400))
+          : Promise.resolve(jsonResponse({}))
+    )
+
+    render(<LessonPage />)
+    await screen.findByText('Beschreibe deinen Tag.')
+    fireEvent.click(screen.getByRole('button', { name: 'regenerateExercise' }))
+
+    expect(await screen.findByText('regenerateNotNeeded')).toBeInTheDocument()
+  })
+
+  it('marks a wrong multiple-choice selection and restores a saved next answer', async () => {
+    const lessonWithChoices = {
+      ...lessonPayload,
+      exercises: [
+        {
+          ...lessonPayload.exercises[0]!,
+          exercise_type: 'multiple_choice',
+          question: 'Choose the correct phrase.',
+          options: ['Wrong phrase', 'Correct phrase'],
+          correct_answer: 'Correct phrase',
+        },
+        {
+          ...lessonPayload.exercises[0]!,
+          id: 11,
+          question: 'Write another phrase.',
+          user_answer: 'Saved response',
+          score: 0.5,
+        },
+      ],
+    }
+    mockLessonLoad(jsonResponse(lessonWithChoices))
+    mocks.apiFetch.mockImplementation((url: string) =>
+      url === '/api/lessons/1'
+        ? Promise.resolve(jsonResponse(lessonWithChoices))
+        : url === '/api/lessons/exercises/10/answer'
+          ? Promise.resolve(jsonResponse({ score: 0, feedback: 'Try again' }))
+          : Promise.resolve(jsonResponse({}))
+    )
+
+    render(<LessonPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Wrong phrase' }))
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+
+    expect(
+      await screen.findByRole('img', { name: 'incorrect' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'correct' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /next/ }))
+
+    expect(await screen.findByPlaceholderText('yourAnswer')).toHaveValue(
+      'Saved response'
+    )
+  })
+
   it('completes the lesson and reports that the study day advanced', async () => {
     mockLessonLoad(jsonResponse(lessonPayload))
     let todayRequests = 0
@@ -551,5 +613,201 @@ describe('LessonPage lesson loading and answer flow', () => {
     expect(await screen.findByText('lessonDone')).toBeInTheDocument()
     expect(screen.queryByText('dayComplete')).not.toBeInTheDocument()
     expect(mocks.completeLesson).toHaveBeenCalledWith(1)
+  })
+
+  it('generates lesson and exercise hints and native explanations with retries', async () => {
+    const payload = {
+      ...lessonPayload,
+      lesson: {
+        ...lessonPayload.lesson,
+        content: {
+          ...lessonPayload.lesson.content,
+          explanation: {
+            text: 'Target language rule',
+            key_points: ['First point'],
+            examples: [{ sentence: 'Example sentence', note: 'Example note' }],
+          },
+        },
+      },
+      exercises: [
+        {
+          ...lessonPayload.exercises[0],
+          explanation: 'Exercise explanation',
+        },
+      ],
+    }
+    let lessonExplanationAttempts = 0
+    let hintAttempts = 0
+    let exerciseExplanationAttempts = 0
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(payload))
+      if (url === '/api/lessons/1/native-explanation') {
+        lessonExplanationAttempts += 1
+        return Promise.resolve(
+          lessonExplanationAttempts === 1
+            ? jsonResponse({}, 503)
+            : jsonResponse({
+                native_explanation: { text: 'Native lesson rule' },
+              })
+        )
+      }
+      if (url === '/api/lessons/exercises/10/native-hint') {
+        hintAttempts += 1
+        return Promise.resolve(
+          hintAttempts === 1
+            ? jsonResponse({}, 503)
+            : jsonResponse({ native_hint: 'Useful native hint' })
+        )
+      }
+      if (url === '/api/lessons/exercises/10/answer')
+        return Promise.resolve(
+          jsonResponse({ score: 0, feedback: 'Try again' })
+        )
+      if (url === '/api/lessons/exercises/10/native-explanation') {
+        exerciseExplanationAttempts += 1
+        return Promise.resolve(
+          exerciseExplanationAttempts === 1
+            ? jsonResponse({}, 503)
+            : jsonResponse({
+                native_explanation: 'Native exercise explanation',
+              })
+        )
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    render(<LessonPage />)
+    expect(await screen.findByText('Target language rule')).toBeInTheDocument()
+    expect(screen.getByText('First point')).toBeInTheDocument()
+    expect(screen.getByText('Example sentence')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^en/ }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /showNativeExplanation en/ })
+    )
+    expect(await screen.findByRole('button', { name: 'retry' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(await screen.findByRole('button', { name: /^en/ })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+    expect(await screen.findByText('Native lesson rule')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /showNativeHint en/ }))
+    expect(await screen.findByRole('button', { name: 'retry' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(await screen.findByText('Useful native hint')).toBeInTheDocument()
+
+    await enterAnswer('Meine Antwort')
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+    expect(await screen.findByText('Try again')).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: /showNativeExplanation en/ })
+    )
+    expect(await screen.findByRole('button', { name: 'retry' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(
+      await screen.findByText('Native exercise explanation')
+    ).toBeInTheDocument()
+
+    expect(lessonExplanationAttempts).toBe(2)
+    expect(hintAttempts).toBe(2)
+    expect(exerciseExplanationAttempts).toBe(2)
+  })
+
+  it('submits a selected multiple-choice option and advances to the next exercise', async () => {
+    const payload = {
+      ...lessonPayload,
+      exercises: [
+        {
+          ...lessonPayload.exercises[0],
+          exercise_type: 'multiple_choice',
+          question: 'Choose the correct sentence.',
+          options: ['Ich lerne Deutsch.', 'Ich lernst Deutsch.'],
+          correct_answer: 'Ich lerne Deutsch.',
+        },
+        {
+          ...lessonPayload.exercises[0],
+          id: 11,
+          question: 'Write one more sentence.',
+        },
+      ],
+    }
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(payload))
+      if (url === '/api/lessons/exercises/10/answer')
+        return Promise.resolve(
+          jsonResponse({ score: 0, feedback: 'Incorrect' })
+        )
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    render(<LessonPage />)
+    expect(
+      await screen.findByText('Choose the correct sentence.')
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ich lernst Deutsch.' }))
+    expect(screen.getByRole('button', { name: 'submitAnswer' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+
+    expect(await screen.findByText('Incorrect')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'incorrect' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'correct' })).toBeInTheDocument()
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      '/api/lessons/exercises/10/answer',
+      expect.objectContaining({
+        body: JSON.stringify({ answer: 'Ich lernst Deutsch.' }),
+      })
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /next/ }))
+    expect(
+      await screen.findByText('Write one more sentence.')
+    ).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('yourAnswer')).toHaveValue('')
+  })
+
+  it('renders available vocabulary details and only links known grammar topics', async () => {
+    const payload = {
+      ...lessonPayload,
+      lesson: {
+        ...lessonPayload.lesson,
+        content: {
+          ...lessonPayload.lesson.content,
+          vocabulary: [
+            {
+              word: 'Haus',
+              reading: 'haus',
+              translation: 'house',
+              definition: 'A place to live.',
+              example: 'Das Haus ist groß.',
+              example_translation: 'The house is large.',
+              note: 'A noun.',
+            },
+            { word: 'klein' },
+            { translation: 'unused without a word' },
+          ],
+          grammar_refs: ['present-tense', 'not-found'],
+        },
+      },
+    }
+    mockLessonLoad(jsonResponse(payload))
+
+    render(<LessonPage />)
+
+    expect(await screen.findByText('Haus')).toBeInTheDocument()
+    expect(screen.getByText('house')).toBeInTheDocument()
+    expect(screen.getByText('A place to live.')).toBeInTheDocument()
+    expect(screen.getByText('Das Haus ist groß.')).toBeInTheDocument()
+    expect(screen.getByText('The house is large.')).toBeInTheDocument()
+    expect(screen.getByText('A noun.')).toBeInTheDocument()
+    expect(screen.getByText('klein')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Present tense/ })).toHaveAttribute(
+      'href',
+      '/grammar/present-tense'
+    )
+    expect(screen.queryByRole('link', { name: /not-found/ })).toBeNull()
   })
 })

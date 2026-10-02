@@ -335,6 +335,96 @@ describe('ListeningPage', () => {
     expect(screen.queryByText('errorLoading')).not.toBeInTheDocument()
   })
 
+  it('generates an exercise and waits for the long-poll result', async () => {
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (url === '/api/listening/next')
+          return jsonResponse({ available: false })
+        if (url === '/api/listening/generate') return jsonResponse({}, 202)
+        if (url === '/api/listening/next?wait=true')
+          return jsonResponse({ available: true, exercise })
+        throw new Error(`Unexpected apiFetch: ${url} ${options?.method ?? ''}`)
+      }
+    )
+    render(<ListeningPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+
+    expect(await screen.findByText('Am Bahnhof')).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/listening/generate', {
+      method: 'POST',
+    })
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/listening/next?wait=true',
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
+  })
+
+  it('explains when exercise generation has no active study plan', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/listening/next')
+        return jsonResponse({ available: false })
+      if (url === '/api/listening/generate')
+        return jsonResponse({ detail: 'No active study plan found' }, 400)
+      throw new Error(`Unexpected apiFetch: ${url}`)
+    })
+    render(<ListeningPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+
+    expect(await screen.findByText('noActivePlan')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'generate' })).toBeEnabled()
+  })
+
+  it('returns to the empty state when generation polling has no result', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/listening/next')
+        return jsonResponse({ available: false })
+      if (url === '/api/listening/generate') return jsonResponse({})
+      if (url === '/api/listening/next?wait=true')
+        return jsonResponse({ available: false })
+      throw new Error(`Unexpected apiFetch: ${url}`)
+    })
+    render(<ListeningPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+
+    expect(await screen.findByText('generationFailed')).toBeInTheDocument()
+    expect(screen.getByText('noExercises')).toBeInTheDocument()
+  })
+
+  it('shows the generic generation error for other rejected generation responses', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/listening/next')
+        return jsonResponse({ available: false })
+      if (url === '/api/listening/generate') return jsonResponse({}, 503)
+      throw new Error(`Unexpected apiFetch: ${url}`)
+    })
+    render(<ListeningPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+
+    expect(await screen.findByText('errorLoading')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'generate' })).toBeEnabled()
+  })
+
+  it('reports a polling network error after generation starts', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/listening/next')
+        return jsonResponse({ available: false })
+      if (url === '/api/listening/generate') return jsonResponse({})
+      if (url === '/api/listening/next?wait=true')
+        throw new Error('poll failed')
+      throw new Error(`Unexpected apiFetch: ${url}`)
+    })
+    render(<ListeningPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+
+    expect(await screen.findByText('generationFailed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'generate' })).toBeEnabled()
+  })
+
   it('keeps submit disabled until each answer is selected', async () => {
     mockApi()
     render(<ListeningPage />)
@@ -401,6 +491,34 @@ describe('ListeningPage', () => {
     expect(await screen.findByText('alreadyAttempted')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument()
     expect(screen.queryByText('resultsLabel')).not.toBeInTheDocument()
+  })
+
+  it('shows a generic submit error when the attempt request fails', async () => {
+    mockApi({ attempt: { detail: 'service unavailable' }, attemptStatus: 503 })
+    render(<ListeningPage />)
+    await screen.findByText('Am Bahnhof')
+    await answerExercise(['a', 'b'])
+
+    expect(await screen.findByText('errorSubmit')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument()
+  })
+
+  it('shows a submit error when the attempt request rejects', async () => {
+    mockApi()
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/listening/next')
+        return jsonResponse({ available: true, exercise })
+      if (url === '/api/listening/attempt') throw new Error('request failed')
+      if (url.startsWith('/api/listening/history?'))
+        return jsonResponse({ items: [], total: 0 })
+      throw new Error(`Unexpected apiFetch: ${url}`)
+    })
+    render(<ListeningPage />)
+    await screen.findByText('Am Bahnhof')
+    await answerExercise(['a', 'b'])
+
+    expect(await screen.findByText('errorSubmit')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument()
   })
 
   it('fetches and decrements the free listening quota after an attempt', async () => {
