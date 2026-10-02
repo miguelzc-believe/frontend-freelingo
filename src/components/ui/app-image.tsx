@@ -10,6 +10,7 @@ interface Props extends ImgHTMLAttributes<HTMLImageElement> {
 
 /** Local assets keep dimensions and lazy loading without a framework image endpoint. */
 export default function AppImage({
+  alt,
   priority,
   unoptimized: _unoptimized,
   fill,
@@ -19,6 +20,7 @@ export default function AppImage({
   return (
     <img
       {...props}
+      alt={alt}
       loading={priority ? 'eager' : (props.loading ?? 'lazy')}
       decoding="async"
       style={
