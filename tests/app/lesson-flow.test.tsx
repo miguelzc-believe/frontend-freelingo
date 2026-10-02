@@ -124,6 +124,15 @@ function mockLessonLoad(response: Response) {
   )
 }
 
+async function enterAnswer(answer: string) {
+  fireEvent.change(await screen.findByPlaceholderText('yourAnswer'), {
+    target: { value: answer },
+  })
+  await vi.waitFor(() => {
+    expect(screen.getByRole('button', { name: 'submitAnswer' })).toBeEnabled()
+  })
+}
+
 describe('LessonPage lesson loading and answer flow', () => {
   beforeEach(() => {
     mocks.apiFetch.mockReset()
@@ -153,8 +162,14 @@ describe('LessonPage lesson loading and answer flow', () => {
     ).toHaveLength(2)
   })
 
-  it('rejects a malformed load payload and offers a retry', async () => {
-    mockLessonLoad(jsonResponse({ lesson: lessonPayload.lesson }))
+  it('recovers from a malformed payload when the learner retries', async () => {
+    mocks.apiFetch
+      .mockResolvedValueOnce(jsonResponse({ lesson: lessonPayload.lesson }))
+      .mockImplementation((url: string) =>
+        url === '/api/lessons/1'
+          ? Promise.resolve(jsonResponse(lessonPayload))
+          : Promise.resolve(jsonResponse({}))
+      )
 
     render(<LessonPage />)
 
@@ -163,7 +178,13 @@ describe('LessonPage lesson loading and answer flow', () => {
       'href',
       '/dashboard'
     )
-    expect(screen.getByRole('button', { name: 'retry' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+
+    expect(await screen.findByText('Eine Lektion')).toBeInTheDocument()
+    expect(screen.getByText('Beschreibe deinen Tag.')).toBeInTheDocument()
+    expect(
+      mocks.apiFetch.mock.calls.filter(([url]) => url === '/api/lessons/1')
+    ).toHaveLength(2)
   })
 
   it('shows submit failure and allows the learner to retry the answer', async () => {
@@ -186,8 +207,7 @@ describe('LessonPage lesson loading and answer flow', () => {
     })
 
     render(<LessonPage />)
-    const textarea = await screen.findByPlaceholderText('yourAnswer')
-    fireEvent.change(textarea, { target: { value: 'Ich lerne Deutsch.' } })
+    await enterAnswer('Ich lerne Deutsch.')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
 
     expect(await screen.findByText('title')).toBeInTheDocument()
@@ -219,5 +239,169 @@ describe('LessonPage lesson loading and answer flow', () => {
         ([url]) => url === '/api/lessons/exercises/10/answer'
       )
     ).toBe(false)
+  })
+
+  it('treats a non-OK answer response with JSON as an evaluated answer', async () => {
+    mockLessonLoad(jsonResponse(lessonPayload))
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(lessonPayload))
+      if (url === '/api/lessons/exercises/10/answer') {
+        return Promise.resolve(
+          jsonResponse({ score: 0, feedback: 'Rejected by server' }, 500)
+        )
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    render(<LessonPage />)
+    await enterAnswer('Antwort')
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+
+    expect(await screen.findByText('Rejected by server')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'submitAnswer' })).toBeNull()
+    expect(screen.getByText('0%')).toBeInTheDocument()
+  })
+
+  it('shows regeneration errors and replaces the exercise after a retry succeeds', async () => {
+    mockLessonLoad(jsonResponse(lessonPayload))
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(lessonPayload))
+      if (url === '/api/lessons/exercises/10/regenerate') {
+        const attempts = mocks.apiFetch.mock.calls.filter(
+          ([calledUrl]) => calledUrl === url
+        ).length
+        return Promise.resolve(
+          attempts === 1
+            ? jsonResponse({}, 503)
+            : jsonResponse({
+                ...lessonPayload.exercises[0],
+                question: 'Erzähle von gestern.',
+              })
+        )
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    render(<LessonPage />)
+    await screen.findByText('Beschreibe deinen Tag.')
+    await enterAnswer('Meine Antwort')
+    fireEvent.click(screen.getByRole('button', { name: 'regenerateExercise' }))
+
+    expect(await screen.findByText('regenerateError')).toBeInTheDocument()
+    expect(screen.getByText('Beschreibe deinen Tag.')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('yourAnswer')).toHaveValue(
+      'Meine Antwort'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'regenerateExercise' }))
+
+    expect(await screen.findByText('Erzähle von gestern.')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('yourAnswer')).toHaveValue('')
+    expect(
+      mocks.apiFetch.mock.calls.filter(
+        ([url]) => url === '/api/lessons/exercises/10/regenerate'
+      )
+    ).toHaveLength(2)
+  })
+
+  it('completes the lesson and reports that the study day advanced', async () => {
+    mockLessonLoad(jsonResponse(lessonPayload))
+    let todayRequests = 0
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(lessonPayload))
+      if (url === '/api/study-plan/today') {
+        todayRequests += 1
+        return Promise.resolve(
+          jsonResponse({ progress_day: todayRequests === 1 ? 3 : 4 })
+        )
+      }
+      if (url === '/api/lessons/exercises/10/answer') {
+        return Promise.resolve(
+          jsonResponse({ score: 1, feedback: 'Well done' })
+        )
+      }
+      if (url === '/api/lessons/1/complete')
+        return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    render(<LessonPage />)
+    await enterAnswer('Ich lerne Deutsch.')
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+    await screen.findByText('Well done')
+    fireEvent.click(screen.getByRole('button', { name: 'completeLesson' }))
+
+    expect(await screen.findByText('lessonDone')).toBeInTheDocument()
+    expect(screen.getByText('dayComplete')).toBeInTheDocument()
+    expect(screen.getByText('exerciseSummary')).toBeInTheDocument()
+    expect(mocks.completeLesson).toHaveBeenCalledWith(1)
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/api/lessons/1/complete', {
+      method: 'POST',
+    })
+    expect(todayRequests).toBe(2)
+  })
+
+  it('keeps the lesson open when lesson completion is rejected', async () => {
+    mockLessonLoad(jsonResponse(lessonPayload))
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(lessonPayload))
+      if (url === '/api/lessons/exercises/10/answer') {
+        return Promise.resolve(
+          jsonResponse({ score: 1, feedback: 'Well done' })
+        )
+      }
+      if (url === '/api/lessons/1/complete') {
+        return Promise.resolve(jsonResponse({}, 503))
+      }
+      return Promise.resolve(jsonResponse({ progress_day: 3 }))
+    })
+
+    render(<LessonPage />)
+    await enterAnswer('Ich lerne Deutsch.')
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+    await screen.findByText('Well done')
+    fireEvent.click(screen.getByRole('button', { name: 'completeLesson' }))
+
+    await vi.waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'completeLesson' })
+      ).toBeEnabled()
+    })
+    expect(screen.queryByText('lessonDone')).not.toBeInTheDocument()
+    expect(mocks.completeLesson).not.toHaveBeenCalled()
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/api/lessons/1/complete', {
+      method: 'POST',
+    })
+  })
+
+  it('completes the lesson without a day banner when the plan day is unchanged', async () => {
+    mockLessonLoad(jsonResponse(lessonPayload))
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(lessonPayload))
+      if (url === '/api/lessons/exercises/10/answer') {
+        return Promise.resolve(
+          jsonResponse({ score: 1, feedback: 'Well done' })
+        )
+      }
+      if (url === '/api/lessons/1/complete')
+        return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse({ progress_day: 3 }))
+    })
+
+    render(<LessonPage />)
+    await screen.findByText('Beschreibe deinen Tag.')
+    await enterAnswer('Ich lerne Deutsch.')
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+    await screen.findByText('Well done')
+    fireEvent.click(screen.getByRole('button', { name: 'completeLesson' }))
+
+    expect(await screen.findByText('lessonDone')).toBeInTheDocument()
+    expect(screen.queryByText('dayComplete')).not.toBeInTheDocument()
+    expect(mocks.completeLesson).toHaveBeenCalledWith(1)
   })
 })
