@@ -144,6 +144,74 @@ describe('ConversationMode session lifecycle', () => {
     expect(mocks.create).not.toHaveBeenCalled()
   })
 
+  it('does not acquire resources when started without an access token', () => {
+    useAuthStore.setState({ accessToken: null, user: null })
+    render(<ConversationMode />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+
+    expect(mocks.getUserMedia).not.toHaveBeenCalled()
+    expect(mocks.create).not.toHaveBeenCalled()
+    expect(
+      mocks.apiFetch.mock.calls.some(
+        ([url]) => url === '/api/conversation/warmup'
+      )
+    ).toBe(false)
+    expect(MockWebSocket.instances).toHaveLength(0)
+  })
+
+  it('reports AudioContext construction failure without acquiring other resources', async () => {
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        constructor() {
+          throw new Error('AudioContext unavailable')
+        }
+      }
+    )
+    render(<ConversationMode />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+
+    expect(await screen.findByText('✕ errorConnection')).toBeInTheDocument()
+    expect(mocks.getUserMedia).not.toHaveBeenCalled()
+    expect(mocks.create).not.toHaveBeenCalled()
+    expect(
+      mocks.apiFetch.mock.calls.some(
+        ([url]) => url === '/api/conversation/warmup'
+      )
+    ).toBe(false)
+    expect(MockWebSocket.instances).toHaveLength(0)
+  })
+
+  it('disables another start while warmup is pending', async () => {
+    let finishWarmup!: (response: {
+      ok: boolean
+      json: () => Promise<{ detail?: string }>
+    }) => void
+    mocks.apiFetch.mockImplementation((url: string) =>
+      url === '/api/conversation/warmup'
+        ? new Promise((resolve) => {
+            finishWarmup = resolve
+          })
+        : Promise.resolve({ ok: true, json: async () => null })
+    )
+    render(<ConversationMode />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    const warming = await screen.findByRole('button', { name: 'statusWarming' })
+    expect(warming).toBeDisabled()
+    fireEvent.click(warming)
+
+    expect(mocks.getUserMedia).toHaveBeenCalledTimes(1)
+    expect(
+      mocks.apiFetch.mock.calls.filter(
+        ([url]) => url === '/api/conversation/warmup'
+      )
+    ).toHaveLength(1)
+    await act(async () => finishWarmup({ ok: false, json: async () => ({}) }))
+  })
+
   it('retries denied permission without poisoning VAD', async () => {
     mocks.getUserMedia.mockRejectedValueOnce(
       new DOMException('Denied', 'NotAllowedError')
@@ -415,6 +483,92 @@ describe('ConversationMode session lifecycle', () => {
     ).toBeInTheDocument()
     expect(MockWebSocket.instances).toHaveLength(0)
     expect(mocks.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a generic non-OK warmup and releases the session without opening WS', async () => {
+    const mic = microphone()
+    mocks.getUserMedia.mockResolvedValueOnce(mic.stream)
+    mocks.apiFetch.mockImplementation((url: string) =>
+      url === '/api/conversation/warmup'
+        ? Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
+        : Promise.resolve({ ok: true, json: async () => null })
+    )
+    render(<ConversationMode />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+
+    expect(await screen.findByText('✕ errorConnection')).toBeInTheDocument()
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(mocks.destroy).toHaveBeenCalledTimes(1)
+    expect(mic.stop).toHaveBeenCalledTimes(1)
+    expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
+  })
+
+  it('rechecks auth after warmup and releases resources if the token disappears', async () => {
+    const mic = microphone()
+    let finishWarmup!: (response: { ok: boolean }) => void
+    mocks.getUserMedia.mockResolvedValueOnce(mic.stream)
+    mocks.apiFetch.mockImplementation((url: string) =>
+      url === '/api/conversation/warmup'
+        ? new Promise((resolve) => {
+            finishWarmup = resolve
+          })
+        : Promise.resolve({ ok: true, json: async () => null })
+    )
+    render(<ConversationMode />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    await waitFor(() => expect(finishWarmup).toBeDefined())
+    useAuthStore.setState({ accessToken: null, user: null })
+    await act(async () => finishWarmup({ ok: true }))
+
+    expect(await screen.findByText('✕ errorUnauthorized')).toBeInTheDocument()
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(mocks.destroy).toHaveBeenCalledTimes(1)
+    expect(mic.stop).toHaveBeenCalledTimes(1)
+    expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not connect if unmounted while warmup is pending', async () => {
+    const mic = microphone()
+    let finishWarmup!: (response: {
+      ok: boolean
+      json: () => Promise<{ detail?: string }>
+    }) => void
+    mocks.getUserMedia.mockResolvedValueOnce(mic.stream)
+    mocks.apiFetch.mockImplementation((url: string) =>
+      url === '/api/conversation/warmup'
+        ? new Promise((resolve) => {
+            finishWarmup = resolve
+          })
+        : Promise.resolve({ ok: true, json: async () => null })
+    )
+    const view = render(<ConversationMode />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    await waitFor(() => expect(finishWarmup).toBeDefined())
+    view.unmount()
+    await act(async () => finishWarmup({ ok: true, json: async () => ({}) }))
+
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(mocks.destroy).toHaveBeenCalledTimes(1)
+    expect(mic.stop).toHaveBeenCalledTimes(1)
+    expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the trial token in the warmup request body', async () => {
+    render(<ConversationMode voiceTrialToken="trial-token" />)
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
+
+    const warmupCall = mocks.apiFetch.mock.calls.find(
+      ([url]) => url === '/api/conversation/warmup'
+    )
+    expect(warmupCall?.[1]).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trial_token: 'trial-token' }),
+    })
   })
 
   it('uses trial credentials and the selected voice in the websocket auth payload', async () => {
