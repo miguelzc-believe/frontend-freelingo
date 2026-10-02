@@ -410,6 +410,61 @@ describe('ConversationMode session lifecycle', () => {
     expect(ws!.send).not.toHaveBeenCalled()
   })
 
+  it('clears speaking and sends nothing when VAD ends with empty audio', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+
+    act(() => mocks.options.onSpeechStart?.())
+    expect(screen.getByTestId('speaking').textContent).toBe('true')
+    act(() => mocks.options.onSpeechEnd?.(new Float32Array()))
+
+    expect(screen.getByTestId('speaking').textContent).toBe('false')
+    expect(ws!.send).not.toHaveBeenCalled()
+  })
+
+  it('discards a full-length short-noise segment without sending it', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+
+    act(() => {
+      mocks.options.onSpeechStart?.()
+      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.005))
+    })
+
+    expect(screen.getByTestId('speaking').textContent).toBe('false')
+    expect(ws!.send).not.toHaveBeenCalled()
+  })
+
+  it('ignores an utterance that ends after the server ends the session', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+    act(() => ws!.message({ type: 'session_end', reason: 'inactivity' }))
+    await waitFor(() => expect(mocks.destroy).toHaveBeenCalledTimes(1))
+    ws!.send.mockClear()
+
+    act(() => {
+      mocks.options.onSpeechStart?.()
+      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.05))
+    })
+
+    expect(screen.getByTestId('speaking').textContent).toBe('false')
+    expect(ws!.send).not.toHaveBeenCalled()
+  })
+
+  it('ignores low-RMS microphone leakage while the assistant is speaking', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+    act(() => ws!.message({ type: 'status', value: 'speaking' }))
+
+    act(() => {
+      mocks.options.onSpeechStart?.()
+      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.02))
+    })
+
+    expect(screen.getByTestId('speaking').textContent).toBe('false')
+    expect(ws!.send).not.toHaveBeenCalled()
+  })
+
   it('ignores a Blob decoded after a new session has started', async () => {
     render(<ConversationMode />)
     const ws = await start()
