@@ -236,6 +236,76 @@ describe('FeedbackPage list and entry actions', () => {
     ).toBeInTheDocument()
   })
 
+  it('posts a trimmed detail comment and confirms its deletion', async () => {
+    const postedComment = {
+      id: 9,
+      entry_id: 10,
+      author: { ...feature.author, id: 1, display_name: 'Student' },
+      body: 'A clear, concise comment.',
+      created_at: '2026-07-05T10:00:00',
+    }
+    mockApiFetch.mockImplementation(
+      (url: string, options?: { method?: string }) => {
+        if (String(url).endsWith('/comments') && options?.method === 'POST') {
+          return Promise.resolve(jsonResponse(postedComment))
+        }
+        if (String(url).endsWith('/comments/9')) {
+          return Promise.resolve(jsonResponse({}))
+        }
+        if (String(url).endsWith('/comments')) {
+          return Promise.resolve(jsonResponse({ items: [] }))
+        }
+        return Promise.resolve(listResponse())
+      }
+    )
+
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Add focused practice'))
+
+    const commentInput =
+      await screen.findByPlaceholderText('commentPlaceholder')
+    fireEvent.change(commentInput, {
+      target: { value: '  A clear, concise comment.  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'postComment' }))
+
+    expect(
+      await screen.findByText('A clear, concise comment.')
+    ).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/10/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'A clear, concise comment.' }),
+    })
+    expect(commentInput).toHaveValue('')
+
+    fireEvent.click(screen.getByRole('button', { name: 'deleteComment' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.getByText('A clear, concise comment.')).toBeInTheDocument()
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      '/api/feedback/10/comments/9',
+      { method: 'DELETE' }
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'deleteComment' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'deleteCommentConfirm' })
+    )
+
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/10/comments/9', {
+        method: 'DELETE',
+      })
+    )
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('A clear, concise comment.')
+    ).not.toBeInTheDocument()
+  })
+
   it('toggles a feature vote and reflects the updated count', async () => {
     mockApiFetch.mockImplementation((url: string) => {
       if (String(url).endsWith('/vote')) {
