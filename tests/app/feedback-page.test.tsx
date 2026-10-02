@@ -139,6 +139,66 @@ describe('FeedbackPage list and entry actions', () => {
     )
   })
 
+  it('cancels list deletion without sending a DELETE request', async () => {
+    mockApiFetch.mockResolvedValue(
+      listResponse([{ ...feature, author: { ...feature.author, id: 1 } }])
+    )
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'deleteEntry' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(mockApiFetch).not.toHaveBeenCalledWith('/api/feedback/10', {
+      method: 'DELETE',
+    })
+    expect(screen.getByText('Add focused practice')).toBeInTheDocument()
+  })
+
+  it('confirms list deletion, updates the list and total, and reloads', async () => {
+    const entries = Array.from({ length: 10 }, (_, index) => ({
+      ...feature,
+      id: 10 + index,
+      title: `Practice idea ${index + 1}`,
+      author: { ...feature.author, id: 1 },
+    }))
+    let deleted = false
+    mockApiFetch.mockImplementation(
+      (_url: string, options?: { method?: string }) => {
+        if (options?.method === 'DELETE') {
+          deleted = true
+          return Promise.resolve(jsonResponse({}))
+        }
+        return Promise.resolve(
+          deleted
+            ? listResponse(entries.slice(1), 10)
+            : listResponse(entries, 11)
+        )
+      }
+    )
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Practice idea 1')).toBeInTheDocument()
+    expect(screen.getByText('1 / 2')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'deleteEntry' })[0]!)
+    fireEvent.click(screen.getByRole('button', { name: 'deleteEntryConfirm' }))
+
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/10', {
+        method: 'DELETE',
+      })
+    )
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(await screen.findByText('Practice idea 2')).toBeInTheDocument()
+    expect(screen.queryByText('Practice idea 1')).not.toBeInTheDocument()
+    expect(screen.queryByText('1 / 2')).not.toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/feedback?type=feature&sort=votes&order=desc&skip=0&limit=10'
+    )
+  })
+
   it('opens an unread entry, marks it read, and shows comments', async () => {
     mockApiFetch.mockImplementation((url: string) => {
       if (String(url).includes('/comments')) {
