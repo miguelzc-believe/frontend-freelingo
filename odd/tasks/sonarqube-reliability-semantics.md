@@ -114,3 +114,16 @@ components touched here. The same symptom is already recorded twice in
 - Replacing the custom seek bar with `<input type="range">`, which would
   break the `fl-*` visual tokens.
 - Adding `eslint-plugin-sonarjs` for local reproduction.
+
+### Native review
+
+Lineage `review-04324907af4b9a48` covers the committed slice
+`41e2ead..0d0ac87` (23 files, 398 changed lines, medium tier, single
+`review-reliability` lens, correction budget 199).
+
+The reviewer slot could not be materialized. Two host-relay attempts both
+failed with `pi-host-relay-transport-failure`, `reviewer-empty-output`,
+`stopReason: length` after roughly 50 seconds each. No reviewer artifact was
+admitted, no verdict exists, and no approval was burned. The lineage stays in
+`reviewing` with the slot outstanding, so this candidate carries no native
+review outcome in either direction.
