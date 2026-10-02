@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -82,6 +83,14 @@ function renderLayout() {
       <div>page-content</div>
     </AppLayout>
   )
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 beforeEach(() => {
@@ -180,5 +189,103 @@ describe('AppLayout', () => {
     expect(within(dialog).getByText('logoutConfirmMessage')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'logout' }))
     expect(mockHandleLogout).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears a cached token and redirects when loading the profile throws', async () => {
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    mockApiFetch.mockRejectedValue(new Error('profile request failed'))
+
+    renderLayout()
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/login'))
+    expect(useAuthStore.getState().accessToken).toBeNull()
+    expect(useAuthStore.getState().user).toBeNull()
+  })
+
+  it('ignores a refresh result that arrives after unmount', async () => {
+    const refresh = deferred<string | null>()
+    mockRefresh.mockReturnValue(refresh.promise)
+    const view = renderLayout()
+
+    expect(mockRefresh).toHaveBeenCalledTimes(1)
+    view.unmount()
+    await act(async () => {
+      refresh.resolve(null)
+      await refresh.promise
+    })
+
+    expect(mockApiFetch).not.toHaveBeenCalled()
+    expect(mockHandleLogout).not.toHaveBeenCalled()
+    expect(mockPush).not.toHaveBeenCalled()
+    expect(mockReplace).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().user).toBeNull()
+  })
+
+  it('ignores a profile response that arrives after unmount', async () => {
+    const profileResponse = deferred<Response>()
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    mockApiFetch.mockReturnValue(profileResponse.promise)
+    const view = renderLayout()
+
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/auth/me')
+    )
+    view.unmount()
+    await act(async () => {
+      profileResponse.resolve(jsonResponse(mePayload))
+      await profileResponse.promise
+    })
+
+    expect(useAuthStore.getState().user).toBeNull()
+    expect(mockHandleLogout).not.toHaveBeenCalled()
+    expect(mockPush).not.toHaveBeenCalled()
+    expect(mockReplace).not.toHaveBeenCalled()
+  })
+
+  it('ignores profile JSON that arrives after unmount', async () => {
+    const profileData = deferred<unknown>()
+    const json = vi.fn(() => profileData.promise)
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    mockApiFetch.mockResolvedValue({ ok: true, json })
+    const view = renderLayout()
+
+    await waitFor(() => expect(json).toHaveBeenCalledTimes(1))
+    view.unmount()
+    await act(async () => {
+      profileData.resolve({ ...mePayload, learning_goals: null })
+      await profileData.promise
+    })
+
+    expect(useAuthStore.getState().user).toBeNull()
+    expect(mockReplace).not.toHaveBeenCalledWith('/onboarding')
+    expect(mockHandleLogout).not.toHaveBeenCalled()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the feedback badge on feedback-read and removes the listener on unmount', async () => {
+    let summaryRequests = 0
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/me') return jsonResponse(mePayload)
+      if (url === '/api/feedback/unread-summary') {
+        summaryRequests += 1
+        return jsonResponse({ unread_count: summaryRequests === 1 ? 2 : 7 })
+      }
+      throw new Error(`Unexpected apiFetch: ${url}`)
+    })
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    const view = renderLayout()
+
+    expect(await screen.findByText('2')).toBeInTheDocument()
+    await act(async () => {
+      window.dispatchEvent(new Event('freelingo:feedback-read'))
+    })
+    expect(await screen.findByText('7')).toBeInTheDocument()
+    expect(summaryRequests).toBe(2)
+
+    view.unmount()
+    await act(async () => {
+      window.dispatchEvent(new Event('freelingo:feedback-read'))
+    })
+    expect(summaryRequests).toBe(2)
   })
 })
