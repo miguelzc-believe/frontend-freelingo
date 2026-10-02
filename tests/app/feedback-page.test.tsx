@@ -195,4 +195,176 @@ describe('FeedbackPage list and entry actions', () => {
     )
     expect(await screen.findByText('4')).toBeInTheDocument()
   })
+
+  it('creates a trimmed feature and reloads the active list', async () => {
+    mockApiFetch.mockResolvedValue(listResponse())
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+    fireEvent.click(screen.getByRole('button', { name: 'sortDate' }))
+    fireEvent.change(screen.getByRole('combobox'), {
+      target: { value: 'done' },
+    })
+    const title = screen.getByPlaceholderText('placeholderTitleFeature')
+    const description = screen.getByPlaceholderText(
+      'placeholderDescriptionFeature'
+    )
+    fireEvent.change(title, { target: { value: '  Better practice  ' } })
+    fireEvent.change(description, {
+      target: { value: '  Add a short daily exercise.  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'submit' }))
+
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'feature',
+          title: 'Better practice',
+          description: 'Add a short daily exercise.',
+        }),
+      })
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'submit' })
+      ).not.toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/feedback?type=feature&sort=date&order=desc&skip=0&limit=10&status=done'
+      )
+    )
+  })
+
+  it('creates a bug with the bug type in its request', async () => {
+    mockApiFetch.mockResolvedValue(listResponse())
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'tabBugs' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'newBug' }))
+    fireEvent.change(screen.getByPlaceholderText('placeholderTitleBug'), {
+      target: { value: 'Audio controls freeze' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('placeholderDescriptionBug'), {
+      target: { value: 'Playback stops after changing speed.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'submit' }))
+
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'bug',
+          title: 'Audio controls freeze',
+          description: 'Playback stops after changing speed.',
+        }),
+      })
+    )
+  })
+
+  it('keeps a rejected submission open with an error and permits retry', async () => {
+    let submissionCount = 0
+    mockApiFetch.mockImplementation(
+      (_url: string, options?: { method?: string }) => {
+        if (options?.method === 'POST') {
+          submissionCount += 1
+          return Promise.resolve(
+            submissionCount === 1
+              ? new Response(null, { status: 503 })
+              : jsonResponse({})
+          )
+        }
+        return Promise.resolve(listResponse())
+      }
+    )
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+    fireEvent.change(screen.getByPlaceholderText('placeholderTitleFeature'), {
+      target: { value: 'Keep this title' },
+    })
+    fireEvent.change(
+      screen.getByPlaceholderText('placeholderDescriptionFeature'),
+      {
+        target: { value: 'Keep this description' },
+      }
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'submit' }))
+    expect(await screen.findByText(/errorSubmit/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('placeholderTitleFeature')).toHaveValue(
+      'Keep this title'
+    )
+    expect(
+      screen.getByPlaceholderText('placeholderDescriptionFeature')
+    ).toHaveValue('Keep this description')
+
+    fireEvent.click(screen.getByRole('button', { name: 'submit' }))
+    await waitFor(() => {
+      expect(
+        mockApiFetch.mock.calls.filter(
+          ([, options]) => options?.method === 'POST'
+        )
+      ).toHaveLength(2)
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'submit' })
+      ).not.toBeInTheDocument()
+    )
+  })
+
+  it('requires both fields and preserves the input length limits', async () => {
+    mockApiFetch.mockResolvedValue(listResponse())
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+
+    const title = screen.getByPlaceholderText('placeholderTitleFeature')
+    const description = screen.getByPlaceholderText(
+      'placeholderDescriptionFeature'
+    )
+    expect(title).toBeRequired()
+    expect(title).toHaveAttribute('maxLength', '200')
+    expect(description).toBeRequired()
+    expect(description).toHaveAttribute('maxLength', '5000')
+  })
+
+  it('closes by cancel, Escape, or backdrop and starts reopened forms empty', async () => {
+    mockApiFetch.mockResolvedValue(listResponse())
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+    fireEvent.change(screen.getByPlaceholderText('placeholderTitleFeature'), {
+      target: { value: 'Discard this draft' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(
+      screen.queryByPlaceholderText('placeholderTitleFeature')
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+    expect(screen.getByPlaceholderText('placeholderTitleFeature')).toHaveValue(
+      ''
+    )
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(
+      screen.queryByPlaceholderText('placeholderTitleFeature')
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+    fireEvent.click(
+      screen.getByText('modalCreateTitleFeature').closest('.fixed')!
+    )
+    expect(
+      screen.queryByPlaceholderText('placeholderTitleFeature')
+    ).not.toBeInTheDocument()
+  })
 })
