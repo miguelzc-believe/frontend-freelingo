@@ -22,13 +22,14 @@ import ru from '../../messages/ru.json'
 import sv from '../../messages/sv.json'
 import tr from '../../messages/tr.json'
 
-const { searchParams, apiFetch } = vi.hoisted(() => ({
+const { searchParams, apiFetch, routerPush } = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
   apiFetch: vi.fn(),
+  routerPush: vi.fn(),
 }))
 
 vi.mock('@/lib/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
   useSearchParams: () => searchParams,
 }))
 
@@ -102,6 +103,7 @@ beforeEach(() => {
   for (const key of Array.from(searchParams.keys())) searchParams.delete(key)
   onIntlError.mockReset()
   apiFetch.mockReset()
+  routerPush.mockReset()
   apiFetch.mockImplementation(async () => languageResponse())
   useAuthStore.setState({ ...useAuthStore.getInitialState() }, true)
   useConfigStore.setState(
@@ -116,7 +118,182 @@ afterEach(() => {
   expect(onIntlError).not.toHaveBeenCalled()
 })
 
+async function openGoalsStep() {
+  fireEvent.click(await screen.findByRole('button', { name: /Spanish/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+}
+
+function mockGoalSave(
+  response: () => Promise<Response> = async () =>
+    new Response(
+      JSON.stringify({ target_language: 'es-ES', learning_goals: [] })
+    )
+) {
+  apiFetch.mockImplementation((_path: string, options?: RequestInit) =>
+    options?.method === 'PATCH'
+      ? response()
+      : Promise.resolve(languageResponse())
+  )
+}
+
 describe('onboarding goals subtitle', () => {
+  it('saves all selected goals, updates the user, and goes to the dashboard', async () => {
+    useConfigStore.setState({ stripeEnabled: false })
+    mockGoalSave(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: 12,
+            username: 'learner',
+            target_language: 'es-ES',
+            learning_goals: ['travel', 'work'],
+          })
+        )
+    )
+    renderOnboarding()
+    await openGoalsStep()
+    fireEvent.click(screen.getByRole('button', { name: /Travel & Tourism/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Work & Professional/ }))
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    )
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/auth/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_language: 'es-ES',
+        learning_goals: ['travel', 'work'],
+      }),
+    })
+    expect(useAuthStore.getState().user).toMatchObject({
+      target_language: 'es-ES',
+      learning_goals: ['travel', 'work'],
+    })
+    await vi.waitFor(() =>
+      expect(routerPush).toHaveBeenCalledWith('/dashboard')
+    )
+    expect(
+      screen.queryByText(en.onboarding.trialHeadline)
+    ).not.toBeInTheDocument()
+  })
+
+  it('removes a deselected goal from the saved payload', async () => {
+    useConfigStore.setState({ stripeEnabled: false })
+    mockGoalSave(
+      async () =>
+        new Response(
+          JSON.stringify({ target_language: 'es-ES', learning_goals: ['work'] })
+        )
+    )
+    renderOnboarding()
+    await openGoalsStep()
+    fireEvent.click(screen.getByRole('button', { name: /Travel & Tourism/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Work & Professional/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Travel & Tourism/ }))
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    )
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/api/auth/me',
+      expect.objectContaining({
+        body: JSON.stringify({
+          target_language: 'es-ES',
+          learning_goals: ['work'],
+        }),
+      })
+    )
+    expect(useAuthStore.getState().user).toMatchObject({
+      target_language: 'es-ES',
+      learning_goals: ['work'],
+    })
+    expect(routerPush).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('shows the paid trial step when Stripe is enabled', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    mockGoalSave()
+    renderOnboarding()
+    await openGoalsStep()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(
+      await screen.findByText('Start with 7 days free')
+    ).toBeInTheDocument()
+    expect(routerPush).not.toHaveBeenCalled()
+  })
+
+  it('shows freemium confirmation for an active freemium trial', async () => {
+    useConfigStore.setState({ stripeEnabled: true, freemiumTrialEnabled: true })
+    mockGoalSave(
+      async () =>
+        new Response(
+          JSON.stringify({
+            freemium_trial_ends_at: '2099-01-01T00:00:00.000Z',
+          })
+        )
+    )
+    renderOnboarding()
+    await openGoalsStep()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(
+      await screen.findByText(en.onboarding.freemiumTrialTitle)
+    ).toBeInTheDocument()
+    expect(routerPush).not.toHaveBeenCalled()
+  })
+
+  it.each(['non-OK response', 'network rejection'])(
+    'shows a recoverable save error after a %s',
+    async (failure) => {
+      let attempts = 0
+      mockGoalSave(async () => {
+        attempts += 1
+        if (attempts === 1) {
+          if (failure === 'non-OK response') {
+            return new Response('', { status: 503 })
+          }
+          throw new Error('offline')
+        }
+        return new Response(JSON.stringify({ learning_goals: [] }))
+      })
+      renderOnboarding()
+      await openGoalsStep()
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+      expect(
+        await screen.findByText(/Failed to save preferences/)
+      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Skip' })).toBeEnabled()
+      expect(routerPush).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+      await vi.waitFor(() =>
+        expect(routerPush).toHaveBeenCalledWith('/dashboard')
+      )
+    }
+  )
+
+  it('skips with an empty goals list and saves before navigating', async () => {
+    useConfigStore.setState({ stripeEnabled: false })
+    mockGoalSave()
+    renderOnboarding()
+    await openGoalsStep()
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
+
+    await vi.waitFor(() =>
+      expect(routerPush).toHaveBeenCalledWith('/dashboard')
+    )
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/api/auth/me',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ target_language: 'es-ES', learning_goals: [] }),
+      })
+    )
+  })
+
   it.each(Object.keys(catalogs) as Locale[])(
     'names the selected language with natural wording in the %s UI',
     async (locale) => {
