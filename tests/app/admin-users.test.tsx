@@ -32,26 +32,6 @@ vi.mock('@/components/ui/page-loading', () => ({
   PageLoading: ({ label }: { label: string }) => <p>{label}</p>,
 }))
 
-vi.mock('@/components/ui/confirm-dialog', () => ({
-  ConfirmDialog: ({
-    open,
-    title,
-    onConfirm,
-    onCancel,
-  }: {
-    open: boolean
-    title: string
-    onConfirm: () => void
-    onCancel: () => void
-  }) =>
-    open ? (
-      <div role="dialog" aria-label={title}>
-        <button onClick={onConfirm}>confirm</button>
-        <button onClick={onCancel}>cancel</button>
-      </div>
-    ) : null,
-}))
-
 import AdminUsersPage from '@/app/(app)/admin/users/page'
 import { useAuthStore } from '@/store/auth'
 import { useConfigStore } from '@/store/config'
@@ -156,6 +136,158 @@ describe('AdminUsersPage', () => {
     expect(latestUsersParams().get('limit')).toBe('10')
   })
 
+  it.each([
+    ['trialing', 'statusTrialing'],
+    ['past_due', 'statusPastDue'],
+    ['unpaid', 'statusUnpaid'],
+    ['paused', 'statusPaused'],
+    ['incomplete', 'statusIncomplete'],
+    ['incomplete_expired', 'statusIncompleteExpired'],
+    ['canceled', 'statusCanceled'],
+    ['none', 'statusNone'],
+    ['unknown', 'statusNone'],
+  ])('renders the billing label and badge for %s', async (status, label) => {
+    mockApiFetch.mockResolvedValue(
+      listResponse([{ ...user, subscription_status: status }])
+    )
+
+    render(<AdminUsersPage />)
+
+    expect(await screen.findAllByText(label)).not.toHaveLength(0)
+  })
+
+  it('renders multiple active and inactive users, including the current admin', async () => {
+    mockApiFetch.mockResolvedValue(
+      listResponse(
+        [
+          { ...user, id: 1, display_name: 'Current Admin', role: 'admin' },
+          {
+            ...user,
+            id: 18,
+            display_name: 'Inactive Learner',
+            email: '',
+            is_active: false,
+            subscription_status: 'unknown',
+          },
+        ],
+        2
+      )
+    )
+
+    render(<AdminUsersPage />)
+
+    expect(
+      await screen.findByRole('row', { name: /Current Admin/ })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('row', { name: /Inactive Learner/ })
+    ).toBeInTheDocument()
+    expect(screen.getByText('2 total')).toBeInTheDocument()
+    expect(screen.getAllByText('roleAdmin').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('inactive').length).toBeGreaterThan(0)
+  })
+
+  it('hides subscription data and filters when Stripe is disabled', async () => {
+    useConfigStore.setState({ stripeEnabled: false, maintenanceMode: false })
+
+    render(<AdminUsersPage />)
+
+    await screen.findByRole('row', { name: /Ada Lovelace/ })
+    expect(screen.queryByText('fieldSubscription')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('combobox', { name: 'subscriptionFilter' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('generates and copies an invite link', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url === '/api/admin/invite'
+        ? jsonResponse({ invite_url: '/register?invite=abc' })
+        : listResponse()
+    )
+
+    render(<AdminUsersPage />)
+    await screen.findByRole('row', { name: /Ada Lovelace/ })
+    fireEvent.click(screen.getByRole('button', { name: 'inviteBtn' }))
+
+    const inviteLink = 'http://localhost:3000/register?invite=abc'
+    expect(await screen.findByText(inviteLink)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'copyLink' }))
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(inviteLink)
+      expect(
+        screen.getByRole('button', { name: 'inviteCopied' })
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('shows an invite generation error when the request fails', async () => {
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url === '/api/admin/invite' ? jsonResponse({}, 500) : listResponse()
+    )
+
+    render(<AdminUsersPage />)
+    await screen.findByRole('row', { name: /Ada Lovelace/ })
+    fireEvent.click(screen.getByRole('button', { name: 'inviteBtn' }))
+
+    expect(await screen.findByText('inviteError')).toBeInTheDocument()
+    expect(screen.queryByText('inviteLink')).not.toBeInTheDocument()
+  })
+
+  it('shows an error when copying an invite link fails', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new Error('clipboard denied')),
+      },
+    })
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url === '/api/admin/invite'
+        ? jsonResponse({ invite_url: '/register?invite=abc' })
+        : listResponse()
+    )
+
+    render(<AdminUsersPage />)
+    await screen.findByRole('row', { name: /Ada Lovelace/ })
+    fireEvent.click(screen.getByRole('button', { name: 'inviteBtn' }))
+    await screen.findByText('http://localhost:3000/register?invite=abc')
+    fireEvent.click(screen.getByRole('button', { name: 'copyLink' }))
+
+    expect(await screen.findByText('copyInviteError')).toBeInTheDocument()
+  })
+
+  it('loads the next user page with the appropriate offset', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      const params = new URL(String(url), 'http://localhost').searchParams
+      return listResponse(
+        [
+          {
+            ...user,
+            id: params.get('skip') === '10' ? 18 : user.id,
+            display_name:
+              params.get('skip') === '10' ? 'Page Two' : user.display_name,
+          },
+        ],
+        11
+      )
+    })
+
+    render(<AdminUsersPage />)
+    await screen.findByRole('row', { name: /Ada Lovelace/ })
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+
+    expect(
+      await screen.findByRole('row', { name: /Page Two/ })
+    ).toBeInTheDocument()
+    await waitFor(() => expect(latestUsersParams().get('skip')).toBe('10'))
+  })
+
   it('serializes trimmed search and selected filters and clears them', async () => {
     await renderLoadedPage()
 
@@ -189,6 +321,24 @@ describe('AdminUsersPage', () => {
 
   it('shows a load error for a failed list request', async () => {
     mockApiFetch.mockResolvedValue(jsonResponse({}, 503))
+
+    render(<AdminUsersPage />)
+
+    expect(await screen.findByText('usersLoadError')).toBeInTheDocument()
+    expect(screen.getByText('noUsers')).toBeInTheDocument()
+  })
+
+  it('shows the authorization error when the user list is forbidden', async () => {
+    mockApiFetch.mockResolvedValue(jsonResponse({}, 403))
+
+    render(<AdminUsersPage />)
+
+    expect(await screen.findByText('adminRequired')).toBeInTheDocument()
+    expect(screen.getByText('noUsers')).toBeInTheDocument()
+  })
+
+  it('shows a load error when the user list request rejects', async () => {
+    mockApiFetch.mockRejectedValue(new Error('network unavailable'))
 
     render(<AdminUsersPage />)
 
@@ -317,6 +467,80 @@ describe('AdminUsersPage', () => {
     expect(screen.getByLabelText('fieldDisplayName')).toHaveValue('')
   })
 
+  it('cancels deleting a user without sending a delete request', async () => {
+    const { row } = await renderLoadedPage()
+    const initialListCalls = usersCalls().length
+
+    fireEvent.click(row.getByRole('button', { name: 'delete' }))
+    fireEvent.click(
+      within(screen.getByRole('alertdialog', { name: 'deleteUser' })).getByRole(
+        'button',
+        { name: 'cancel' }
+      )
+    )
+
+    expect(screen.queryByRole('alertdialog', { name: 'deleteUser' })).toBeNull()
+    expect(
+      mockApiFetch.mock.calls.filter(
+        ([, options]) => options?.method === 'DELETE'
+      )
+    ).toHaveLength(0)
+    expect(usersCalls()).toHaveLength(initialListCalls)
+  })
+
+  it('deletes the selected user and reloads the list', async () => {
+    let deleted = false
+    mockApiFetch.mockImplementation(
+      async (_url: string, options?: RequestInit) => {
+        if (options?.method === 'DELETE') {
+          deleted = true
+          return jsonResponse({})
+        }
+        return deleted ? listResponse([], 0) : listResponse()
+      }
+    )
+    const { row } = await renderLoadedPage()
+    const initialListCalls = usersCalls().length
+
+    fireEvent.click(row.getByRole('button', { name: 'delete' }))
+    fireEvent.click(
+      within(screen.getByRole('alertdialog', { name: 'deleteUser' })).getByRole(
+        'button',
+        { name: 'deleteConfirm' }
+      )
+    )
+
+    await waitFor(() => expect(usersCalls()).toHaveLength(initialListCalls + 1))
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/admin/users/17', {
+      method: 'DELETE',
+    })
+    expect(screen.queryByRole('alertdialog', { name: 'deleteUser' })).toBeNull()
+    await waitFor(() =>
+      expect(screen.queryByRole('row', { name: /Ada Lovelace/ })).toBeNull()
+    )
+    expect(screen.getByText('noUsers')).toBeInTheDocument()
+  })
+
+  it('shows a delete error and does not reload the list after failure', async () => {
+    const { row } = await renderLoadedPage()
+    const initialListCalls = usersCalls().length
+    mockApiFetch.mockImplementation(
+      async (_url: string, options?: RequestInit) =>
+        options?.method === 'DELETE' ? jsonResponse({}, 500) : listResponse()
+    )
+
+    fireEvent.click(row.getByRole('button', { name: 'delete' }))
+    fireEvent.click(
+      within(screen.getByRole('alertdialog', { name: 'deleteUser' })).getByRole(
+        'button',
+        { name: 'deleteConfirm' }
+      )
+    )
+
+    expect(await screen.findByText('deleteUserError')).toBeInTheDocument()
+    expect(usersCalls()).toHaveLength(initialListCalls)
+  })
+
   it('reports a failed activation and does not reload the list', async () => {
     const { row } = await renderLoadedPage()
     const initialCalls = usersCalls().length
@@ -325,7 +549,11 @@ describe('AdminUsersPage', () => {
     )
 
     fireEvent.click(row.getByRole('button', { name: 'deactivate' }))
-    fireEvent.click(screen.getByRole('button', { name: 'confirm' }))
+    fireEvent.click(
+      within(
+        screen.getByRole('alertdialog', { name: 'deactivateUser' })
+      ).getByRole('button', { name: 'deactivate' })
+    )
 
     expect(await screen.findByText('updateUserError')).toBeInTheDocument()
     expect(usersCalls()).toHaveLength(initialCalls)

@@ -431,4 +431,60 @@ describe('AdminUserStatsPage subscription visibility', () => {
       subscription_ends_at: null,
     })
   })
+
+  it.each([
+    ['trialing', 'statusTrialing'],
+    ['past_due', 'statusPastDue'],
+    ['unpaid', 'statusUnpaid'],
+    ['paused', 'statusPaused'],
+    ['incomplete', 'statusIncomplete'],
+    ['incomplete_expired', 'statusIncompleteExpired'],
+    ['canceled', 'statusCanceled'],
+    ['unknown', 'statusNone'],
+  ])('labels subscription status %s', async (status, label) => {
+    useConfigStore.setState({ stripeEnabled: true })
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith('/stats')) return jsonResponse(stats)
+      if (url.endsWith('/quota')) return jsonResponse({})
+      return jsonResponse({ ...user, subscription_status: status })
+    })
+
+    render(<AdminUserStatsPage />)
+
+    expect(await screen.findAllByText(label)).not.toHaveLength(0)
+  })
+
+  it('shows inactive language and empty token stats without percentages', async () => {
+    const sparseStats = {
+      ...stats,
+      exercises_total: 0,
+      tokens_total: 0,
+      per_language: [
+        {
+          target_language: 'xx',
+          cefr_level: null,
+          xp_total: 0,
+          streak_current: 0,
+          active_days: 0,
+          lessons_completed: 0,
+          exercises_correct: 0,
+          exercises_total: 0,
+        },
+      ],
+    }
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith('/stats')) return jsonResponse(sparseStats)
+      if (url.endsWith('/quota')) return jsonResponse({})
+      return jsonResponse(user)
+    })
+
+    render(<AdminUserStatsPage />)
+    expect(await screen.findByText('statsExercises')).toBeInTheDocument()
+    expect(screen.getByText('-')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'tabLanguages' }))
+    expect(screen.getByText('xx')).toBeInTheDocument()
+    expect(screen.getAllByText('-').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'tabActivity' }))
+    expect(screen.getByText('statsTokensNote')).toBeInTheDocument()
+  })
 })
