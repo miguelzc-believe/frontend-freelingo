@@ -55,7 +55,7 @@ export function AudioPlayer({
     controllerRef.current = controller
     const timeoutId = setTimeout(() => controller.abort(), TTS_TIMEOUT_MS)
     try {
-      const traceId = `tts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      const traceId = `tts-${globalThis.crypto.randomUUID()}`
       const t0 = performance.now()
 
       const fetchStart = performance.now()

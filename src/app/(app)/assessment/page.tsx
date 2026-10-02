@@ -16,6 +16,7 @@ import { buildAnswerRecord, type AnswerRecord } from '@/lib/assessment-answers'
 import { CEFR_LEVELS } from '@/data/curriculum'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { PageLoading } from '@/components/ui/page-loading'
+import { secureRandomInt } from '@/lib/secure-random'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ function pickNextQuestion(
     (q) => !usedIds.has(q.id) && q.difficulty === currentLevel
   )
   if (available.length === 0) return null
-  return available[Math.floor(Math.random() * available.length)] ?? null
+  return available[secureRandomInt(available.length)] ?? null
 }
 
 function adjustLevel(current: CEFRLevel, direction: 'up' | 'down'): CEFRLevel {

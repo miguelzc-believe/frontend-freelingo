@@ -162,15 +162,18 @@ describe('AudioPlayer', () => {
     )
   })
 
-  it('sends X-TTS-Trace-ID header', async () => {
+  it('sends a cryptographically generated X-TTS-Trace-ID header', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
+      '123e4567-e89b-12d3-a456-426614174000'
+    )
     fetchMock.mockResolvedValueOnce(makeOkResponse())
 
     render(<AudioPlayer text="Hello" />)
     fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => {
-      expect(fetchMock.mock.calls[0]![1].headers['X-TTS-Trace-ID']).toMatch(
-        /^tts-/
+      expect(fetchMock.mock.calls[0]![1].headers['X-TTS-Trace-ID']).toBe(
+        'tts-123e4567-e89b-12d3-a456-426614174000'
       )
     })
   })

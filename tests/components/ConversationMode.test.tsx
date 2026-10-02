@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   enqueue: vi.fn(),
   cancel: vi.fn(),
   closeAudio: vi.fn(),
+  push: vi.fn(),
+  starters: [] as string[],
 }))
 
 vi.mock('@ricky0123/vad-web', () => ({
@@ -29,9 +31,12 @@ vi.mock('@ricky0123/vad-web', () => ({
 }))
 vi.mock('use-intl', () => ({
   useLocale: () => 'en',
-  useTranslations: () => Object.assign((key: string) => key, { raw: () => [] }),
+  useTranslations: () =>
+    Object.assign((key: string) => key, { raw: () => mocks.starters }),
 }))
-vi.mock('@/lib/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('@/lib/navigation', () => ({
+  useRouter: () => ({ push: mocks.push }),
+}))
 vi.mock('@/lib/api', () => ({ apiFetch: mocks.apiFetch }))
 vi.mock('@/lib/audio', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/audio')>()),
@@ -52,6 +57,12 @@ vi.mock('@/components/conversation/StatusIndicator', () => ({
 
 import ConversationMode from '@/components/conversation/ConversationMode'
 import { useAuthStore } from '@/store/auth'
+import { useConfigStore } from '@/store/config'
+
+const originalLocationDescriptor = Object.getOwnPropertyDescriptor(
+  window,
+  'location'
+)
 
 class MockWebSocket {
   static OPEN = 1
@@ -115,6 +126,7 @@ beforeEach(() => {
   mocks.closeAudio.mockResolvedValue(undefined)
   mocks.enqueue.mockResolvedValue(undefined)
   mocks.apiFetch.mockResolvedValue({ ok: true, json: async () => null })
+  mocks.starters = []
   vi.stubGlobal('WebSocket', MockWebSocket)
   vi.stubGlobal(
     'AudioContext',
@@ -134,14 +146,46 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  if (originalLocationDescriptor)
+    Object.defineProperty(window, 'location', originalLocationDescriptor)
 })
 
 describe('ConversationMode session lifecycle', () => {
+  it('shows the first six translated starters in a stable alphabetical order', () => {
+    mocks.starters = [
+      'Zulu',
+      'Alpha',
+      'Yankee',
+      'Bravo',
+      'Xray',
+      'Charlie',
+      'Extra',
+    ]
+
+    render(<ConversationMode />)
+
+    const starterButtons = screen
+      .getByText('startersHint')
+      .parentElement?.querySelectorAll('button')
+    expect(
+      Array.from(starterButtons ?? [], (button) => button.textContent)
+    ).toEqual(['Alpha', 'Bravo', 'Charlie', 'Xray', 'Yankee', 'Zulu'])
+  })
+
   it('does not request the microphone or create VAD until start is pressed', () => {
     render(<ConversationMode />)
 
     expect(mocks.getUserMedia).not.toHaveBeenCalled()
     expect(mocks.create).not.toHaveBeenCalled()
+  })
+
+  it('auto-starts when opened from the chat overlay', async () => {
+    render(<ConversationMode autoStart />)
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
+    expect(mocks.getUserMedia).toHaveBeenCalledTimes(1)
+    act(() => MockWebSocket.instances[0]!.onopen?.())
+    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
   })
 
   it('does not acquire resources when started without an access token', () => {
@@ -182,6 +226,23 @@ describe('ConversationMode session lifecycle', () => {
       )
     ).toBe(false)
     expect(MockWebSocket.instances).toHaveLength(0)
+  })
+
+  it('continues starting after a suspended audio context cannot resume', async () => {
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        state = 'suspended'
+        resume = vi.fn().mockRejectedValue(new Error('resume denied'))
+        close = mocks.closeAudio
+      }
+    )
+    render(<ConversationMode />)
+
+    const ws = await start()
+
+    expect(MockWebSocket.instances).toHaveLength(1)
+    expect(ws!.close).not.toHaveBeenCalled()
   })
 
   it('disables another start while warmup is pending', async () => {
@@ -393,6 +454,16 @@ describe('ConversationMode session lifecycle', () => {
     }
   )
 
+  it('ignores malformed text frames without interrupting the live session', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+
+    act(() => ws!.onmessage?.({ data: '{invalid json' }))
+
+    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+    expect(screen.queryByText('errorMessage')).not.toBeInTheDocument()
+  })
+
   it('clears visual speech and discards the unfinished segment on misfire', async () => {
     render(<ConversationMode />)
     const ws = await start()
@@ -419,6 +490,32 @@ describe('ConversationMode session lifecycle', () => {
     act(() => mocks.options.onSpeechEnd?.(new Float32Array()))
 
     expect(screen.getByTestId('speaking').textContent).toBe('false')
+    expect(ws!.send).not.toHaveBeenCalled()
+  })
+
+  it('discards short high-volume audio that does not meet the speech duration', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+
+    act(() => {
+      mocks.options.onSpeechStart?.()
+      mocks.options.onSpeechEnd?.(new Float32Array(8000).fill(0.2))
+    })
+
+    expect(screen.getByTestId('speaking').textContent).toBe('false')
+    expect(ws!.send).not.toHaveBeenCalled()
+  })
+
+  it('does not send speech when the websocket is no longer open', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+    ws!.readyState = 3
+
+    act(() => {
+      mocks.options.onSpeechStart?.()
+      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.05))
+    })
+
     expect(ws!.send).not.toHaveBeenCalled()
   })
 
@@ -694,6 +791,27 @@ describe('ConversationMode session lifecycle', () => {
     expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
   })
 
+  it('clears the speaking state if queued playback rejects', async () => {
+    mocks.enqueue.mockRejectedValueOnce(new Error('audio decode failed'))
+    render(<ConversationMode />)
+    const ws = await start()
+
+    act(() => ws!.onmessage?.({ data: new ArrayBuffer(12) }))
+    await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledTimes(1))
+    expect(mocks.enqueue).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+  })
+
+  it('maps a policy websocket close to the unauthorized message', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+
+    act(() => ws!.onclose?.({ code: 1008, reason: 'private details' }))
+
+    expect(await screen.findByText('✕ errorUnauthorized')).toBeInTheDocument()
+    expect(screen.queryByText('private details')).not.toBeInTheDocument()
+  })
+
   it('shows session warnings and releases resources when the server ends a session', async () => {
     const mic = microphone()
     mocks.getUserMedia.mockResolvedValue(mic.stream)
@@ -739,6 +857,167 @@ describe('ConversationMode session lifecycle', () => {
     expect(screen.getByText('quotaSessions')).toBeInTheDocument()
     expect(screen.getByText('quotaMinutes')).toBeInTheDocument()
     expect(screen.queryByText('quotaTokens')).toBeNull()
+  })
+
+  it('shows unlimited quotas as an infinite summary', async () => {
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url === '/api/auth/quota'
+            ? {
+                sessions_this_week: 0,
+                sessions_limit: 0,
+                sessions_unlimited: true,
+                minutes_today: 0,
+                minutes_limit: 0,
+                time_unlimited: true,
+                minutes_this_week: 0,
+                weekly_minutes_limit: 0,
+                weekly_minutes_unlimited: true,
+                tokens_unlimited: true,
+              }
+            : null,
+      })
+    )
+    render(<ConversationMode />)
+
+    const summary = await screen.findByRole('button', { name: /∞/ })
+    fireEvent.click(summary)
+    expect(screen.getByText('quotaSessions')).toBeInTheDocument()
+    expect(screen.getByText('quotaMinutes')).toBeInTheDocument()
+    expect(screen.queryByText('quotaTokens')).toBeNull()
+    expect(screen.getAllByText('∞')).toHaveLength(2)
+  })
+
+  it('defaults missing token quota measurements to zero', async () => {
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url === '/api/auth/quota'
+            ? {
+                sessions_this_week: 0,
+                sessions_limit: 0,
+                sessions_unlimited: true,
+                minutes_today: 0,
+                minutes_limit: 0,
+                time_unlimited: true,
+                tokens_unlimited: false,
+              }
+            : null,
+      })
+    )
+    render(<ConversationMode />)
+
+    const summary = await screen.findByRole('button', { name: /0k\/0k tok/ })
+    fireEvent.click(summary)
+
+    expect(screen.getByText('quotaTokens')).toBeInTheDocument()
+    expect(screen.getByText('0 / 0')).toBeInTheDocument()
+  })
+
+  it('shows the freemium voice limit in red when no uses remain', () => {
+    render(
+      <ConversationMode freemiumVoiceRemaining={0} freemiumVoiceLimit={10} />
+    )
+
+    expect(screen.getByText('freemiumVoiceRemaining')).toHaveClass(
+      'text-red-500'
+    )
+    expect(screen.queryByRole('button', { name: /quota/ })).toBeNull()
+  })
+
+  it('marks the quota summary exceeded and renders all finite usage bars', async () => {
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url === '/api/auth/quota'
+            ? {
+                sessions_this_week: 4,
+                sessions_limit: 4,
+                sessions_unlimited: false,
+                minutes_today: 30,
+                minutes_limit: 30,
+                time_unlimited: false,
+                minutes_this_week: 30,
+                weekly_minutes_limit: 90,
+                weekly_minutes_unlimited: false,
+                tokens_this_month: 2500,
+                tokens_monthly_limit: 2500,
+                tokens_unlimited: false,
+              }
+            : null,
+      })
+    )
+    render(<ConversationMode />)
+
+    const summary = await screen.findByRole('button', {
+      name: /4\/4 ses.*30\/30 min.*3k\/3k tok/,
+    })
+    expect(summary.className).toContain('border-fl-error/50')
+    fireEvent.click(summary)
+
+    expect(screen.getByText('quotaSessions')).toBeInTheDocument()
+    expect(screen.getByText('quotaMinutes')).toBeInTheDocument()
+    expect(screen.getByText('quotaTokens')).toBeInTheDocument()
+    expect(screen.getAllByText(/\/4/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/\/30/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/\/3/).length).toBeGreaterThan(0)
+  })
+
+  it('offers billing after a trial ends and handles checkout failure, success and skip', async () => {
+    const locationAssign = vi.fn()
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { assign: locationAssign },
+    })
+    useConfigStore.setState({ priceMonthly: 12, priceYearly: 99 })
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/billing/checkout'
+          ? { ok: false, json: async () => ({}) }
+          : { ok: true, json: async () => null }
+      )
+    )
+    render(<ConversationMode trialMode voiceTrialDurationSeconds={80} />)
+    expect(screen.getByText('trialBanner')).toBeInTheDocument()
+    const ws = await start()
+    act(() => ws!.message({ type: 'session_end', reason: 'trial_expired' }))
+
+    expect(await screen.findByText('trialCtaTitle')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /planYearly/ }))
+    await waitFor(() =>
+      expect(mocks.apiFetch).toHaveBeenCalledWith(
+        '/api/billing/checkout',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ plan: 'yearly' }),
+        })
+      )
+    )
+    expect(await screen.findByText('checkoutError')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /planMonthly/ })).toBeEnabled()
+
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/billing/checkout'
+          ? {
+              ok: true,
+              json: async () => ({ url: 'https://billing.example/checkout' }),
+            }
+          : { ok: true, json: async () => null }
+      )
+    )
+    fireEvent.click(screen.getByRole('button', { name: /planMonthly/ }))
+    await waitFor(() =>
+      expect(locationAssign).toHaveBeenCalledWith(
+        'https://billing.example/checkout'
+      )
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'paywallSkip' }))
+    expect(mocks.push).toHaveBeenCalledWith('/plan')
   })
 
   it('uses the unauthorized close message for policy close codes', async () => {

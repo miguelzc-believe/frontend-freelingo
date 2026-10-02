@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { MicVAD, type RealTimeVADOptions } from '@ricky0123/vad-web'
 import { useRouter } from '@/lib/navigation'
 import { useLocale, useTranslations } from 'use-intl'
@@ -284,6 +284,7 @@ export default function ConversationMode({
 }) {
   const t = useTranslations('conversation')
   const tCommon = useTranslations('common')
+  const locale = useLocale()
   const accessToken = useAuthStore((s) => s.accessToken)
   const user = useAuthStore((s) => s.user)
   const setUser = useAuthStore((s) => s.setUser)
@@ -313,16 +314,10 @@ export default function ConversationMode({
     dismissTooltip,
   } = useWordSave()
 
-  // 6 random starters picked once per component mount, shown alphabetically
-  const visibleStarters = useMemo(
-    () =>
-      (t.raw('starters') as string[])
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 6)
-        .sort((a, b) => a.localeCompare(b)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  )
+  // Keep server rendering and hydration deterministic by showing the first six.
+  const visibleStarters = (t.raw('starters') as string[])
+    .slice(0, 6)
+    .sort((a, b) => a.localeCompare(b, locale))
 
   // ─── Fetch quota on mount ─────────────────────────────────────────────────
   const refreshQuota = useCallback(() => {
