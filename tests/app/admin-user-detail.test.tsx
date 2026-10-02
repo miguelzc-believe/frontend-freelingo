@@ -273,4 +273,162 @@ describe('AdminUserStatsPage subscription visibility', () => {
     expect(screen.getByText('updateUserError')).toBeDefined()
     expect(screen.getByText('emailVerified')).toBeDefined()
   })
+
+  it('rejects invalid quota values without sending an update', async () => {
+    render(<AdminUserStatsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'tabQuota' }))
+    const weeklyInput = screen.getAllByRole('spinbutton')[0]!
+    fireEvent.change(weeklyInput, { target: { value: '-1' } })
+
+    const saveButton = screen.getByRole('button', { name: 'quotaSave' })
+    expect(weeklyInput.getAttribute('aria-invalid')).toBe('true')
+    expect(saveButton).toBeDisabled()
+    fireEvent.click(saveButton)
+    expect(
+      mockApiFetch.mock.calls.some(([, options]) => options?.method === 'PATCH')
+    ).toBe(false)
+    expect(screen.queryByText('quotaValidationError')).toBeNull()
+  })
+
+  it('shows a quota save error and resets its saving state after rejection', async () => {
+    let rejectQuotaSave: ((response: Response) => void) | undefined
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'PATCH')
+        return new Promise<Response>((resolve) => {
+          rejectQuotaSave = resolve
+        })
+      if (url.endsWith('/stats')) return Promise.resolve(jsonResponse(stats))
+      if (url.endsWith('/quota')) return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse(user))
+    })
+
+    render(<AdminUserStatsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'tabQuota' }))
+    fireEvent.click(screen.getByRole('button', { name: 'quotaSave' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'quotaSave' })).toBeDisabled()
+    )
+    rejectQuotaSave?.(jsonResponse({}, 500))
+
+    expect(await screen.findByText('quotaSaveError')).toBeDefined()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'quotaSave' })).toBeEnabled()
+    )
+    expect(screen.queryByText('saving')).toBeNull()
+  })
+
+  it('saves configured quota limits and refreshes quota usage', async () => {
+    const updatedUser = {
+      ...user,
+      conversation_weekly_sessions: 9,
+      conversation_daily_minutes: 15,
+      conversation_weekly_minutes: 45,
+      monthly_tokens_limit: 2000,
+    }
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') return jsonResponse(updatedUser)
+        if (url.endsWith('/stats')) return jsonResponse(stats)
+        if (url.endsWith('/quota'))
+          return jsonResponse({ sessions_this_week: 2, sessions_limit: 9 })
+        return jsonResponse(user)
+      }
+    )
+
+    render(<AdminUserStatsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'tabQuota' }))
+    fireEvent.click(screen.getByRole('button', { name: 'quotaSave' }))
+
+    expect(
+      await screen.findByRole('button', { name: 'quotaSaved' })
+    ).toBeDefined()
+    expect(
+      screen
+        .getAllByRole('spinbutton')
+        .map((input) => (input as HTMLInputElement).value)
+    ).toEqual(['9', '15', '45', '2000'])
+    expect(screen.getByText('2 / 9')).toBeDefined()
+    const update = mockApiFetch.mock.calls.find(
+      ([, options]) => options?.method === 'PATCH'
+    )
+    expect(JSON.parse(String(update?.[1]?.body))).toEqual({
+      conversation_weekly_sessions: 5,
+      conversation_daily_minutes: 10,
+      conversation_weekly_minutes: 30,
+      monthly_tokens_limit: 1000,
+    })
+  })
+
+  it('applies a monthly subscription override and sends its active period', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    const updatedUser = { ...user, subscription_status: 'active' }
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') return jsonResponse(updatedUser)
+        if (url.endsWith('/stats')) return jsonResponse(stats)
+        if (url.endsWith('/quota')) return jsonResponse({})
+        return jsonResponse(user)
+      }
+    )
+
+    render(<AdminUserStatsPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'tabSubscription' })
+    )
+    fireEvent.change(
+      screen.getByRole('combobox', { name: 'subscriptionOverride' }),
+      { target: { value: 'monthly' } }
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'subscriptionConfirm' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    const update = mockApiFetch.mock.calls.find(
+      ([, options]) => options?.method === 'PATCH'
+    )
+    expect(update?.[0]).toBe('/api/admin/users/7')
+    const payload = JSON.parse(String(update?.[1]?.body)) as {
+      subscription_status: string
+      subscription_ends_at: string
+    }
+    expect(payload.subscription_status).toBe('active')
+    expect(Date.parse(payload.subscription_ends_at)).toBeGreaterThan(Date.now())
+    expect(screen.getAllByText('statusActive').length).toBeGreaterThan(0)
+  })
+
+  it('removes a subscription override and reflects the returned user', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    const updatedUser = {
+      ...user,
+      subscription_status: 'none',
+      subscription_ends_at: null,
+    }
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') return jsonResponse(updatedUser)
+        if (url.endsWith('/stats')) return jsonResponse(stats)
+        if (url.endsWith('/quota')) return jsonResponse({})
+        return jsonResponse(user)
+      }
+    )
+
+    render(<AdminUserStatsPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'tabSubscription' })
+    )
+    fireEvent.change(
+      screen.getByRole('combobox', { name: 'subscriptionOverride' }),
+      { target: { value: 'none' } }
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'subscriptionConfirm' }))
+
+    await waitFor(() => expect(screen.getByText('statusNone')).toBeDefined())
+    const update = mockApiFetch.mock.calls.find(
+      ([, options]) => options?.method === 'PATCH'
+    )
+    expect(JSON.parse(String(update?.[1]?.body))).toEqual({
+      subscription_status: 'none',
+      subscription_ends_at: null,
+    })
+  })
 })
