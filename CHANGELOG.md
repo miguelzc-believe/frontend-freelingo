@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Share refresh-cookie rotation across session restoration, API retries, avatars, subscription checks and billing. Development remounts no longer race to renew the same cookie and unexpectedly log users out.
+- Make the listening audio seek bar operable with the keyboard, associate the admin announcement checkbox with its label explicitly, and pass image alternative text through explicitly.
 
 ## 0.1.0
 
