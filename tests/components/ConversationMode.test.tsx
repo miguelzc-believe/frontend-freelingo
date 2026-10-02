@@ -128,6 +128,7 @@ beforeEach(() => {
   })
   Element.prototype.scrollIntoView = vi.fn()
   useAuthStore.setState({ accessToken: 'token', user: null })
+  localStorage.removeItem('tts_voice')
 })
 
 afterEach(() => {
@@ -375,5 +376,170 @@ describe('ConversationMode session lifecycle', () => {
     const current = await start('startNew')
     act(() => speak())
     expect(current!.send).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['creation', 'start'])(
+    'reports VAD %s failures, releases the microphone, and allows retry',
+    async (failure) => {
+      const mic = microphone()
+      mocks.getUserMedia.mockResolvedValue(mic.stream)
+      if (failure === 'creation') {
+        mocks.create.mockRejectedValueOnce(new Error('VAD unavailable'))
+      } else {
+        mocks.start.mockRejectedValueOnce(new Error('VAD failed to start'))
+      }
+      render(<ConversationMode />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'start' }))
+      expect(await screen.findByText('✕ errorVadInit')).toBeInTheDocument()
+      expect(mic.stop).toHaveBeenCalledTimes(1)
+      expect(MockWebSocket.instances).toHaveLength(0)
+
+      await start('startNew')
+      expect(MockWebSocket.instances).toHaveLength(1)
+    }
+  )
+
+  it('reports a rejected warmup and does not open the websocket', async () => {
+    mocks.apiFetch.mockImplementation((url: string) =>
+      url === '/api/conversation/warmup'
+        ? Promise.reject(new Error('network failure'))
+        : Promise.resolve({ ok: true, json: async () => null })
+    )
+    render(<ConversationMode />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+
+    expect(
+      await screen.findByText('✕ errorConnection [warmup request failed]')
+    ).toBeInTheDocument()
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(mocks.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses trial credentials and the selected voice in the websocket auth payload', async () => {
+    localStorage.setItem('tts_voice', 'voice-test')
+    render(
+      <ConversationMode targetLanguage="ja" voiceTrialToken="trial-token" />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
+    const ws = MockWebSocket.instances[0]
+    act(() => ws!.onopen?.())
+
+    expect(ws!.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'auth',
+        token: 'token',
+        voice: 'voice-test',
+        target_language: 'ja',
+        voice_trial_token: 'trial-token',
+      })
+    )
+    localStorage.removeItem('tts_voice')
+  })
+
+  it('renders user, streaming assistant, and finalized assistant transcript transitions', async () => {
+    render(<ConversationMode targetLanguage="ja" />)
+    const ws = await start()
+
+    act(() => {
+      ws!.message({
+        type: 'transcript',
+        role: 'user',
+        text: 'こんにちは',
+        final: true,
+      })
+      ws!.message({
+        type: 'transcript',
+        role: 'assistant',
+        text: 'Streaming reply',
+        final: false,
+      })
+    })
+    expect(screen.getByText('こんにちは')).toBeInTheDocument()
+    expect(screen.getByText('Streaming reply')).toBeInTheDocument()
+
+    act(() =>
+      ws!.message({
+        type: 'transcript',
+        role: 'assistant',
+        text: 'Final reply',
+        final: true,
+      })
+    )
+    expect(screen.getByText('Final reply')).toBeInTheDocument()
+    expect(screen.queryByText('Streaming reply')).toBeNull()
+  })
+
+  it('queues binary audio, reflects playback state, and clears playback on barge-in', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+
+    const audioChunk = new ArrayBuffer(12)
+    act(() => ws!.onmessage?.({ data: audioChunk }))
+    expect(mocks.enqueue).toHaveBeenCalledWith(audioChunk)
+
+    act(() => ws!.message({ type: 'barge_in' }))
+    expect(mocks.cancel).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+  })
+
+  it('shows session warnings and releases resources when the server ends a session', async () => {
+    const mic = microphone()
+    mocks.getUserMedia.mockResolvedValue(mic.stream)
+    render(<ConversationMode />)
+    const ws = await start()
+
+    act(() => ws!.message({ type: 'session_warning', remaining_seconds: 45 }))
+    expect(screen.getByText('warningTimeout')).toBeInTheDocument()
+
+    act(() => ws!.message({ type: 'session_end', reason: 'max_duration' }))
+    expect(screen.getByText('sessionEnded')).toBeInTheDocument()
+    await waitFor(() => expect(mocks.destroy).toHaveBeenCalledTimes(1))
+    expect(mic.stop).toHaveBeenCalledTimes(1)
+    expect(ws!.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('expands finite quota details and omits unlimited token usage', async () => {
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url === '/api/auth/quota'
+            ? {
+                sessions_this_week: 3,
+                sessions_limit: 3,
+                sessions_unlimited: false,
+                minutes_today: 12,
+                minutes_limit: 30,
+                time_unlimited: false,
+                minutes_this_week: 12,
+                weekly_minutes_limit: 90,
+                weekly_minutes_unlimited: false,
+                tokens_unlimited: true,
+              }
+            : null,
+      })
+    )
+    render(<ConversationMode />)
+
+    await screen.findByRole('button', { name: /3\/3 ses/ })
+    fireEvent.click(screen.getByRole('button', { name: /3\/3 ses/ }))
+
+    expect(screen.getByText('quotaSessions')).toBeInTheDocument()
+    expect(screen.getByText('quotaMinutes')).toBeInTheDocument()
+    expect(screen.queryByText('quotaTokens')).toBeNull()
+  })
+
+  it('uses the unauthorized close message for policy close codes', async () => {
+    render(<ConversationMode />)
+    const ws = await start()
+
+    act(() => ws!.onclose?.({ code: 1008, reason: 'private diagnostic' }))
+
+    expect(screen.getByText('✕ errorUnauthorized')).toBeInTheDocument()
+    expect(screen.queryByText(/private diagnostic/)).toBeNull()
+    expect(ws!.close).toHaveBeenCalledTimes(1)
   })
 })
