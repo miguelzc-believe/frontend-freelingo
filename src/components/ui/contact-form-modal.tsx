@@ -49,7 +49,7 @@ export function ContactFormModal({ open, onClose }: ContactFormModalProps) {
 
   if (!open) return null
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setStatus('loading')
     setErrorMsg('')

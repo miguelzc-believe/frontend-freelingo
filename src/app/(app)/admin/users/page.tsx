@@ -313,7 +313,7 @@ export default function AdminUsersPage() {
     setShowCreate(true)
   }
 
-  async function createUser(e: React.FormEvent) {
+  async function createUser(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
     if (!/^[a-zA-Z0-9._\s-]+$/.test(form.username)) {

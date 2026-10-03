@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { type SubmitEvent, useCallback, useEffect, useState } from 'react'
 import Link from '@/components/ui/app-link'
 import { Loader2, Trash2 } from 'lucide-react'
 import { useTranslations } from 'use-intl'
@@ -48,7 +48,7 @@ export default function SettingsMemoriesPage() {
     void loadMemories()
   }, [loadMemories])
 
-  async function handleAdd(event: FormEvent<HTMLFormElement>) {
+  async function handleAdd(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (loading || loadError || mutating) return
     const normalized = content.trim()

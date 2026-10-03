@@ -92,7 +92,7 @@ export default function OnboardingPage() {
     )
   }
 
-  async function handleStep1(e: React.FormEvent) {
+  async function handleStep1(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setStep(2)
   }

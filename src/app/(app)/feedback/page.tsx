@@ -103,7 +103,7 @@ function CreateModal({ type, onClose, onCreated }: CreateModalProps) {
   const textareaCls =
     'w-full bg-fl-bg border border-fl-border px-4 py-3 font-mono text-xs text-fl-fg placeholder:text-fl-muted-4 focus:outline-none focus:border-fl-border-2 transition-colors resize-y min-h-[106px]'
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
     setSubmitting(true)
@@ -307,7 +307,7 @@ function DetailView({
     }
   }
 
-  async function handlePostComment(e: React.FormEvent) {
+  async function handlePostComment(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!commentBody.trim()) return
     setPostingComment(true)

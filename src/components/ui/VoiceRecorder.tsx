@@ -18,6 +18,18 @@ interface RecordingContext {
   onTranscription: VoiceRecorderProps['onTranscription']
 }
 
+interface RecordingSession extends RecordingContext {
+  phase: 'initializing' | 'recording' | 'stopping'
+  chunks: Float32Array[]
+  stream: MediaStream | null
+  audio: AudioContext | null
+  source: MediaStreamAudioSourceNode | null
+  node: AudioWorkletNode | null
+  autoStop: ReturnType<typeof setTimeout> | null
+  ackTimeout: ReturnType<typeof setTimeout> | null
+  abort: AbortController | null
+}
+
 export function VoiceRecorder({
   studyPlanId,
   onTranscription,
@@ -26,14 +38,8 @@ export function VoiceRecorder({
   className = '',
 }: VoiceRecorderProps) {
   const [state, setState] = useState<RecorderState>('idle')
-  const streamRef = useRef<MediaStream | null>(null)
-  const audioCtxRef = useRef<AudioContext | null>(null)
-  const chunksRef = useRef<Float32Array[]>([])
-  const processorRef = useRef<ScriptProcessorNode | null>(null)
-  const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sessionRef = useRef<RecordingSession | null>(null)
   const errorResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const requestAbortRef = useRef<AbortController | null>(null)
-  const recordingContextRef = useRef<RecordingContext | null>(null)
   const mountedRef = useRef(true)
   const t = useTranslations('voiceRecorder')
 
@@ -41,35 +47,45 @@ export function VoiceRecorder({
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      if (autoStopRef.current) clearTimeout(autoStopRef.current)
       if (errorResetRef.current) clearTimeout(errorResetRef.current)
-      processorRef.current?.disconnect()
-      processorRef.current = null
-      void audioCtxRef.current?.close()
-      audioCtxRef.current = null
-      streamRef.current?.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-      recordingContextRef.current = null
-      requestAbortRef.current?.abort()
-      requestAbortRef.current = null
+      const session = sessionRef.current
+      sessionRef.current = null
+      if (session) {
+        session.abort?.abort()
+        cleanupAudio(session)
+      }
     }
   }, [])
 
-  function cleanupAudio() {
-    if (autoStopRef.current) {
-      clearTimeout(autoStopRef.current)
-      autoStopRef.current = null
-    }
-    processorRef.current?.disconnect()
-    processorRef.current = null
-    void audioCtxRef.current?.close()
-    audioCtxRef.current = null
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
+  function isCurrent(session: RecordingSession) {
+    return mountedRef.current && sessionRef.current === session
   }
 
-  function showError() {
-    if (!mountedRef.current) return
+  function cleanupAudio(session: RecordingSession) {
+    if (session.autoStop) clearTimeout(session.autoStop)
+    if (session.ackTimeout) clearTimeout(session.ackTimeout)
+    session.autoStop = null
+    session.ackTimeout = null
+    if (session.node) {
+      session.node.port.onmessage = null
+      session.node.onprocessorerror = null
+      session.node.disconnect()
+      session.node.port.close()
+      session.node = null
+    }
+    session.source?.disconnect()
+    session.source = null
+    if (session.audio) void session.audio.close().catch(() => {})
+    session.audio = null
+    session.stream?.getTracks().forEach((track) => track.stop())
+    session.stream = null
+  }
+
+  function showError(session: RecordingSession) {
+    if (!isCurrent(session)) return
+    sessionRef.current = null
+    session.abort?.abort()
+    cleanupAudio(session)
     setState('error')
     if (errorResetRef.current) clearTimeout(errorResetRef.current)
     errorResetRef.current = setTimeout(() => {
@@ -78,28 +94,18 @@ export function VoiceRecorder({
     }, 2000)
   }
 
-  async function processAndSend(inputRate: number, context: RecordingContext) {
-    let controller: AbortController | null = null
+  async function processAndSend(session: RecordingSession, inputRate: number) {
     try {
-      const chunks = chunksRef.current
-      chunksRef.current = []
-
-      if (chunks.length === 0) {
-        showError()
-        return
-      }
-
-      if (!mountedRef.current) return
-      setState('transcribing')
-
-      const totalLength = chunks.reduce((sum, c) => sum + c.length, 0)
+      const chunks = session.chunks
+      session.chunks = []
+      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+      if (!totalLength) throw new Error('No recorded audio')
       const combined = new Float32Array(totalLength)
       let offset = 0
       for (const chunk of chunks) {
         combined.set(chunk, offset)
         offset += chunk.length
       }
-
       let samples = combined
       if (inputRate !== 16000) {
         const offlineCtx = new OfflineAudioContext(
@@ -116,8 +122,7 @@ export function VoiceRecorder({
         const rendered = await offlineCtx.startRendering()
         samples = rendered.getChannelData(0)
       }
-
-      if (!mountedRef.current) return
+      if (!isCurrent(session)) return
       const wav = float32ToWav(samples, 16000)
       const formData = new FormData()
       formData.append(
@@ -125,47 +130,64 @@ export function VoiceRecorder({
         new Blob([wav], { type: 'audio/wav' }),
         'recording.wav'
       )
-      formData.append('study_plan_id', String(context.studyPlanId))
-
-      controller = new AbortController()
-      requestAbortRef.current = controller
+      formData.append('study_plan_id', String(session.studyPlanId))
+      session.abort = new AbortController()
       const res = await apiFetch('/api/stt', {
         method: 'POST',
         body: formData,
-        signal: controller.signal,
+        signal: session.abort.signal,
       })
+      if (!isCurrent(session)) return
       if (!res.ok) throw new Error(`STT error ${res.status}`)
       const { text } = (await res.json()) as { text: string }
-      if (!mountedRef.current) return
-      await context.onTranscription(text)
-      if (mountedRef.current) setState('idle')
-    } catch {
-      showError()
-    } finally {
-      if (requestAbortRef.current === controller) {
-        requestAbortRef.current = null
+      if (!isCurrent(session)) return
+      await session.onTranscription(text)
+      if (isCurrent(session)) {
+        sessionRef.current = null
+        setState('idle')
       }
+    } catch {
+      showError(session)
+    } finally {
+      session.abort = null
     }
   }
 
-  function stopRecording() {
-    const context = recordingContextRef.current
-    if (!context) return
-    recordingContextRef.current = null
-    if (!streamRef.current) {
-      chunksRef.current = []
-      if (mountedRef.current) setState('idle')
+  function stopRecording(session = sessionRef.current) {
+    if (!session || !isCurrent(session) || session.phase === 'stopping') return
+    if (session.autoStop) clearTimeout(session.autoStop)
+    session.autoStop = null
+    if (session.phase === 'initializing') {
+      sessionRef.current = null
+      cleanupAudio(session)
+      setState('idle')
       return
     }
-    const sampleRate = audioCtxRef.current?.sampleRate || 48000
-    cleanupAudio()
-    void processAndSend(sampleRate, context)
+    session.phase = 'stopping'
+    setState('transcribing')
+    session.ackTimeout = setTimeout(() => showError(session), 3000)
+    try {
+      session.node!.port.postMessage({ type: 'stop' })
+    } catch {
+      showError(session)
+    }
   }
 
   async function startRecording() {
-    const context = { studyPlanId, onTranscription }
-    recordingContextRef.current = context
-    chunksRef.current = []
+    const session: RecordingSession = {
+      studyPlanId,
+      onTranscription,
+      phase: 'initializing',
+      chunks: [],
+      stream: null,
+      audio: null,
+      source: null,
+      node: null,
+      autoStop: null,
+      ackTimeout: null,
+      abort: null,
+    }
+    sessionRef.current = session
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -174,50 +196,63 @@ export function VoiceRecorder({
           autoGainControl: true,
         },
       })
-      if (!mountedRef.current || recordingContextRef.current !== context) {
+      if (!isCurrent(session)) {
         stream.getTracks().forEach((track) => track.stop())
         return
       }
-      streamRef.current = stream
-
-      const audioCtx = new AudioContext()
-      audioCtxRef.current = audioCtx
-
-      const source = audioCtx.createMediaStreamSource(stream)
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1)
-      processorRef.current = processor
-
-      processor.onaudioprocess = (e) => {
-        const input = e.inputBuffer.getChannelData(0)
-        chunksRef.current.push(new Float32Array(input))
+      session.stream = stream
+      const audio = new AudioContext()
+      session.audio = audio
+      if (!audio.audioWorklet || typeof AudioWorkletNode === 'undefined') {
+        throw new Error('AudioWorklet unavailable')
       }
-
-      source.connect(processor)
-      processor.connect(audioCtx.destination)
-
-      autoStopRef.current = setTimeout(() => {
-        stopRecording()
-      }, maxSeconds * 1000)
+      await audio.audioWorklet.addModule('/audio/voice-recorder.worklet.js')
+      if (!isCurrent(session)) return
+      if (audio.state === 'suspended') {
+        await audio.resume()
+        if (!isCurrent(session)) return
+      }
+      const node = new AudioWorkletNode(audio, 'voice-recorder', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+      })
+      session.node = node
+      node.onprocessorerror = () => showError(session)
+      node.port.onmessage = ({
+        data,
+      }: MessageEvent<{
+        type: string
+        samples?: Float32Array
+      }>) => {
+        if (!isCurrent(session)) return
+        if (data.type === 'samples' && data.samples instanceof Float32Array) {
+          session.chunks.push(data.samples)
+        } else if (data.type === 'stopped' && session.phase === 'stopping') {
+          const inputRate = audio.sampleRate
+          cleanupAudio(session)
+          void processAndSend(session, inputRate)
+        }
+      }
+      session.source = audio.createMediaStreamSource(stream)
+      session.source.connect(node)
+      node.connect(audio.destination)
+      session.phase = 'recording'
+      session.autoStop = setTimeout(
+        () => stopRecording(session),
+        maxSeconds * 1000
+      )
     } catch {
-      const isCurrentRecording = recordingContextRef.current === context
-      if (isCurrentRecording) {
-        recordingContextRef.current = null
-        cleanupAudio()
-        showError()
-      }
+      showError(session)
     }
   }
 
   async function handleClick() {
-    if (disabled) return
-
     if (state === 'recording') {
       stopRecording()
       return
     }
-
-    if (state !== 'idle') return
-
+    if (disabled || state !== 'idle' || sessionRef.current) return
     setState('recording')
     await startRecording()
   }

@@ -1,698 +1,438 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import React from 'react'
-import { VoiceRecorder as VoiceRecorderComponent } from '@/components/ui/VoiceRecorder'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { VoiceRecorder } from '@/components/ui/VoiceRecorder'
+import { float32ToWav } from '@/lib/audio'
 
-const TEST_STUDY_PLAN_ID = 42
+const { api } = vi.hoisted(() => ({ api: vi.fn() }))
+vi.mock('@/lib/api', () => ({ apiFetch: api }))
+vi.mock('@/lib/audio', () => ({
+  float32ToWav: vi.fn(() => new ArrayBuffer(48)),
+}))
+vi.mock('use-intl', () => ({ useTranslations: () => (key: string) => key }))
 
-function VoiceRecorder(
-  props: Omit<
-    React.ComponentProps<typeof VoiceRecorderComponent>,
-    'studyPlanId'
-  >
-) {
-  return <VoiceRecorderComponent studyPlanId={TEST_STUDY_PLAN_ID} {...props} />
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
 }
 
-const { mockApiFetch } = vi.hoisted(() => ({
-  mockApiFetch: vi.fn(),
-}))
-
-vi.mock('@/lib/api', () => ({
-  apiFetch: mockApiFetch,
-}))
-
-vi.mock('@/lib/audio', () => ({
-  float32ToWav: vi.fn(() => new ArrayBuffer(100)),
-}))
-
-vi.mock('use-intl', () => ({
-  useTranslations: () => (key: string) => key,
-}))
-
-vi.mock('@/components/ui/app-image', () => ({
-  default: function MockImage(
-    props: React.ImgHTMLAttributes<HTMLImageElement> & {
-      unoptimized?: boolean
-      priority?: boolean
-    }
-  ) {
-    const { unoptimized, priority, ...imgProps } = props
-    void unoptimized
-    void priority
-    return React.createElement('img', imgProps)
-  },
-}))
-
-describe('VoiceRecorder', () => {
-  let mockGetUserMedia: ReturnType<typeof vi.fn>
-  let streamTrackStop: ReturnType<typeof vi.fn>
-
-  let mockProcessor: {
-    connect: ReturnType<typeof vi.fn>
-    disconnect: ReturnType<typeof vi.fn>
-    onaudioprocess:
-      | ((e: {
-          inputBuffer: { getChannelData: (c: number) => Float32Array }
-        }) => void)
-      | null
+const stopTrack = vi.fn()
+const stream = { getTracks: () => [{ stop: stopTrack }] }
+const media = vi.fn()
+const addModule = vi.fn()
+const resume = vi.fn()
+const close = vi.fn()
+const source = { connect: vi.fn(), disconnect: vi.fn() }
+let rate = 48000
+let suspended = false
+let nodes: MockNode[]
+class MockNode {
+  port = {
+    onmessage: null as ((event: { data: unknown }) => void) | null,
+    postMessage: vi.fn(),
+    close: vi.fn(),
   }
-  let mockAudioCtx: {
-    close: ReturnType<typeof vi.fn>
+  onprocessorerror: (() => void) | null = null
+  connect = vi.fn()
+  disconnect = vi.fn()
+  constructor() {
+    nodes.push(this)
   }
-  let mockStartRendering: ReturnType<typeof vi.fn>
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-
-    streamTrackStop = vi.fn()
-
-    mockGetUserMedia = vi.fn().mockResolvedValue({
-      getTracks: vi.fn(() => [{ stop: streamTrackStop }]),
-    })
-
-    mockProcessor = {
-      connect: vi.fn(),
-      disconnect: vi.fn(),
-      onaudioprocess: null,
-    }
-
-    const ctx = {
-      createMediaStreamSource: vi.fn(() => ({ connect: vi.fn() })),
-      createScriptProcessor: vi.fn(() => mockProcessor),
-      close: vi.fn(),
-      sampleRate: 48000,
-      destination: {},
-    }
-    mockAudioCtx = ctx
-
-    // Must use regular function (not arrow) — arrow functions cannot be called with `new`
-    vi.stubGlobal(
-      'AudioContext',
-      vi.fn(function MockAudioContext() {
-        return ctx
-      })
-    )
-
-    mockStartRendering = vi.fn().mockResolvedValue({
-      getChannelData: () => new Float32Array(16000),
-    })
-    const offlineCtx = {
-      createBuffer: vi.fn(() => ({
-        getChannelData: vi.fn(() => new Float32Array(100)),
-      })),
-      createBufferSource: vi.fn(() => ({
-        buffer: null,
-        connect: vi.fn(),
-        start: vi.fn(),
-      })),
-      startRendering: mockStartRendering,
-      destination: {},
-    }
-
-    vi.stubGlobal(
-      'OfflineAudioContext',
-      vi.fn(function MockOfflineAudioContext() {
-        return offlineCtx
-      })
-    )
-
-    vi.stubGlobal('navigator', {
-      mediaDevices: { getUserMedia: mockGetUserMedia },
-    })
-
-    mockApiFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ text: 'transcribed text' }),
-    } as Response)
+  emit(data: unknown) {
+    this.port.onmessage?.({ data })
+  }
+}
+const renderAudio = vi.fn()
+const offline = vi.fn(function (
+  _channels: number,
+  length: number,
+  _rate: number
+) {
+  void _channels
+  void _rate
+  return {
+    destination: {},
+    createBuffer: () => ({ getChannelData: () => new Float32Array(100) }),
+    createBufferSource: () => ({ connect: vi.fn(), start: vi.fn() }),
+    startRendering: () => renderAudio(length),
+  }
+})
+async function settle() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
   })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
+}
+function click() {
+  fireEvent.click(screen.getByRole('button'))
+}
+function pcm(node = nodes[0]!, samples = [0.1, 0.2]) {
+  node.emit({ type: 'samples', samples: new Float32Array(samples) })
+}
+async function finish() {
+  pcm()
+  click()
+  await act(async () => {
+    nodes[0]!.emit({ type: 'stopped' })
   })
+  await settle()
+}
 
-  async function waitForRecordingReady(timeout = 3000) {
-    await waitFor(
-      () => {
-        expect(typeof mockProcessor.onaudioprocess).toBe('function')
-      },
-      { timeout }
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.useFakeTimers()
+  nodes = []
+  rate = 48000
+  suspended = false
+  media.mockResolvedValue(stream)
+  addModule.mockResolvedValue(undefined)
+  resume.mockResolvedValue(undefined)
+  close.mockResolvedValue(undefined)
+  renderAudio.mockImplementation((length: number) =>
+    Promise.resolve({ getChannelData: () => new Float32Array(length) })
+  )
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: media } })
+  vi.stubGlobal(
+    'AudioContext',
+    vi.fn(function () {
+      return {
+        sampleRate: rate,
+        state: suspended ? 'suspended' : 'running',
+        audioWorklet: { addModule },
+        resume,
+        close,
+        destination: {},
+        createMediaStreamSource: () => source,
+      }
+    })
+  )
+  vi.stubGlobal('AudioWorkletNode', MockNode)
+  vi.stubGlobal('OfflineAudioContext', offline)
+  api.mockResolvedValue({ ok: true, json: async () => ({ text: 'hello' }) })
+})
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
+describe('AudioWorklet recorder', () => {
+  it('preserves idle, disabled and visual contracts', () => {
+    render(
+      <VoiceRecorder
+        studyPlanId={42}
+        onTranscription={vi.fn()}
+        disabled
+        className="custom"
+      />
     )
-  }
-
-  function fireAudioChunk(samples = [0.5]) {
-    if (typeof mockProcessor.onaudioprocess === 'function') {
-      mockProcessor.onaudioprocess({
-        inputBuffer: { getChannelData: () => new Float32Array(samples) },
-      })
-    }
-  }
-
-  // ===== Idle state =====
-
-  it('renders in idle state with record label', () => {
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-    expect(button.textContent).toContain('record')
-  })
-
-  it('has correct aria-label in idle state', () => {
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    expect(screen.getByRole('button').getAttribute('aria-label')).toBe(
+    expect(screen.getByRole('button')).toBeDisabled()
+    expect(screen.getByRole('button')).toHaveAttribute(
+      'aria-label',
       'ariaRecord'
     )
+    expect(screen.getByRole('button')).toHaveClass('custom')
+    click()
+    expect(media).not.toHaveBeenCalled()
   })
-
-  it('applies custom className', () => {
-    render(<VoiceRecorder onTranscription={vi.fn()} className="my-custom" />)
-    expect(screen.getByRole('button').className).toContain('my-custom')
-  })
-
-  // ===== Disabled state =====
-
-  it('renders disabled state correctly', () => {
-    render(<VoiceRecorder onTranscription={vi.fn()} disabled />)
-    const button = screen.getByRole('button')
-    expect(button).toBeDisabled()
-    expect(button.className).toContain('cursor-not-allowed')
-  })
-
-  it('does not respond to clicks when disabled', () => {
-    render(<VoiceRecorder onTranscription={vi.fn()} disabled />)
-    fireEvent.click(screen.getByRole('button'))
-    expect(mockGetUserMedia).not.toHaveBeenCalled()
-  })
-
-  // ===== Recording start =====
-
-  it('transitions to recording state and calls getUserMedia with constraints', async () => {
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-
-    // setState('recording') runs synchronously before the await
-    expect(button.textContent).toContain('stop')
-    expect(button.getAttribute('aria-label')).toBe('ariaStop')
-    expect(mockGetUserMedia).toHaveBeenCalledWith({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
+  it('waits for FIFO final samples and ACK before cleanup or upload', async () => {
+    rate = 16000
+    const callback = vi.fn()
+    render(<VoiceRecorder studyPlanId={42} onTranscription={callback} />)
+    click()
+    await settle()
+    expect(addModule).toHaveBeenCalledWith('/audio/voice-recorder.worklet.js')
+    pcm(nodes[0], [0.25])
+    click()
+    expect(screen.getByRole('button')).toHaveTextContent('processing')
+    expect(nodes[0]!.port.postMessage).toHaveBeenCalledWith({ type: 'stop' })
+    expect(close).not.toHaveBeenCalled()
+    expect(stopTrack).not.toHaveBeenCalled()
+    expect(api).not.toHaveBeenCalled()
+    pcm(nodes[0], [0.5, 0.75])
+    await act(async () => {
+      nodes[0]!.emit({ type: 'stopped' })
     })
+    expect(float32ToWav).toHaveBeenCalledWith(
+      new Float32Array([0.25, 0.5, 0.75]),
+      16000
+    )
+    expect(close).toHaveBeenCalledOnce()
+    expect(source.disconnect).toHaveBeenCalledOnce()
+    expect(nodes[0]!.port.close).toHaveBeenCalledOnce()
+    expect(callback).toHaveBeenCalledExactlyOnceWith('hello')
+    const body = api.mock.calls[0]![1].body as FormData
+    expect(body.get('study_plan_id')).toBe('42')
+    expect((body.get('audio') as File).name).toBe('recording.wav')
+    expect(body.has('language')).toBe(false)
   })
-
-  it('creates AudioContext and sets up processor after getUserMedia resolves', async () => {
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button'))
-
-    await waitForRecordingReady()
-
-    expect(typeof mockProcessor.onaudioprocess).toBe('function')
-    expect(mockProcessor.connect).toHaveBeenCalled()
+  it('times out at exactly 3000ms without truncated upload', async () => {
+    render(<VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />)
+    click()
+    await settle()
+    pcm()
+    click()
+    await act(() => vi.advanceTimersByTimeAsync(2999))
+    expect(close).not.toHaveBeenCalled()
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(close).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button')).toHaveTextContent('error')
+    nodes[0]!.emit({ type: 'stopped' })
+    expect(api).not.toHaveBeenCalled()
+    await act(() => vi.advanceTimersByTimeAsync(2000))
+    expect(screen.getByRole('button')).toHaveTextContent('record')
   })
-
-  it('captures audio chunks and sends them to STT on stop', async () => {
-    const onTranscription = vi.fn()
-    render(<VoiceRecorder onTranscription={onTranscription} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-
-    fireAudioChunk([0.1, 0.2])
-    fireAudioChunk([0.3, 0.4])
-
-    fireEvent.click(button)
-
-    await waitFor(() => {
-      expect(onTranscription).toHaveBeenCalledWith('transcribed text')
+  it.each([false, true])(
+    'processor failure cleans up while stopping=%s',
+    async (stopping) => {
+      render(<VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />)
+      click()
+      await settle()
+      pcm()
+      if (stopping) click()
+      await act(async () => {
+        nodes[0]!.onprocessorerror?.()
+      })
+      expect(screen.getByRole('button')).toHaveTextContent('error')
+      expect(stopTrack).toHaveBeenCalledOnce()
+      expect(api).not.toHaveBeenCalled()
+    }
+  )
+  it.each([16000, 44100, 48000])(
+    'resamples native %i only when needed',
+    async (inputRate) => {
+      rate = inputRate
+      render(<VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />)
+      click()
+      await settle()
+      await finish()
+      if (rate === 16000) expect(offline).not.toHaveBeenCalled()
+      else
+        expect(offline).toHaveBeenCalledWith(
+          1,
+          Math.ceil((2 * 16000) / rate),
+          16000
+        )
+      expect(float32ToWav).toHaveBeenCalledWith(expect.any(Float32Array), 16000)
+    }
+  )
+  it('snapshots plan and callback and awaits delivery', async () => {
+    const delivery = deferred<void>()
+    const original = vi.fn(() => delivery.promise)
+    const replacement = vi.fn()
+    const view = render(
+      <VoiceRecorder studyPlanId={42} onTranscription={original} />
+    )
+    click()
+    await settle()
+    view.rerender(
+      <VoiceRecorder studyPlanId={99} onTranscription={replacement} />
+    )
+    await finish()
+    expect((api.mock.calls[0]![1].body as FormData).get('study_plan_id')).toBe(
+      '42'
+    )
+    expect(replacement).not.toHaveBeenCalled()
+    expect(screen.getByRole('button')).toHaveTextContent('processing')
+    click()
+    expect(media).toHaveBeenCalledOnce()
+    await act(async () => {
+      delivery.resolve()
     })
-    expect(button.textContent).toContain('record')
+    expect(screen.getByRole('button')).toHaveTextContent('record')
   })
-
-  // ===== Stop & transcription flow =====
-
-  it('sends audio and study plan context to /api/stt', async () => {
-    const onTranscription = vi.fn()
-    render(<VoiceRecorder onTranscription={onTranscription} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    fireEvent.click(button)
-
-    await waitFor(() => {
-      expect(mockApiFetch).toHaveBeenCalledWith(
-        '/api/stt',
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.any(FormData),
-        })
+  it.each(['permission', 'module', 'resume'])(
+    'cancels pending %s and ignores stale completion in a new session',
+    async (step) => {
+      const pending = deferred<unknown>()
+      if (step === 'permission') media.mockReturnValueOnce(pending.promise)
+      if (step === 'module') addModule.mockReturnValueOnce(pending.promise)
+      if (step === 'resume') {
+        suspended = true
+        resume.mockReturnValueOnce(pending.promise)
+      }
+      render(<VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />)
+      click()
+      await settle()
+      click()
+      expect(screen.getByRole('button')).toHaveTextContent('record')
+      click()
+      await settle()
+      const count = nodes.length
+      await act(async () => {
+        pending.resolve(step === 'permission' ? stream : undefined)
+      })
+      expect(nodes).toHaveLength(count)
+      expect(screen.getByRole('button')).toHaveTextContent('stop')
+      expect(api).not.toHaveBeenCalled()
+    }
+  )
+  it.each(['permission', 'module', 'resume'])(
+    'unmount cancels pending %s',
+    async (step) => {
+      const pending = deferred<unknown>()
+      if (step === 'permission') media.mockReturnValueOnce(pending.promise)
+      if (step === 'module') addModule.mockReturnValueOnce(pending.promise)
+      if (step === 'resume') {
+        suspended = true
+        resume.mockReturnValueOnce(pending.promise)
+      }
+      const view = render(
+        <VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />
       )
-    })
-
-    const request = mockApiFetch.mock.calls[0]![1] as RequestInit
-    const formData = request.body as FormData
-    expect(formData.get('study_plan_id')).toBe(String(TEST_STUDY_PLAN_ID))
-    expect(formData.get('audio')).toBeInstanceOf(Blob)
-  })
-
-  it('keeps the recording context when props change before upload', async () => {
-    const originalHandler = vi.fn()
-    const replacementHandler = vi.fn()
-    const { rerender } = render(
-      <VoiceRecorderComponent
-        studyPlanId={42}
-        onTranscription={originalHandler}
-      />
-    )
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    rerender(
-      <VoiceRecorderComponent
-        studyPlanId={99}
-        onTranscription={replacementHandler}
-      />
-    )
-    fireEvent.click(button)
-
-    await waitFor(() => expect(originalHandler).toHaveBeenCalled())
-    const request = mockApiFetch.mock.calls[0]![1] as RequestInit
-    const formData = request.body as FormData
-    expect(formData.get('study_plan_id')).toBe('42')
-    expect(replacementHandler).not.toHaveBeenCalled()
-  })
-
-  it('stays busy until an async transcription handler completes', async () => {
-    let resolveHandler: () => void
-    const onTranscription = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveHandler = resolve
+      click()
+      await settle()
+      view.unmount()
+      await act(async () => {
+        pending.resolve(step === 'permission' ? stream : undefined)
+      })
+      expect(stopTrack).toHaveBeenCalledOnce()
+      expect(api).not.toHaveBeenCalled()
+    }
+  )
+  it.each(['permission', 'module', 'resume', 'constructor', 'unsupported'])(
+    'fails cleanly for %s',
+    async (step) => {
+      if (step === 'permission') media.mockRejectedValue(new Error('denied'))
+      if (step === 'module') addModule.mockRejectedValue(new Error('module'))
+      if (step === 'resume') {
+        suspended = true
+        resume.mockRejectedValue(new Error('resume'))
+      }
+      if (step === 'constructor')
+        vi.stubGlobal('AudioWorkletNode', function () {
+          throw new Error('node')
         })
-    )
-    render(<VoiceRecorder onTranscription={onTranscription} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    fireEvent.click(button)
-
-    await waitFor(() => expect(onTranscription).toHaveBeenCalled())
-    expect(button.textContent).toContain('processing')
-    await act(async () => resolveHandler!())
-    await waitFor(() => expect(button.textContent).toContain('record'))
+      if (step === 'unsupported') vi.stubGlobal('AudioWorkletNode', undefined)
+      render(<VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />)
+      click()
+      await settle()
+      expect(screen.getByRole('button')).toHaveTextContent('error')
+      expect(api).not.toHaveBeenCalled()
+    }
+  )
+  it('resumes a suspended context before capture', async () => {
+    suspended = true
+    render(<VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />)
+    click()
+    await settle()
+    expect(resume).toHaveBeenCalledOnce()
+    await finish()
+    expect(api).toHaveBeenCalledOnce()
   })
-
-  it('cleans up audio resources on stop', async () => {
-    const onTranscription = vi.fn()
-    render(<VoiceRecorder onTranscription={onTranscription} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    fireEvent.click(button)
-
-    await waitFor(() => {
-      expect(onTranscription).toHaveBeenCalled()
-    })
-
-    expect(streamTrackStop).toHaveBeenCalled()
-    expect(mockAudioCtx.close).toHaveBeenCalled()
-    expect(mockProcessor.disconnect).toHaveBeenCalled()
-  })
-
-  // ===== Auto-stop =====
-
-  it('auto-stops after maxSeconds', async () => {
-    vi.useFakeTimers()
-
-    const onTranscription = vi.fn()
-    render(<VoiceRecorder onTranscription={onTranscription} maxSeconds={3} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await act(() => vi.advanceTimersByTimeAsync(0))
-
-    expect(button.textContent).toContain('stop')
-
-    fireAudioChunk()
-
-    // Advance past auto-stop timeout
-    await act(() => vi.advanceTimersByTimeAsync(3001))
-    await act(() => vi.advanceTimersByTimeAsync(0))
-
-    expect(onTranscription).toHaveBeenCalledWith('transcribed text')
-    expect(button.textContent).toContain('record')
-
-    vi.useRealTimers()
-  })
-
-  // ===== Transcribing state =====
-
-  it('shows processing label while transcribing', async () => {
-    let resolveApi: (value: Response) => void
-    mockApiFetch.mockReturnValue(
-      new Promise<Response>((resolve) => {
-        resolveApi = resolve
+  it.each([1, 5])(
+    'auto stop at %i seconds requests ACK once',
+    async (seconds) => {
+      render(
+        <VoiceRecorder
+          studyPlanId={42}
+          onTranscription={vi.fn()}
+          maxSeconds={seconds}
+        />
+      )
+      click()
+      await settle()
+      pcm()
+      await act(() => vi.advanceTimersByTimeAsync(seconds * 1000 - 1))
+      expect(nodes[0]!.port.postMessage).not.toHaveBeenCalled()
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(nodes[0]!.port.postMessage).toHaveBeenCalledOnce()
+      expect(api).not.toHaveBeenCalled()
+      await act(async () => {
+        nodes[0]!.emit({ type: 'stopped' })
       })
-    )
-
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    fireEvent.click(button)
-
-    await waitFor(() => {
-      expect(button.textContent).toContain('processing')
-    })
-
-    resolveApi!({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ text: 'done' }),
-    } as Response)
-
-    await waitFor(() => {
-      expect(button.textContent).toContain('record')
-    })
-  })
-
-  it('does not start recording when transcribing', async () => {
-    let resolveApi: (value: Response) => void
-    mockApiFetch.mockReturnValue(
-      new Promise<Response>((resolve) => {
-        resolveApi = resolve
-      })
-    )
-
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    fireEvent.click(button)
-
-    await waitFor(() => {
-      expect(button.textContent).toContain('processing')
-    })
-
-    const callsBefore = mockGetUserMedia.mock.calls.length
-    fireEvent.click(button)
-    expect(mockGetUserMedia).toHaveBeenCalledTimes(callsBefore)
-
+      expect(api).toHaveBeenCalledOnce()
+    }
+  )
+  it('empty capture fails only after ACK', async () => {
+    render(<VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />)
+    click()
+    await settle()
+    click()
+    expect(screen.getByRole('button')).toHaveTextContent('processing')
     await act(async () => {
-      resolveApi!({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ text: 'done' }),
-      } as Response)
+      nodes[0]!.emit({ type: 'stopped' })
     })
+    expect(screen.getByRole('button')).toHaveTextContent('error')
+    expect(api).not.toHaveBeenCalled()
   })
-
-  // ===== Error: microphone permission denied =====
-
-  it('shows error when getUserMedia rejects', async () => {
-    mockGetUserMedia.mockRejectedValue(
-      new DOMException('Permission denied', 'NotAllowedError')
+  it('unmount during resampling suppresses upload', async () => {
+    const pending = deferred<{ getChannelData: () => Float32Array }>()
+    renderAudio.mockReturnValue(pending.promise)
+    const view = render(
+      <VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />
     )
-
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-
-    await waitFor(() => {
-      expect(button.textContent).toContain('error')
-    })
-  })
-
-  it('recovers from getUserMedia error after timeout', async () => {
-    vi.useFakeTimers()
-
-    mockGetUserMedia.mockRejectedValue(
-      new DOMException('Permission denied', 'NotAllowedError')
-    )
-
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-
-    // Advance time to let the rejected promise propagate and React re-render
-    await act(() => vi.advanceTimersByTimeAsync(10))
-
-    expect(button.textContent).toContain('error')
-
-    // Advance past the 2s error recovery timeout
-    await act(() => vi.advanceTimersByTimeAsync(2001))
-    expect(button.textContent).toContain('record')
-
-    vi.useRealTimers()
-  })
-
-  // ===== Error: STT API failure =====
-
-  it('shows error when STT API response is not ok', async () => {
-    mockApiFetch.mockResolvedValue({ ok: false, status: 500 } as Response)
-
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    fireEvent.click(button)
-
-    await waitFor(
-      () => {
-        expect(button.textContent).toContain('error')
-      },
-      { timeout: 4000 }
-    )
-  })
-
-  it('shows error when STT API rejects', async () => {
-    mockApiFetch.mockRejectedValue(new Error('Network error'))
-
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    fireEvent.click(button)
-
-    await waitFor(
-      () => {
-        expect(button.textContent).toContain('error')
-      },
-      { timeout: 4000 }
-    )
-  })
-
-  it('recovers from STT error after timeout', async () => {
-    vi.useFakeTimers()
-
-    mockApiFetch.mockRejectedValue(new Error('fail'))
-
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await act(() => vi.advanceTimersByTimeAsync(10))
-    fireAudioChunk()
-    fireEvent.click(button)
-    await act(() => vi.advanceTimersByTimeAsync(10))
-
-    expect(button.textContent).toContain('error')
-
-    await act(() => vi.advanceTimersByTimeAsync(2001))
-    expect(button.textContent).toContain('record')
-
-    vi.useRealTimers()
-  })
-
-  // ===== Error: empty audio chunks =====
-
-  it('shows error when no audio chunks were captured', async () => {
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-
-    fireEvent.click(button)
-
-    expect(button.textContent).toContain('error')
-    expect(mockApiFetch).not.toHaveBeenCalled()
-  })
-
-  // ===== Error state interaction =====
-
-  it('does not start recording when in error state', async () => {
-    mockApiFetch.mockRejectedValue(new Error('fail'))
-
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await waitForRecordingReady()
-    fireAudioChunk()
-    fireEvent.click(button)
-    await waitFor(
-      () => {
-        expect(button.textContent).toContain('error')
-      },
-      { timeout: 4000 }
-    )
-
-    const mediaCallsCount = mockGetUserMedia.mock.calls.length
-    fireEvent.click(button)
-    expect(mockGetUserMedia).toHaveBeenCalledTimes(mediaCallsCount)
-  })
-
-  // ===== Resampling (sampleRate != 16000) =====
-
-  it('resamples audio via OfflineAudioContext when input rate != 16000', async () => {
-    vi.useFakeTimers()
-
-    const onTranscription = vi.fn()
-    render(<VoiceRecorder onTranscription={onTranscription} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await act(() => vi.advanceTimersByTimeAsync(0))
-
-    fireAudioChunk([0.1, 0.2, 0.3])
-
-    fireEvent.click(button)
-    await act(() => vi.advanceTimersByTimeAsync(0))
-
-    expect(mockStartRendering).toHaveBeenCalled()
-
-    await act(() => vi.advanceTimersByTimeAsync(100))
-
-    expect(onTranscription).toHaveBeenCalledWith('transcribed text')
-
-    vi.useRealTimers()
-  })
-
-  // ===== Unmount =====
-
-  it('does not throw when unmounted during recording', () => {
-    const { unmount } = render(<VoiceRecorder onTranscription={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button'))
-    expect(() => unmount()).not.toThrow()
-  })
-
-  it('stops a microphone stream that resolves after unmount', async () => {
-    let resolveStream: (stream: MediaStream) => void
-    const lateTrackStop = vi.fn()
-    mockGetUserMedia.mockReturnValue(
-      new Promise<MediaStream>((resolve) => {
-        resolveStream = resolve
-      })
-    )
-    const { unmount } = render(<VoiceRecorder onTranscription={vi.fn()} />)
-
-    fireEvent.click(screen.getByRole('button'))
-    unmount()
+    click()
+    await settle()
+    await finish()
+    view.unmount()
     await act(async () => {
-      resolveStream!({
-        getTracks: () => [{ stop: lateTrackStop }],
-      } as unknown as MediaStream)
+      pending.resolve({ getChannelData: () => new Float32Array(1) })
     })
-
-    expect(lateTrackStop).toHaveBeenCalledOnce()
-    expect(mockApiFetch).not.toHaveBeenCalled()
+    expect(api).not.toHaveBeenCalled()
   })
-
-  it('cancels recording while microphone permission is pending', async () => {
-    let resolveStream: (stream: MediaStream) => void
-    const lateTrackStop = vi.fn()
-    mockGetUserMedia.mockReturnValue(
-      new Promise<MediaStream>((resolve) => {
-        resolveStream = resolve
-      })
+  it('unmount while recording releases immediately without requesting a flush', async () => {
+    const view = render(
+      <VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />
     )
-    render(<VoiceRecorder onTranscription={vi.fn()} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    fireEvent.click(button)
-    expect(button.textContent).toContain('record')
+    click()
+    await settle()
+    pcm()
+    view.unmount()
+    expect(nodes[0]!.port.postMessage).not.toHaveBeenCalled()
+    expect(close).toHaveBeenCalledOnce()
+    expect(stopTrack).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(api).not.toHaveBeenCalled()
+  })
+  it('unmount aborts upload and suppresses late callback', async () => {
+    const response = deferred<{
+      ok: boolean
+      json: () => Promise<{ text: string }>
+    }>()
+    api.mockReturnValue(response.promise)
+    const callback = vi.fn()
+    const view = render(
+      <VoiceRecorder studyPlanId={42} onTranscription={callback} />
+    )
+    click()
+    await settle()
+    await finish()
+    view.unmount()
+    expect(api.mock.calls[0]![1].signal.aborted).toBe(true)
     await act(async () => {
-      resolveStream!({
-        getTracks: () => [{ stop: lateTrackStop }],
-      } as unknown as MediaStream)
+      response.resolve({ ok: true, json: async () => ({ text: 'late' }) })
     })
-
-    expect(lateTrackStop).toHaveBeenCalledOnce()
-    expect(mockApiFetch).not.toHaveBeenCalled()
+    expect(callback).not.toHaveBeenCalled()
   })
-
-  // ===== maxSeconds prop =====
-
-  it('uses custom maxSeconds for auto-stop', async () => {
-    vi.useFakeTimers()
-
-    const onTranscription = vi.fn()
-    render(<VoiceRecorder onTranscription={onTranscription} maxSeconds={1} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await act(() => vi.advanceTimersByTimeAsync(0))
-
-    expect(button.textContent).toContain('stop')
-
-    fireAudioChunk()
-
-    await act(() => vi.advanceTimersByTimeAsync(1001))
-    await act(() => vi.advanceTimersByTimeAsync(0))
-
-    expect(onTranscription).toHaveBeenCalled()
-
-    vi.useRealTimers()
+  it('unmount while awaiting ACK immediately releases without flush upload', async () => {
+    const view = render(
+      <VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />
+    )
+    click()
+    await settle()
+    pcm()
+    click()
+    view.unmount()
+    expect(close).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+    nodes[0]!.emit({ type: 'stopped' })
+    expect(api).not.toHaveBeenCalled()
   })
-
-  it('defaults to 5 seconds maxSeconds', async () => {
-    vi.useFakeTimers()
-
-    const onTranscription = vi.fn()
-    render(<VoiceRecorder onTranscription={onTranscription} />)
-    const button = screen.getByRole('button')
-
-    fireEvent.click(button)
-    await act(() => vi.advanceTimersByTimeAsync(0))
-
-    expect(button.textContent).toContain('stop')
-
-    fireAudioChunk()
-
-    // At 4s, still recording
-    await act(() => vi.advanceTimersByTimeAsync(4000))
-    expect(button.textContent).toContain('stop')
-
-    // At 5s+, auto-stop fires
-    await act(() => vi.advanceTimersByTimeAsync(1001))
-    await act(() => vi.advanceTimersByTimeAsync(0))
-
-    expect(onTranscription).toHaveBeenCalled()
-
-    vi.useRealTimers()
-  })
+  it.each(['http', 'network', 'callback'])(
+    'shows existing error for %s failure',
+    async (failure) => {
+      if (failure === 'http') api.mockResolvedValue({ ok: false, status: 500 })
+      if (failure === 'network') api.mockRejectedValue(new Error('network'))
+      const callback = vi.fn(() => {
+        if (failure === 'callback') throw new Error('delivery')
+      })
+      render(<VoiceRecorder studyPlanId={42} onTranscription={callback} />)
+      click()
+      await settle()
+      await finish()
+      expect(screen.getByRole('button')).toHaveTextContent('error')
+    }
+  )
 })

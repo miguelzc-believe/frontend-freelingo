@@ -5,8 +5,7 @@
  * API, neither of which are compatible with SSR. It is loaded client-side only
  * through React.lazy inside the client-only app layout.
  */
-import { useEffect, useState } from 'react'
-import { lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ChatContextItem } from '@/lib/conversation-ws'
 import { PageLoading } from '@/components/ui/page-loading'
 import { FreemiumQuotaBanner } from '@/components/billing/FreemiumQuotaBanner'

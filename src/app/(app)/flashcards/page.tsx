@@ -105,7 +105,7 @@ export default function FlashcardsPage() {
     await reviewCard(isCorrect ? 5 : 2)
   }
 
-  async function generateCards(e: React.FormEvent) {
+  async function generateCards(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!genTopic.trim()) return
     setGenerating(true)

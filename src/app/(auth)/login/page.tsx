@@ -31,7 +31,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
+    async (e: React.SubmitEvent<HTMLFormElement>) => {
       e.preventDefault()
       setError('')
       if (!email.trim()) {
