@@ -464,6 +464,78 @@ describe('FeedbackPage list and entry actions', () => {
     expect(description).toHaveAttribute('maxLength', '5000')
   })
 
+  it('uses a localized native backdrop beside the non-interactive form panel', async () => {
+    mockApiFetch.mockResolvedValue(listResponse())
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+
+    const backdrop = screen.getByRole('button', { name: 'close' })
+    const panel = screen.getByText('modalCreateTitleFeature').parentElement!
+      .parentElement!.parentElement!
+    const overlay = panel.parentElement!
+    expect(backdrop.tagName).toBe('BUTTON')
+    expect(backdrop).toHaveAttribute('type', 'button')
+    expect(backdrop).toHaveAttribute('tabindex', '-1')
+    expect(backdrop.parentElement).toBe(overlay)
+    expect(backdrop.nextElementSibling).toBe(panel)
+    expect(backdrop).toHaveClass('absolute', 'inset-0')
+    expect(panel).toHaveClass('relative')
+    expect(panel).not.toHaveAttribute('role')
+    expect(overlay).not.toHaveAttribute('role')
+    expect(panel.closest('button, [role="button"]')).toBeNull()
+    expect(screen.getByPlaceholderText('placeholderTitleFeature')).toHaveFocus()
+  })
+
+  it('dismisses once on a pointer click outside without submitting', async () => {
+    mockApiFetch.mockResolvedValue(listResponse())
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+    const backdrop = screen.getByRole('button', { name: 'close' })
+    const overlay = backdrop.parentElement!
+    const removals: Node[] = []
+    const observer = new MutationObserver((records) => {
+      for (const record of records) removals.push(...record.removedNodes)
+    })
+    observer.observe(overlay.parentElement!, { childList: true })
+    try {
+      fireEvent.pointerDown(backdrop)
+      fireEvent.pointerUp(backdrop)
+      fireEvent.click(backdrop)
+      await waitFor(() =>
+        expect(removals.filter((node) => node === overlay)).toHaveLength(1)
+      )
+      expect(
+        screen.queryByPlaceholderText('placeholderTitleFeature')
+      ).toBeNull()
+      expect(mockApiFetch).not.toHaveBeenCalledWith(
+        '/api/feedback',
+        expect.objectContaining({ method: 'POST' })
+      )
+    } finally {
+      observer.disconnect()
+    }
+  })
+
+  it('keeps panel and field interactions open but dismisses on Escape from a field', async () => {
+    mockApiFetch.mockResolvedValue(listResponse())
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
+    const title = screen.getByPlaceholderText('placeholderTitleFeature')
+    fireEvent.click(screen.getByText('modalCreateTitleFeature'))
+    fireEvent.click(title)
+    fireEvent.change(title, { target: { value: 'Keep editing' } })
+    fireEvent.click(
+      screen.getByPlaceholderText('placeholderDescriptionFeature')
+    )
+    expect(title).toHaveValue('Keep editing')
+    expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument()
+    fireEvent.keyDown(title, { key: 'Escape' })
+    expect(screen.queryByPlaceholderText('placeholderTitleFeature')).toBeNull()
+  })
+
   it('closes by cancel, Escape, or backdrop and starts reopened forms empty', async () => {
     mockApiFetch.mockResolvedValue(listResponse())
     render(<FeedbackPage />)
@@ -490,9 +562,7 @@ describe('FeedbackPage list and entry actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
     fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
     fireEvent.click(screen.getByRole('button', { name: 'newFeature' }))
-    fireEvent.click(
-      screen.getByText('modalCreateTitleFeature').closest('.fixed')!
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'close' }))
     expect(
       screen.queryByPlaceholderText('placeholderTitleFeature')
     ).not.toBeInTheDocument()

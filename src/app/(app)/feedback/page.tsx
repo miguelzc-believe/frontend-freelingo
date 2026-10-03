@@ -92,6 +92,7 @@ interface CreateModalProps {
 
 function CreateModal({ type, onClose, onCreated }: CreateModalProps) {
   const t = useTranslations('feedback')
+  const tCommon = useTranslations('common')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -134,18 +135,19 @@ function CreateModal({ type, onClose, onCreated }: CreateModalProps) {
   }, [onClose])
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-      style={{
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        backdropFilter: 'blur(2px)',
-      }}
-      onClick={onClose}
-    >
-      <div
-        className="border-fl-border bg-fl-surface w-full max-w-md border shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={tCommon('close')}
+        className="absolute inset-0"
+        style={{
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(2px)',
+        }}
+        onClick={onClose}
+      />
+      <div className="border-fl-border bg-fl-surface relative w-full max-w-md border shadow-2xl">
         {/* Header */}
         <div className="border-fl-border flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
