@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { GrammarCategory } from '@/data/types'
 import type { GrammarTopic } from '@/data/grammar'
 import type { TargetLanguage } from '@/lib/target-languages'
 
@@ -175,15 +176,78 @@ describe('GrammarIndexPage', () => {
     ).toBeInTheDocument()
   })
 
+  it.each([
+    [null, 'en-GB'],
+    [german, 'de'],
+  ])(
+    'sorts raw categories using the target locale %s (%s)',
+    async (language, locale) => {
+      const categories: GrammarCategory[] = [
+        'Tenses',
+        'Questions',
+        'Nouns',
+        'Pronouns',
+        'Adjectives & Adverbs',
+        'Modals',
+        'Conditionals',
+        'Passive Voice',
+        'Reported Speech',
+        'Clauses',
+        'Articles',
+        'Prepositions',
+        'Phrasal Verbs',
+        'Advanced',
+      ]
+      mockGetTopics.mockResolvedValue(
+        categories.map((category) => ({
+          ...topics[0]!,
+          slug: category,
+          category,
+        }))
+      )
+      useLanguageStore.setState({ activeLanguage: language })
+      const compare = vi.spyOn(String.prototype, 'localeCompare')
+
+      render(<GrammarIndexPage />)
+      await screen.findByRole('button', { name: 'Tenses' })
+
+      expect(
+        screen.getAllByRole('button').map((button) => button.textContent)
+      ).toEqual([
+        'allCategories',
+        'Adjectives & Adverbs',
+        'Advanced',
+        'Articles',
+        'Clauses',
+        'Conditionals',
+        'Modals',
+        'Nouns',
+        'Passive Voice',
+        'Phrasal Verbs',
+        'Prepositions',
+        'Pronouns',
+        'Questions',
+        'Reported Speech',
+        'Tenses',
+      ])
+      expect(compare).toHaveBeenCalledWith(expect.any(String), locale)
+    }
+  )
+
   it('requests en-GB by default and refetches when the active language changes', async () => {
+    const compare = vi.spyOn(String.prototype, 'localeCompare')
     useLanguageStore.setState({ activeLanguage: null })
     render(<GrammarIndexPage />)
 
     await screen.findByRole('link', { name: /Present simple/ })
     expect(mockGetTopics).toHaveBeenNthCalledWith(1, 'en-GB')
 
-    useLanguageStore.setState({ activeLanguage: german })
+    compare.mockClear()
+    act(() => useLanguageStore.setState({ activeLanguage: german }))
     await waitFor(() => expect(mockGetTopics).toHaveBeenCalledTimes(2))
     expect(mockGetTopics).toHaveBeenNthCalledWith(2, 'de')
+    await screen.findByRole('link', { name: /Present simple/ })
+    // The fetch returns the same topics reference, so the locale must invalidate the memo.
+    expect(compare).toHaveBeenCalledWith(expect.any(String), 'de')
   })
 })

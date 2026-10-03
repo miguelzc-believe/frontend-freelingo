@@ -65,10 +65,10 @@ export default function GrammarIndexPage() {
 
   const allCategories: GrammarCategory[] = useMemo(
     () =>
-      Array.from(
-        new Set(topics.map((t) => t.category))
-      ).sort() as GrammarCategory[],
-    [topics]
+      Array.from(new Set(topics.map((t) => t.category))).sort((a, b) =>
+        a.localeCompare(b, activeLanguage?.code ?? 'en-GB')
+      ) as GrammarCategory[],
+    [topics, activeLanguage?.code]
   )
 
   const filtered = useMemo(() => {
