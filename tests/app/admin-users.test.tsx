@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -345,6 +346,114 @@ describe('AdminUsersPage', () => {
     expect(await screen.findByText('usersLoadError')).toBeInTheDocument()
     expect(screen.getByText('noUsers')).toBeInTheDocument()
   })
+
+  it('uses a native sibling backdrop without wrapping the form in an interactive control', async () => {
+    const dialog = await openCreateUserForm()
+    const backdrop = screen.getByRole('button', { name: 'close' })
+
+    expect(backdrop.tagName).toBe('BUTTON')
+    expect(backdrop).toHaveAttribute('type', 'button')
+    expect(backdrop).toHaveAttribute('tabindex', '-1')
+    expect(backdrop.parentElement).toBe(dialog.parentElement)
+    expect(backdrop).not.toContainElement(dialog)
+    expect(dialog.closest('button, [role="button"]')).toBeNull()
+    expect(dialog.parentElement).not.toHaveAttribute('role')
+
+    fireEvent.click(backdrop)
+
+    expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
+  })
+
+  it('keeps the dialog open for panel, field and select interactions', async () => {
+    const dialog = await openCreateUserForm()
+    const field = within(dialog).getByLabelText('fieldUsername')
+    const role = within(dialog).getByLabelText('fieldRole')
+
+    fireEvent.click(dialog)
+    fireEvent.click(field)
+    fireEvent.change(field, { target: { value: 'Changed User' } })
+    fireEvent.click(role)
+    fireEvent.change(role, { target: { value: 'admin' } })
+
+    expect(dialog).toBeInTheDocument()
+    expect(field).toHaveValue('Changed User')
+    expect(role).toHaveValue('admin')
+  })
+
+  it('closes on Escape bubbling from a form field and can reopen', async () => {
+    await openCreateUserForm()
+    const field = screen.getByLabelText('fieldEmail')
+    field.focus()
+
+    fireEvent.keyDown(field, { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'createUserBtn' }))
+    expect(
+      screen.getByRole('dialog', { name: 'createUser' })
+    ).toBeInTheDocument()
+  })
+
+  it.each(['backdrop', 'header', 'cancel', 'Escape'])(
+    'preserves %s dismissal while creation is pending',
+    async (action) => {
+      let resolveCreate!: (response: Response) => void
+      const pendingCreate = new Promise<Response>((resolve) => {
+        resolveCreate = resolve
+      })
+      mockApiFetch.mockImplementation((url: string) =>
+        url === '/api/admin/users'
+          ? pendingCreate
+          : Promise.resolve(listResponse())
+      )
+      const dialog = await openCreateUserForm()
+      const submit = within(dialog).getByRole('button', {
+        name: 'submitCreate',
+      })
+      const cancelButtons = within(dialog).getAllByRole('button', {
+        name: 'cancel',
+      })
+      fireEvent.click(submit)
+
+      expect(submit).toBeDisabled()
+      expect(screen.getByLabelText('fieldUsername')).toBeEnabled()
+      expect(cancelButtons[0]).toBeEnabled()
+      expect(cancelButtons[1]).toBeEnabled()
+      if (action === 'Escape') {
+        fireEvent.keyDown(screen.getByLabelText('fieldEmail'), {
+          key: 'Escape',
+        })
+      } else if (action === 'backdrop') {
+        const backdrop = screen.getByRole('button', { name: 'close' })
+        expect(backdrop).toBeEnabled()
+        fireEvent.click(backdrop)
+      } else {
+        fireEvent.click(cancelButtons[action === 'header' ? 0 : 1]!)
+      }
+      expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/admin/users',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            username: 'new_user',
+            email: 'new@example.com',
+            password: 'password123',
+            display_name: 'New User',
+            native_language: 'es',
+            target_language: 'en-GB',
+            role: 'user',
+          }),
+        })
+      )
+      await act(async () => {
+        resolveCreate(jsonResponse({}, 503))
+        await pendingCreate
+      })
+      expect(await screen.findByText('createUserError')).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
+    }
+  )
 
   it('shows a create failure and keeps the create dialog open', async () => {
     mockApiFetch.mockImplementation(async (url: string) =>

@@ -884,13 +884,16 @@ export default function AdminUsersPage() {
       />
 
       {showCreate && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-          onClick={() => setShowCreate(false)}
-        >
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={tCommon('close')}
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowCreate(false)}
+          />
           <div
-            className="border-fl-border bg-fl-surface max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto border shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+            className="border-fl-border bg-fl-surface relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto border shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-create-user-title"
