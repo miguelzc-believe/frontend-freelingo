@@ -20,7 +20,7 @@ export default function WhatsNew() {
       {}) as Record<string, unknown>
     return Object.keys(ns)
       .filter((k) => /^entry\d+$/.test(k))
-      .sort((a, b) => parseInt(a.slice(5)) - parseInt(b.slice(5)))
+      .sort((a, b) => Number.parseInt(a.slice(5)) - Number.parseInt(b.slice(5)))
       .map((k) => {
         const entry = ns[k] as { label: string; desc: string }
         return { key: k, label: entry.label, desc: entry.desc }
