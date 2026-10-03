@@ -13,7 +13,12 @@ import { getPublicConfig } from './public-config'
  *    derive the WS base from window.location.
  */
 export function buildConversationWsUrl(): string {
-  const base = getPublicConfig().publicApiUrl.trim().replace(/\/+$/, '')
+  const trimmedUrl = getPublicConfig().publicApiUrl.trim()
+  let end = trimmedUrl.length
+  while (end > 0 && trimmedUrl[end - 1] === '/') {
+    end--
+  }
+  const base = trimmedUrl.slice(0, end)
 
   let wsBase: string
   if (base) {

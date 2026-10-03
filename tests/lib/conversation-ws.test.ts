@@ -64,6 +64,44 @@ describe('buildConversationWsUrl', () => {
     expect(url).toBe('wss://api.example.com/ws/conversation')
   })
 
+  it.each([
+    ['empty', '', 'ws://localhost:3000/ws/conversation'],
+    ['whitespace-only', ' \t\n ', 'ws://localhost:3000/ws/conversation'],
+    [
+      'no trailing slashes',
+      'https://api.example.com/api',
+      'wss://api.example.com/api/ws/conversation',
+    ],
+    [
+      'many trailing slashes surrounded by whitespace',
+      ' \thttp://api.example.com/api//////// \n',
+      'ws://api.example.com/api/ws/conversation',
+    ],
+    ['all slashes', '/'.repeat(4096), 'ws://localhost:3000/ws/conversation'],
+    ['trimmed slash-only', ' \t//// \n', 'ws://localhost:3000/ws/conversation'],
+    [
+      'interior slashes',
+      'https://api.example.com//api///v1////',
+      'wss://api.example.com//api///v1/ws/conversation',
+    ],
+    [
+      'long trailing slash run',
+      `https://api.example.com/api${'/'.repeat(4096)}`,
+      'wss://api.example.com/api/ws/conversation',
+    ],
+    [
+      'long nonterminal slash run followed by a trailing suffix',
+      `https://api.example.com/${'/'.repeat(4096)}end////`,
+      `wss://api.example.com/${'/'.repeat(4096)}end/ws/conversation`,
+    ],
+  ])(
+    'preserves the exact URL for %s input',
+    (_label, publicApiUrl, expected) => {
+      setPublicConfig({ publicApiUrl, umamiWebsiteId: '' })
+      expect(buildConversationWsUrl()).toBe(expected)
+    }
+  )
+
   it('handles PUBLIC_API_URL with trailing slash', () => {
     setPublicConfig({
       publicApiUrl: 'https://api.example.com/',
