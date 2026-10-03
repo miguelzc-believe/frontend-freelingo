@@ -91,11 +91,10 @@ export default function MyLanguagesPage() {
   const availableLanguageCodes = useLanguageStore(
     (s) => s.availableLanguageCodes
   )
-  const addedCodes = userLanguages.map((ul) => ul.target_language)
+  const addedCodes = new Set(userLanguages.map((ul) => ul.target_language))
   // Only show operator-enabled languages that the user hasn't added yet
   const unusedCodes = TARGET_LANGUAGE_CATALOG.filter(
-    (l) =>
-      availableLanguageCodes.includes(l.code) && !addedCodes.includes(l.code)
+    (l) => availableLanguageCodes.includes(l.code) && !addedCodes.has(l.code)
   ).map((l) => l.code)
   const hasMultiple = userLanguages.length > 1
 

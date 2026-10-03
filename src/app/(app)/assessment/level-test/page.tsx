@@ -47,7 +47,7 @@ function computeSkillBreakdown(
     const q = questions.find((q) => q.id === a.question_id)
     if (!q) return
     const skill = q.skill
-    if (!map[skill]) map[skill] = { correct: 0, total: 0 }
+    map[skill] ??= { correct: 0, total: 0 }
     map[skill].total += 1
     if (a.correct) map[skill].correct += 1
   })

@@ -165,6 +165,19 @@ describe('annotateAnswer', () => {
     ])
   })
 
+  it('escapes literal backslashes and every regex metacharacter', () => {
+    const original = '\\.*+?^${}()|[]'
+    expect(
+      annotateAnswer(`before ${original} after`, [
+        correction(original, 'fixed'),
+      ])
+    ).toEqual([
+      { type: 'plain', text: 'before ' },
+      { type: 'fix', original, corrected: 'fixed' },
+      { type: 'plain', text: ' after' },
+    ])
+  })
+
   it('preserves answer offsets when earlier Unicode text expands on lowercasing', () => {
     expect(annotateAnswer('İ IN Berlin', [correction('in', 'aus')])).toEqual([
       { type: 'plain', text: 'İ ' },

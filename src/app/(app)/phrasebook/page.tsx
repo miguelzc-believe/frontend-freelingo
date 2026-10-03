@@ -384,7 +384,7 @@ export default function PhrasebookPage() {
             {t('statsLine', {
               situationCount: categories.length,
               phraseCount: totalPhrases,
-              range: `${CEFR_LEVELS[0]} \u2013 ${CEFR_LEVELS[CEFR_LEVELS.length - 1]}`,
+              range: `${CEFR_LEVELS[0]} \u2013 ${CEFR_LEVELS.at(-1)}`,
             })}
           </p>
 

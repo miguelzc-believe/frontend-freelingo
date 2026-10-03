@@ -33,8 +33,32 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
     verified.3000ms ACK boundary covered by unit tests. Fake microphone/local
     fixtures only: no mobile/physical-device/liveSTT/deployment acceptance.
   - One category commit includes all source changes, worklet, tests and ledger.
-    Sonar closure still awaits scan; native review not yet approved.
-- [ ] C2: Modern JavaScript/TypeScript APIs — S6606/S6582/S7755/S7770/S7776/S7765/S4138/S7780, 18 — mapping in progress
+    Commit c8acd0d4576cb003a4901122d4c9b862f7f21d1f (18 files,
+    2081 authored diff lines including ledger and browser/race tests).
+    Sonar closure still awaits scan. Native ASSESS medium, reviewDue
+    slice_budget_reached. Lineage review-e322108d51b55d7a started for exact
+    category; one reliability reviewer forecast/run failed empty-output,
+    stopReason:length (~171s), no verdict/mutation/approval. Fresh STATUS
+    reviewing/collect reoffers slot; no automatic replay or authority reset.
+    Independent functional acceptance stands; native review unavailable.
+- [ ] C2: Modern JavaScript/TypeScript APIs — S6606/S6582/S7755/S7770/S7776/S7765/S4138/S7780, 18 — implementation in progress
+  - Mapper muslpd4t-1u-4e0b verified18findings/12sources, server baseline393
+    unchanged (not C1scan). Writer muslzqg3-1v-pi1w applies only mapped
+    expressions plus directly related characterization tests; no commit yet.
+  - Preserve falsy/nullish semantics: object/array initialization??=,
+    completion score??0, strictverifiedfalse and socketOPEN conditions.
+    .at(-1) preserves UTF16 codeunits; String.raw replacement exactlyone
+    backslash, Set string membership only; local localeincludes accommodation.
+    PCMforof retains exactclamp/endian/offset and ASCIIheaderunchanged.
+    Baseline/post equivalence required, no inventedRED.
+  - Writer muslzqg3-1v-pi1w completed18closure candidates/12sources plus
+    four characterization test surfaces. Expanded baseline/post156/156,
+    typecheck/lint/final format clean; initial weak-skill label matcher and
+    four formatting drifts corrected, neither counted behaviouralRED.
+    Existing source/UI/socket/WAV contracts preserved; no C2commit yet.
+  - ASSESS unassessable due untracked new test/outcomeunknown; independent
+    verifier musmkh23-1w-gmdq running focused156/static checks and semantic
+    diff inspection. Server still baseline393 until a scan, no closure claim.
 - [ ] C3: Error messages and stringification — S7722/S6551, 15
 - [ ] C4: React component/props contracts — S6759/S6478/S6767, 89
 - [ ] C5: Test structure and conventions — S8980/S5906/S5976/S8782/S1607/S9332, 54
@@ -115,7 +139,8 @@ and recording-start plan/callback snapshots.
 Observed RED23failed/28passed; final GREEN53/53 across recorder/processor/audio
 suites. Typecheck/lint/final format/whitespace passed (initial unused test mock
 parameter corrected). Playwright --list collected8 entries; mobile intentionally
-skipped, no browser run by writer. C1 remains uncommitted.
+skipped, no browser run by writer. C1 was uncommitted at this intermediate handoff; final commit evidence is
+recorded above.
 
 ASSESS unassessable due undeclared untracked files, outcome unknown; independent
 verification required. Verifier musjlble-1l-8jrp now runs focused53tests,

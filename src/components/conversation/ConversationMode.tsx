@@ -491,7 +491,7 @@ export default function ConversationMode({
       }
 
       if (wasAssistantSpeaking) {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
           convLogger.info('sending interrupt at speech end', {
             rms: speech.rms,
             durationMs: Math.round(speech.durationMs),
@@ -513,7 +513,7 @@ export default function ConversationMode({
       }
 
       const ws = wsRef.current
-      if (ws && ws.readyState === WebSocket.OPEN) {
+      if (ws?.readyState === WebSocket.OPEN) {
         assistantTurnActiveRef.current = true
         try {
           const wav = float32ToWav(audio, 16000)

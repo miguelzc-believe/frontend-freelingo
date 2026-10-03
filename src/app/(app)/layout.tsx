@@ -604,7 +604,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Main */}
       <main className="flex min-h-[100dvh] flex-1 flex-col overflow-hidden pt-14 md:min-h-screen md:pt-0">
         {/* Email verification banner */}
-        {user && user.is_verified === false && (
+        {user?.is_verified === false && (
           <div className="border-fl-border bg-fl-surface flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-4 py-2">
             <span className="text-fl-muted-1 font-mono text-xs tracking-wide">
               ● {tCommon('verifyEmailBanner')}

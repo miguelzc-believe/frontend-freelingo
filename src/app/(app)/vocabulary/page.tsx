@@ -88,7 +88,7 @@ export default function VocabularyIndexPage() {
             {usedLevels.length > 0 && (
               <>
                 {' · '}
-                {usedLevels[0]} – {usedLevels[usedLevels.length - 1]}
+                {usedLevels[0]} – {usedLevels.at(-1)}
               </>
             )}
           </p>

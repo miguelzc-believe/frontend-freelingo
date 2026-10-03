@@ -35,7 +35,7 @@ function isWholeWord(
   end: number
 ): boolean {
   const startsWithWord = isWordChar(needle[0])
-  const endsWithWord = isWordChar(needle[needle.length - 1])
+  const endsWithWord = isWordChar(needle.at(-1))
   return (
     (!startsWithWord || !isWordChar(answer[start - 1])) &&
     (!endsWithWord || !isWordChar(answer[end]))
@@ -50,7 +50,7 @@ function findOccurrences(answer: string, original: string): Occurrence[] {
     (candidate, index, all) => candidate && all.indexOf(candidate) === index
   )
   for (const [variantIndex, candidate] of variants.entries()) {
-    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
     for (const [caseIndex, flags] of ['gu', 'giu'].entries()) {
       // Lookahead retains overlapping occurrences for the allocation pass.
       const pattern = new RegExp(`(?=(${escaped}))`, flags)

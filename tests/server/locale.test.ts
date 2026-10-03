@@ -29,6 +29,19 @@ describe('request presentation', () => {
       )
     ).toBe('en')
   })
+  it('ignores unknown cookies and normalizes regional language tags', () => {
+    expect(
+      detectLocale(
+        new Request('http://test', {
+          headers: {
+            cookie: 'NEXT_LOCALE=unknown',
+            'accept-language': 'DE_de;q=0.8,fr;q=0.4',
+          },
+        })
+      )
+    ).toBe('de')
+    expect(detectLocale(new Request('http://test'))).toBe('en')
+  })
   it('handles malformed cookie encoding', () => {
     expect(
       readCookie(
@@ -42,6 +55,8 @@ describe('request presentation', () => {
     expect(protectedPath('/reading')).toBe(true)
     expect(protectedPath('/dashboard-unknown')).toBe(false)
     expect(protectedPath('/missing')).toBe(false)
+    expect(protectedPath('/')).toBe(false)
+    expect(protectedPath('')).toBe(false)
   })
   it('retains invitations, onboarding and administrative filters as strings', () => {
     expect(

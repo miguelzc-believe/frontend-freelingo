@@ -106,7 +106,7 @@ function lessonsByUnit(lessons: Lesson[]): Record<string, Lesson[]> {
   const map: Record<string, Lesson[]> = {}
   for (const l of lessons) {
     const key = l.unit_id ?? '__unassigned'
-    if (!map[key]) map[key] = []
+    map[key] ??= []
     map[key].push(l)
   }
   return map
@@ -372,11 +372,7 @@ export default function PlanPage() {
             index={units.length}
             lessonCount={1}
             grammarCount={0}
-            competency={
-              plan.completion_test_score != null
-                ? plan.completion_test_score
-                : 0
-            }
+            competency={plan.completion_test_score ?? 0}
             status={{
               completed: plan.completion_test_taken,
               active: levelTestReady && !plan.completion_test_taken,

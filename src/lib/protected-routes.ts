@@ -1,4 +1,4 @@
-const protectedRoots = [
+const protectedRoots = new Set([
   'admin',
   'assessment',
   'billing',
@@ -18,7 +18,7 @@ const protectedRoots = [
   'reading',
   'settings',
   'vocabulary',
-]
+])
 export function protectedPath(pathname: string): boolean {
-  return protectedRoots.includes(pathname.split('/')[1] ?? '')
+  return protectedRoots.has(pathname.split('/')[1] ?? '')
 }

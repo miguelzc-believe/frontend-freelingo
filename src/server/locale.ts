@@ -17,7 +17,8 @@ export function readCookie(request: Request, name: string): string | undefined {
 
 export function detectLocale(request: Request): Locale {
   const cookie = readCookie(request, 'NEXT_LOCALE')
-  if (SUPPORTED_LOCALES.some((locale) => locale === cookie))
+  const supportedLocales: readonly string[] = SUPPORTED_LOCALES
+  if (cookie !== undefined && supportedLocales.includes(cookie))
     return cookie as Locale
   const languages = (request.headers.get('accept-language') ?? '')
     .split(',')
@@ -32,7 +33,7 @@ export function detectLocale(request: Request): Locale {
     .filter(({ q }) => q > 0 && q <= 1)
     .sort((a, b) => b.q - a.q)
   for (const { language } of languages) {
-    if (SUPPORTED_LOCALES.some((locale) => locale === language))
+    if (language !== undefined && supportedLocales.includes(language))
       return language as Locale
   }
   return 'en'

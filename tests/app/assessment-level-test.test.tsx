@@ -141,6 +141,30 @@ describe('LevelTestPage', () => {
     expect(mockPush).toHaveBeenCalledWith('/assessment')
   })
 
+  it('accumulates correct and incorrect answers for a repeated skill', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/assessment/level-test/questions/'))
+        return jsonResponse({
+          plan_id: 42,
+          cefr_level: 'A2',
+          questions: questions.map((question) => ({
+            ...question,
+            skill: 'grammar',
+          })),
+        })
+      return jsonResponse({
+        score: 0.5,
+        recommendation: 'repeat',
+        next_level: null,
+      })
+    })
+    render(<LevelTestPage />)
+    await confirmStart()
+    await answerAndAdvance('kommt')
+    await answerAndAdvance('schnell', true)
+    expect(await screen.findByText(/1\/2 \(50%\)/)).toBeInTheDocument()
+  })
+
   it('shows an error when the submission fails', async () => {
     mockQuestions()
     mockApiFetch.mockImplementation(async (url: string) => {
