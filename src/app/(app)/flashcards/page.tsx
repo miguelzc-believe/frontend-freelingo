@@ -307,35 +307,34 @@ export default function FlashcardsPage() {
           {/* ── Standard mode ── */}
           {!speakingMode && (
             <>
-              <div
-                className="border-fl-border bg-fl-surface hover:border-fl-border-2 min-h-[220px] cursor-pointer border transition-colors select-none"
-                onClick={() => setFlipped(!flipped)}
-              >
-                <div className="border-fl-border flex items-center justify-between border-b px-6 py-4">
+              <div className="border-fl-border bg-fl-surface min-h-[220px] border select-none">
+                <div className="border-fl-border flex flex-wrap items-center justify-between gap-3 border-b px-6 py-4">
                   <div className="flex items-center gap-2">
                     <span className="text-fl-label text-fl-muted-3">●</span>
                     <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
                       {flipped ? t('back') : t('front')}
                     </span>
                   </div>
-                  <span className="text-fl-caption text-fl-muted-1 font-sans leading-relaxed">
+                  <button
+                    type="button"
+                    onClick={() => setFlipped((value) => !value)}
+                    className="text-fl-caption border-fl-border text-fl-muted-1 hover:border-fl-border-2 hover:text-fl-fg focus-visible:outline-fl-fg min-h-[44px] max-w-full cursor-pointer border px-4 py-2 font-sans leading-relaxed break-words transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
                     {flipped ? t('tapToHide') : t('tapToReveal')}
-                  </span>
+                  </button>
                 </div>
 
                 <div className="flex flex-col items-center justify-center gap-4 p-10 text-center">
                   {!flipped ? (
-                    <div className="flex items-center gap-3">
+                    <div className="flex max-w-full flex-wrap items-center justify-center gap-3">
                       <TargetLanguageText
                         as="p"
                         languageCode={targetLanguageCode}
-                        className="text-fl-fg text-3xl font-bold"
+                        className="text-fl-fg max-w-full min-w-0 text-3xl font-bold break-words"
                       >
                         {currentCard.word}
                       </TargetLanguageText>
-                      <span onClick={(e) => e.stopPropagation()}>
-                        <AudioPlayer text={currentCard.word} size="md" />
-                      </span>
+                      <AudioPlayer text={currentCard.word} size="md" />
                     </div>
                   ) : (
                     <>

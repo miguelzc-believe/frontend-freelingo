@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FlashcardsPage from '@/app/(app)/flashcards/page'
 
-const { mockApiFetch } = vi.hoisted(() => ({
+const { mockApiFetch, mockPlayAudio } = vi.hoisted(() => ({
   mockApiFetch: vi.fn(),
+  mockPlayAudio: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -22,21 +22,33 @@ vi.mock('@/store/language', () => ({
 }))
 
 vi.mock('@/components/ui/AudioPlayer', () => ({
-  AudioPlayer: () => null,
+  AudioPlayer: ({ text, size }: { text: string; size?: 'sm' | 'md' }) => (
+    <button
+      type="button"
+      aria-label={`Listen to ${text}`}
+      onClick={() => mockPlayAudio(text, size)}
+    >
+      ▶
+    </button>
+  ),
 }))
 
 vi.mock('@/components/ui/VoiceRecorder', () => ({
-  VoiceRecorder: () => null,
+  VoiceRecorder: ({
+    onTranscription,
+    disabled,
+  }: {
+    onTranscription: (text: string) => Promise<void>
+    disabled: boolean
+  }) => (
+    <button disabled={disabled} onClick={() => void onTranscription(' CIAO! ')}>
+      Transcribe
+    </button>
+  ),
 }))
 
 vi.mock('@/components/ui/page-loading', () => ({
   PageLoading: () => <div>loading</div>,
-}))
-
-vi.mock('@/components/TargetLanguageText', () => ({
-  TargetLanguageText: ({ children }: { children: ReactNode }) => (
-    <span>{children}</span>
-  ),
 }))
 
 const cards = [
@@ -75,6 +87,69 @@ describe('Flashcards review', () => {
     vi.clearAllMocks()
   })
 
+  it('provides a named native flip action on both faces, separate from audio and grading', async () => {
+    mockApiFetch.mockResolvedValue(dueResponse())
+    render(<FlashcardsPage />)
+
+    const reveal = await screen.findByRole('button', { name: 'tapToReveal' })
+    expect(reveal.tagName).toBe('BUTTON')
+    expect(reveal).toHaveAttribute('type', 'button')
+    expect(reveal).toHaveClass(
+      'focus-visible:outline-fl-fg',
+      'min-h-[44px]',
+      'px-4',
+      'py-2'
+    )
+    reveal.focus()
+    expect(reveal).toHaveFocus()
+    const audio = screen.getByRole('button', { name: 'Listen to ciao' })
+    expect(reveal).not.toContainElement(audio)
+    expect(audio.parentElement?.closest('button, [role="button"]')).toBeNull()
+    expect(screen.getByText('ciao')).toHaveAttribute('lang', 'it-IT')
+
+    fireEvent.click(reveal)
+
+    const hide = screen.getByRole('button', { name: 'tapToHide' })
+    expect(hide).toBe(reveal)
+    expect(hide).toHaveFocus()
+    expect(screen.getByText('back')).toBeInTheDocument()
+    expect(screen.getByText('Ciao a tutti.')).toHaveAttribute('lang', 'it-IT')
+    expect(screen.getAllByText('hola')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Listen to ciao' })).toBeNull()
+    const good = screen.getByRole('button', { name: 'good' })
+    expect(hide).not.toContainElement(good)
+    expect(good.parentElement?.closest('button, [role="button"]')).toBeNull()
+
+    fireEvent.click(hide)
+
+    expect(screen.getByRole('button', { name: 'tapToReveal' })).toHaveFocus()
+    expect(screen.getByText('front')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'good' })).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Listen to ciao' })
+    ).toBeInTheDocument()
+  })
+
+  it('plays audio without flipping and leaves non-action card content inert', async () => {
+    mockApiFetch.mockResolvedValue(dueResponse())
+    render(<FlashcardsPage />)
+
+    const audio = await screen.findByRole('button', { name: 'Listen to ciao' })
+    fireEvent.click(audio)
+
+    expect(mockPlayAudio).toHaveBeenCalledExactlyOnceWith('ciao', 'md')
+    expect(screen.getByText('front')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'good' })).toBeNull()
+    fireEvent.click(screen.getByText('ciao'))
+    expect(screen.getByText('front')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'tapToReveal' }))
+    fireEvent.click(screen.getByText('Ciao a tutti.'))
+    expect(
+      screen.getByRole('button', { name: 'tapToHide' })
+    ).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledTimes(1)
+  })
+
   it('prevents concurrent reviews while one update is pending', async () => {
     let resolveReview: (response: Response) => void
     const pendingReview = new Promise<Response>((resolve) => {
@@ -88,8 +163,7 @@ describe('Flashcards review', () => {
     })
     render(<FlashcardsPage />)
 
-    const word = await screen.findByText('ciao')
-    fireEvent.click(word)
+    fireEvent.click(await screen.findByRole('button', { name: 'tapToReveal' }))
     const goodButton = await screen.findByRole('button', { name: 'good' })
     fireEvent.click(goodButton)
     fireEvent.click(goodButton)
@@ -121,7 +195,7 @@ describe('Flashcards review', () => {
     )
     render(<FlashcardsPage />)
 
-    fireEvent.click(await screen.findByText('ciao'))
+    fireEvent.click(await screen.findByRole('button', { name: 'tapToReveal' }))
     fireEvent.click(await screen.findByRole('button', { name: 'good' }))
 
     expect(await screen.findByText('grazie')).toBeInTheDocument()
@@ -144,7 +218,7 @@ describe('Flashcards review', () => {
     )
     render(<FlashcardsPage />)
 
-    fireEvent.click(await screen.findByText('ciao'))
+    fireEvent.click(await screen.findByRole('button', { name: 'tapToReveal' }))
     const goodButton = await screen.findByRole('button', { name: 'good' })
     fireEvent.click(goodButton)
 
@@ -152,6 +226,34 @@ describe('Flashcards review', () => {
     expect(screen.getAllByText('hola')).toHaveLength(2)
     expect(screen.queryByText('grazie')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'again' })).toBeInTheDocument()
+  })
+
+  it('preserves speech grading and returns to an unrevealed standard card', async () => {
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/flashcards/due'
+        ? Promise.resolve(dueResponse())
+        : Promise.resolve(new Response(null, { status: 200 }))
+    )
+    render(<FlashcardsPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'tapToReveal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'speakingMode' }))
+    expect(screen.queryByRole('button', { name: 'tapToHide' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'good' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Transcribe' }))
+
+    expect(await screen.findByText('Grazie mille.')).toBeInTheDocument()
+    const reviewCall = mockApiFetch.mock.calls.find(([url]) =>
+      String(url).endsWith('/review')
+    )
+    expect(reviewCall?.[0]).toBe('/api/flashcards/7/review')
+    expect(JSON.parse(reviewCall?.[1].body as string)).toEqual({ quality: 5 })
+    fireEvent.click(screen.getByRole('button', { name: 'standardMode' }))
+    expect(
+      screen.getByRole('button', { name: 'tapToReveal' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('grazie')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'good' })).toBeNull()
   })
 
   it('sends trimmed generation settings, closes and resets on success, then reloads due cards', async () => {
