@@ -199,6 +199,77 @@ describe('FeedbackPage list and entry actions', () => {
     )
   })
 
+  it('exposes a focused native primary action without nesting vote or delete controls', async () => {
+    mockApiFetch.mockImplementation(() =>
+      Promise.resolve(
+        listResponse([
+          {
+            ...feature,
+            author: { ...feature.author, id: 1, role: 'admin' },
+            comment_count: 2,
+          },
+        ])
+      )
+    )
+    render(<FeedbackPage />)
+
+    const primary = await screen.findByRole('button', {
+      name: /Add focused practice/,
+    })
+    expect(primary.tagName).toBe('BUTTON')
+    expect(primary).toHaveAttribute('type', 'button')
+    expect(primary).not.toHaveAttribute('tabindex', '-1')
+    expect(primary).toHaveClass('text-left', 'w-full')
+    expect(primary.textContent).toContain('unread')
+    expect(primary.textContent).toContain('statusPending')
+    expect(primary.textContent).toContain('roleAdmin')
+    expect(primary.textContent).toContain('comments')
+    expect(
+      primary.querySelector(
+        'button, a, input, select, textarea, [role="button"]'
+      )
+    ).toBeNull()
+    primary.focus()
+    expect(primary).toHaveFocus()
+
+    for (const name of ['voteAction', 'deleteEntry']) {
+      const action = screen.getByRole('button', { name })
+      expect(primary.contains(action)).toBe(false)
+      expect(
+        action.parentElement!.closest('button, [role="button"]')
+      ).toBeNull()
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'deleteEntry' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'backToList' })).toBeNull()
+  })
+
+  it('opens the correct entry through its named primary action', async () => {
+    const second = {
+      ...feature,
+      id: 11,
+      title: 'Practice listening',
+      unread_by_me: false,
+    }
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/comments')
+          ? jsonResponse({ items: [] })
+          : listResponse([feature, second])
+      )
+    )
+    render(<FeedbackPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Practice listening/ })
+    )
+    expect(
+      await screen.findByPlaceholderText('commentPlaceholder')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Practice listening')).toBeInTheDocument()
+    expect(screen.queryByText('Add focused practice')).toBeNull()
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/11/comments')
+  })
+
   it('opens an unread entry, marks it read, and shows comments', async () => {
     mockApiFetch.mockImplementation((url: string) => {
       if (String(url).includes('/comments')) {
@@ -309,7 +380,13 @@ describe('FeedbackPage list and entry actions', () => {
   it('toggles a feature vote and reflects the updated count', async () => {
     mockApiFetch.mockImplementation((url: string) => {
       if (String(url).endsWith('/vote')) {
-        return Promise.resolve(jsonResponse({ voted: true, vote_count: 4 }))
+        const voted =
+          mockApiFetch.mock.calls.filter(([path]) =>
+            String(path).endsWith('/vote')
+          ).length === 1
+        return Promise.resolve(
+          jsonResponse({ voted, vote_count: voted ? 4 : 3 })
+        )
       }
       return Promise.resolve(listResponse())
     })
@@ -324,6 +401,65 @@ describe('FeedbackPage list and entry actions', () => {
       })
     )
     expect(await screen.findByText('4')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'removeVoteAction' })
+    ).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'backToList' })).toBeNull()
+    expect(mockApiFetch).not.toHaveBeenCalledWith('/api/feedback/10/comments')
+
+    fireEvent.click(screen.getByRole('button', { name: 'removeVoteAction' }))
+    expect(await screen.findByText('3')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'voteAction' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'backToList' })).toBeNull()
+  })
+
+  it('keeps bug content in a native action without a voting control', async () => {
+    const bug = { ...feature, id: 11, type: 'bug', title: 'Fix audio controls' }
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/comments')
+          ? jsonResponse({ items: [] })
+          : listResponse([bug])
+      )
+    )
+    render(<FeedbackPage />)
+    const primary = await screen.findByRole('button', {
+      name: /Fix audio controls/,
+    })
+    expect(primary.tagName).toBe('BUTTON')
+    expect(primary).toHaveAttribute('type', 'button')
+    expect(primary.querySelector('button, [role="button"]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'voteAction' })).toBeNull()
+    fireEvent.click(primary)
+    expect(
+      await screen.findByPlaceholderText('commentPlaceholder')
+    ).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/11/comments')
+  })
+
+  it('honours the existing detail vote disabled state while its request is pending', async () => {
+    let resolveVote!: (response: Response) => void
+    mockApiFetch.mockImplementation((url: string) => {
+      if (url.endsWith('/vote')) {
+        return new Promise<Response>((resolve) => (resolveVote = resolve))
+      }
+      return Promise.resolve(
+        url.endsWith('/comments') ? jsonResponse({ items: [] }) : listResponse()
+      )
+    })
+    render(<FeedbackPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Add focused practice/ })
+    )
+    const vote = await screen.findByRole('button', { name: '▲ 3' })
+    fireEvent.click(vote)
+    expect(vote).toBeDisabled()
+    fireEvent.click(vote)
+    expect(
+      mockApiFetch.mock.calls.filter(([url]) => String(url).endsWith('/vote'))
+    ).toHaveLength(1)
+    resolveVote(jsonResponse({ voted: true, vote_count: 4 }))
+    expect(await screen.findByRole('button', { name: '▲ 4' })).toBeEnabled()
   })
 
   it('creates a trimmed feature and reloads the active list', async () => {

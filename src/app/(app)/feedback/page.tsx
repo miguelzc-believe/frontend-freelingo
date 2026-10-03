@@ -740,20 +740,16 @@ export default function FeedbackPage() {
               return (
                 <div
                   key={entry.id}
-                  className={`hover:bg-fl-surface-2 flex cursor-pointer gap-4 px-5 py-4 transition-colors ${
+                  className={`hover:bg-fl-surface-2 flex gap-4 px-5 py-4 transition-colors ${
                     i < entries.length - 1 ? 'border-fl-border border-b' : ''
                   }`}
-                  onClick={() => setSelectedEntry(entry)}
                 >
                   {/* Vote column — only for features */}
                   {entry.type === 'feature' && (
-                    <div
-                      className="flex shrink-0 flex-col items-center gap-0.5 pt-0.5"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
                       <button
-                        onClick={async (e) => {
-                          e.stopPropagation()
+                        type="button"
+                        onClick={async () => {
                           const res = await apiFetch(
                             `/api/feedback/${entry.id}/vote`,
                             {
@@ -788,8 +784,12 @@ export default function FeedbackPage() {
                   {entry.type === 'bug' && <div className="w-8 shrink-0" />}
 
                   {/* Content */}
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEntry(entry)}
+                    className="focus-visible:outline-fl-accent w-full min-w-0 flex-1 cursor-pointer space-y-1.5 text-left font-mono focus-visible:outline-2 focus-visible:outline-offset-4"
+                  >
+                    <span className="flex flex-wrap items-center gap-2">
                       <span className="text-fl-fg truncate font-mono text-sm font-semibold">
                         {entry.title}
                       </span>
@@ -802,11 +802,11 @@ export default function FeedbackPage() {
                           {t('unread')}
                         </span>
                       )}
-                    </div>
-                    <p className="text-fl-muted-2 line-clamp-2 font-mono text-xs leading-relaxed">
+                    </span>
+                    <span className="text-fl-muted-2 line-clamp-2 font-mono text-xs leading-relaxed">
                       {entry.description}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-3">
+                    </span>
+                    <span className="flex flex-wrap items-center gap-3">
                       <span className="text-fl-hint text-fl-muted-4 inline-flex flex-wrap items-center gap-x-1 font-mono">
                         <span>
                           {t('by')} {entry.author.display_name}
@@ -822,19 +822,17 @@ export default function FeedbackPage() {
                             : t('comments', { count: entry.comment_count })}
                         </span>
                       )}
-                      {canDelete && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setDeletePending(entry)
-                          }}
-                          className="text-fl-hint text-fl-muted-4 hover:text-fl-error-fg ml-auto font-mono tracking-widest uppercase transition-colors"
-                        >
-                          {t('deleteEntry')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                    </span>
+                  </button>
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => setDeletePending(entry)}
+                      className="text-fl-hint text-fl-muted-4 hover:text-fl-error-fg shrink-0 self-end font-mono tracking-widest uppercase transition-colors"
+                    >
+                      {t('deleteEntry')}
+                    </button>
+                  )}
                 </div>
               )
             })}
