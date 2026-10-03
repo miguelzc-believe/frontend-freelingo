@@ -34,12 +34,8 @@ function VerifyEmailContent() {
       signal: controller.signal,
     })
       .then((res) => setStatus(res.ok ? 'success' : 'error'))
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          setStatus('error')
-        } else {
-          setStatus('error')
-        }
+      .catch(() => {
+        setStatus('error')
       })
       .finally(() => {
         clearTimeout(timeoutId)
