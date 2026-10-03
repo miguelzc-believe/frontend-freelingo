@@ -26,6 +26,7 @@ const PREMIUM_STEPS = new Set([1, 2, 5])
 
 export default function OnboardingTour() {
   const t = useTranslations('tour')
+  const tc = useTranslations('common')
   const stripeEnabled = useConfigStore((s) => s.stripeEnabled)
   const [visible, setVisible] = useState(false)
   const [step, setStep] = useState(0)
@@ -45,6 +46,17 @@ export default function OnboardingTour() {
     setVisible(false)
   }, [])
 
+  useEffect(() => {
+    if (!visible) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismiss()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [visible, dismiss])
+
   const goTo = useCallback((next: number, direction: 'next' | 'prev') => {
     setDir(direction)
     setLeaving(true)
@@ -62,7 +74,10 @@ export default function OnboardingTour() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div
+      <button
+        type="button"
+        aria-label={tc('close')}
+        tabIndex={-1}
         className="bg-fl-bg/80 absolute inset-0 backdrop-blur-sm"
         onClick={dismiss}
       />
