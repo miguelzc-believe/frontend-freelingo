@@ -9,6 +9,7 @@ const TOUR_KEY = 'fl_tour_done'
 
 export default function WhatsNew() {
   const t = useTranslations('whatsNew')
+  const tc = useTranslations('common')
   const messages = useMessages()
   const [visible, setVisible] = useState(false)
 
@@ -39,12 +40,26 @@ export default function WhatsNew() {
     setVisible(false)
   }, [])
 
+  useEffect(() => {
+    if (!visible) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismiss()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [visible, dismiss])
+
   if (!visible) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div
+      <button
+        type="button"
+        aria-label={tc('close')}
+        tabIndex={-1}
         className="bg-fl-bg/80 absolute inset-0 backdrop-blur-sm"
         onClick={dismiss}
       />
