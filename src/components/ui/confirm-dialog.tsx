@@ -68,18 +68,22 @@ export function ConfirmDialog({
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-      style={{
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        backdropFilter: 'blur(2px)',
-      }}
-      onClick={() => !confirming && onCancel()}
-    >
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={tCommon('close')}
+        disabled={confirming}
+        className="absolute inset-0"
+        style={{
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(2px)',
+        }}
+        onClick={() => !confirming && onCancel()}
+      />
       <div
         ref={dialogRef}
-        className="border-fl-border bg-fl-surface w-full max-w-sm border shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        className="border-fl-border bg-fl-surface relative w-full max-w-sm border shadow-2xl"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
