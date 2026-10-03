@@ -102,20 +102,82 @@ describe('ContactFormModal', () => {
     expect(screen.getByRole('button', { name: 'send' })).toBeEnabled()
   })
 
-  it('closes on Escape or backdrop clicks but keeps clicks inside the form open', () => {
-    const { container } = render(<ContactFormModal open onClose={onClose} />)
-    const backdrop = container.firstElementChild
-    const modal = backdrop?.firstElementChild
+  it('dismisses once through a native backdrop sibling without wrapping form controls', () => {
+    render(<ContactFormModal open onClose={onClose} />)
+    const closeControls = screen.getAllByRole('button', { name: 'close' })
+    expect(closeControls).toHaveLength(2)
+    const [backdrop, headerClose] = closeControls
+    if (!backdrop || !headerClose) throw new Error('Missing dismiss controls')
+    const panel = screen
+      .getByPlaceholderText('placeholderEmail')
+      .closest('form')?.parentElement
+    if (!panel) throw new Error('Contact panel did not render')
 
-    if (!backdrop || !modal) throw new Error('Contact modal did not render')
+    expect(backdrop.tagName).toBe('BUTTON')
+    expect(backdrop).toHaveAttribute('type', 'button')
+    expect(backdrop).toHaveAttribute('tabindex', '-1')
+    expect(backdrop.parentElement).toBe(panel.parentElement)
+    expect(backdrop.nextElementSibling).toBe(panel)
+    expect(panel.closest('button, [role="button"]')).toBeNull()
+    expect(backdrop.querySelector('button, input, textarea, form')).toBeNull()
 
     fireEvent.click(screen.getByText('title'))
+    fireEvent.click(screen.getByPlaceholderText('placeholderEmail'))
+    fireEvent.change(screen.getByPlaceholderText('placeholderSubject'), {
+      target: { value: 'Question' },
+    })
     expect(onClose).not.toHaveBeenCalled()
 
     fireEvent.click(backdrop)
-    fireEvent.keyDown(window, { key: 'Escape' })
-    fireEvent.click(screen.getByRole('button', { name: 'close' }))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
 
+  it('dismisses through Escape from inside the form and the header close control', () => {
+    render(<ContactFormModal open onClose={onClose} />)
+    fireEvent.keyDown(screen.getByPlaceholderText('placeholderEmail'), {
+      key: 'Escape',
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+    const headerClose = screen.getAllByRole('button', { name: 'close' }).at(-1)
+    if (!headerClose) throw new Error('Missing header close control')
+    fireEvent.click(headerClose)
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps backdrop, header and Escape dismissal available while loading', async () => {
+    let resolveRequest: ((response: Response) => void) | undefined
+    vi.spyOn(globalThis, 'fetch').mockReturnValue(
+      new Promise<Response>((resolve) => {
+        resolveRequest = resolve
+      })
+    )
+    render(<ContactFormModal open onClose={onClose} />)
+    fireEvent.change(screen.getByPlaceholderText('placeholderEmail'), {
+      target: { value: 'learner@example.com' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('placeholderSubject'), {
+      target: { value: 'Question' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('placeholderDescription'), {
+      target: { value: 'Please help me.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    expect(screen.getByRole('button', { name: 'cancel' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'sending' })).toBeDisabled()
+    expect(screen.getByPlaceholderText('placeholderEmail')).toBeDisabled()
+    const closeControls = screen.getAllByRole('button', { name: 'close' })
+    expect(closeControls).toHaveLength(2)
+    for (const control of closeControls) {
+      expect(control).toBeEnabled()
+      fireEvent.click(control)
+    }
+    fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(3)
+
+    await act(async () => {
+      resolveRequest?.(new Response(null, { status: 204 }))
+    })
+    expect(screen.getByText('✓ sent')).toBeInTheDocument()
   })
 })
