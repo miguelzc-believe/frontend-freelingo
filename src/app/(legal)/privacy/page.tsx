@@ -30,9 +30,7 @@ export default function PrivacyPage() {
         : allowRegistration
           ? '/register'
           : '/login'
-      : isFromLanding
-        ? '/'
-        : '/'
+      : '/'
   const backLabel = isFromSettings
     ? t('linkBackSettings')
     : isFromRegister
