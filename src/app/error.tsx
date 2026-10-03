@@ -7,10 +7,10 @@ const errorLogger = getLogger('global-error')
 export default function GlobalError({
   error,
   reset,
-}: {
+}: Readonly<{
   error: Error & { digest?: string }
   reset: () => void
-}) {
+}>) {
   const t = useTranslations('error')
 
   useEffect(() => {

@@ -20,7 +20,7 @@ export function AuthAvatarImage({
   height,
   className,
   fallback = null,
-}: Props) {
+}: Readonly<Props>) {
   const accessToken = useAuthStore((state) => state.accessToken)
   const [src, setSrc] = useState<string | null>(null)
 

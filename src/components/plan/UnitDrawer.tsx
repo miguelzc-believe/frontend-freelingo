@@ -25,7 +25,7 @@ export default function UnitDrawer({
   lessons,
   onClose,
   onStartLesson,
-}: Props) {
+}: Readonly<Props>) {
   const t = useTranslations('plan')
   const tCommon = useTranslations('common')
   const ref = useRef<HTMLDivElement>(null)

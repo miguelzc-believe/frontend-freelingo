@@ -23,9 +23,9 @@ const POS_LABELS: Record<string, string> = {
 
 export default function VocabularySetPage({
   params,
-}: {
+}: Readonly<{
   params: { setId: string }
-}) {
+}>) {
   const { setId } = params
   const router = useRouter()
   const t = useTranslations('vocabulary')

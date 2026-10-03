@@ -7,6 +7,7 @@ import {
   Headphones,
   MessageSquare,
   Mic,
+  type LucideIcon,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { splitYearlyCta, type BillingInterval } from '@/lib/billing-copy'
@@ -51,7 +52,7 @@ interface PaywallBannerProps {
 export function PaywallBanner({
   feature = 'chat',
   compact = false,
-}: PaywallBannerProps) {
+}: Readonly<PaywallBannerProps>) {
   const t = useTranslations('billing')
   const locale = useLocale()
   const router = useRouter()
@@ -114,103 +115,166 @@ export function PaywallBanner({
     ? 'border-fl-border bg-fl-surface w-full border p-5 text-center'
     : 'flex min-h-[60vh] flex-col items-center justify-center px-6 py-16 text-center'
 
+  const content = (
+    <PaywallContent
+      icon={Icon}
+      label={t('paywallLabel')}
+      title={t(paymentRecovery ? 'pastDueTitle' : context.title)}
+      description={
+        paymentRecovery
+          ? t('pastDueDesc')
+          : t(
+              context.desc ??
+                (trialEligible ? 'paywallDesc' : 'paywallDescTrialUsed'),
+              { days: trialDays }
+            )
+      }
+      paymentRecovery={paymentRecovery}
+      yearlyCta={yearlyCta}
+      monthlyLabel={
+        paymentRecovery
+          ? ''
+          : t('planMonthly', {
+              price: new Intl.NumberFormat(locale).format(priceMonthly),
+            })
+      }
+      updatePaymentLabel={paymentRecovery ? t('updatePayment') : ''}
+      noChargeLabel={
+        paymentRecovery
+          ? ''
+          : t(trialEligible ? 'paywallNoCharge' : 'paywallNoChargeTrialUsed')
+      }
+      skipLabel={t('paywallSkip')}
+      loading={loading}
+      portalLoading={portalLoading}
+      error={error}
+      onCheckout={handleCheckout}
+      onManageBilling={handleManageBilling}
+      onSkip={() => router.push('/dashboard')}
+    />
+  )
+
   return (
     <div className={containerClass}>
       {compact ? (
         <div className="border-fl-border bg-fl-surface mx-auto w-full max-w-md border p-8">
-          <PaywallContent />
+          {content}
         </div>
       ) : (
         <div className="border-fl-border bg-fl-surface w-full max-w-md border p-8">
-          <PaywallContent />
+          {content}
         </div>
       )}
     </div>
   )
+}
 
-  function PaywallContent() {
-    return (
-      <>
-        <Icon
-          className="text-fl-muted-2 mx-auto mb-4 h-6 w-6"
-          aria-hidden="true"
-        />
+interface PaywallContentProps {
+  icon: LucideIcon
+  label: string
+  title: string
+  description: string
+  paymentRecovery: boolean
+  yearlyCta: ReturnType<typeof splitYearlyCta>
+  monthlyLabel: string
+  updatePaymentLabel: string
+  noChargeLabel: string
+  skipLabel: string
+  loading: BillingInterval | null
+  portalLoading: boolean
+  error: string | null
+  onCheckout: (interval: BillingInterval) => void
+  onManageBilling: () => void
+  onSkip: () => void
+}
 
-        <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
-          {t('paywallLabel')}
-        </p>
-        <h2 className="text-fl-fg mb-3 font-mono text-base font-bold">
-          {t(paymentRecovery ? 'pastDueTitle' : context.title)}
-        </h2>
-        <p className="text-fl-muted-1 mb-6 font-mono text-sm leading-relaxed">
-          {paymentRecovery
-            ? t('pastDueDesc')
-            : t(
-                context.desc ??
-                  (trialEligible ? 'paywallDesc' : 'paywallDescTrialUsed'),
-                { days: trialDays }
-              )}
-        </p>
+function PaywallContent({
+  icon: Icon,
+  label,
+  title,
+  description,
+  paymentRecovery,
+  yearlyCta,
+  monthlyLabel,
+  updatePaymentLabel,
+  noChargeLabel,
+  skipLabel,
+  loading,
+  portalLoading,
+  error,
+  onCheckout,
+  onManageBilling,
+  onSkip,
+}: Readonly<PaywallContentProps>) {
+  return (
+    <>
+      <Icon
+        className="text-fl-muted-2 mx-auto mb-4 h-6 w-6"
+        aria-hidden="true"
+      />
 
-        {paymentRecovery ? (
+      <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
+        {label}
+      </p>
+      <h2 className="text-fl-fg mb-3 font-mono text-base font-bold">{title}</h2>
+      <p className="text-fl-muted-1 mb-6 font-mono text-sm leading-relaxed">
+        {description}
+      </p>
+
+      {paymentRecovery ? (
+        <button
+          onClick={onManageBilling}
+          disabled={portalLoading}
+          className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full px-4 py-3 font-mono text-sm tracking-widest uppercase transition-colors disabled:opacity-50"
+        >
+          {portalLoading ? '...' : updatePaymentLabel}
+        </button>
+      ) : (
+        <div className="flex flex-col gap-3">
           <button
-            onClick={handleManageBilling}
-            disabled={portalLoading}
+            onClick={() => onCheckout('yearly')}
+            disabled={loading !== null}
             className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full px-4 py-3 font-mono text-sm tracking-widest uppercase transition-colors disabled:opacity-50"
           >
-            {portalLoading ? '...' : t('updatePayment')}
+            {loading === 'yearly' ? (
+              '...'
+            ) : (
+              <span className="flex flex-col items-center gap-0.5 leading-relaxed">
+                <span>{yearlyCta.main}</span>
+                {yearlyCta.savings && (
+                  <span className="text-fl-accent-fg text-xs">
+                    {yearlyCta.savings}
+                  </span>
+                )}
+              </span>
+            )}
           </button>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={() => handleCheckout('yearly')}
-              disabled={loading !== null}
-              className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full px-4 py-3 font-mono text-sm tracking-widest uppercase transition-colors disabled:opacity-50"
-            >
-              {loading === 'yearly' ? (
-                '...'
-              ) : (
-                <span className="flex flex-col items-center gap-0.5 leading-relaxed">
-                  <span>{yearlyCta.main}</span>
-                  {yearlyCta.savings && (
-                    <span className="text-fl-accent-fg text-xs">
-                      {yearlyCta.savings}
-                    </span>
-                  )}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => handleCheckout('monthly')}
-              disabled={loading !== null}
-              className="border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2 w-full border px-4 py-3 font-mono text-sm tracking-widest uppercase transition-colors disabled:opacity-50"
-            >
-              {loading === 'monthly'
-                ? '...'
-                : t('planMonthly', {
-                    price: new Intl.NumberFormat(locale).format(priceMonthly),
-                  })}
-            </button>
-          </div>
-        )}
+          <button
+            onClick={() => onCheckout('monthly')}
+            disabled={loading !== null}
+            className="border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2 w-full border px-4 py-3 font-mono text-sm tracking-widest uppercase transition-colors disabled:opacity-50"
+          >
+            {loading === 'monthly' ? '...' : monthlyLabel}
+          </button>
+        </div>
+      )}
 
-        {error && (
-          <p className="text-fl-hint mt-4 font-mono text-red-500">{error}</p>
-        )}
+      {error && (
+        <p className="text-fl-hint mt-4 font-mono text-red-500">{error}</p>
+      )}
 
-        {!paymentRecovery && (
-          <p className="text-fl-hint text-fl-muted-3 mt-6 font-mono tracking-widest uppercase">
-            {t(trialEligible ? 'paywallNoCharge' : 'paywallNoChargeTrialUsed')}
-          </p>
-        )}
+      {!paymentRecovery && (
+        <p className="text-fl-hint text-fl-muted-3 mt-6 font-mono tracking-widest uppercase">
+          {noChargeLabel}
+        </p>
+      )}
 
-        <button
-          onClick={() => router.push('/dashboard')}
-          className="text-fl-muted-4 hover:text-fl-muted-2 mt-5 w-full font-mono text-xs tracking-widest uppercase transition-colors"
-        >
-          {t('paywallSkip')}
-        </button>
-      </>
-    )
-  }
+      <button
+        onClick={onSkip}
+        className="text-fl-muted-4 hover:text-fl-muted-2 mt-5 w-full font-mono text-xs tracking-widest uppercase transition-colors"
+      >
+        {skipLabel}
+      </button>
+    </>
+  )
 }

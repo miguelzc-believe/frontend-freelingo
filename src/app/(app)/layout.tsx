@@ -15,7 +15,11 @@ import { PageLoading } from '@/components/ui/page-loading'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { AuthAvatarImage } from '@/components/AuthAvatarImage'
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default function AppLayout({
+  children,
+}: {
+  readonly children: React.ReactNode
+}) {
   const tNav = useTranslations('nav')
   const tCommon = useTranslations('common')
   const tBilling = useTranslations('billing')

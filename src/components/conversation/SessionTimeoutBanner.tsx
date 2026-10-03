@@ -6,7 +6,7 @@ interface Props {
   seconds: number
 }
 
-export default function SessionTimeoutBanner({ seconds }: Props) {
+export default function SessionTimeoutBanner({ seconds }: Readonly<Props>) {
   const t = useTranslations('conversation')
   // Count down locally from the value the backend sent
   const [remaining, setRemaining] = useState(seconds)

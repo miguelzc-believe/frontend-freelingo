@@ -10,7 +10,7 @@ interface SubscriptionPlanButtonsProps {
 
 export function SubscriptionPlanButtons({
   className = '',
-}: SubscriptionPlanButtonsProps) {
+}: Readonly<SubscriptionPlanButtonsProps>) {
   const tBilling = useTranslations('billing')
   const locale = useLocale()
   const priceMonthly = useConfigStore((s) => s.priceMonthly)

@@ -56,7 +56,7 @@ function renderExplanation(text: string) {
   })
 }
 
-function RichText({ text }: { text: string }) {
+function RichText({ text }: { readonly text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/)
   return (
     <>
@@ -83,9 +83,9 @@ function RichText({ text }: { text: string }) {
 
 export default function GrammarDetailPage({
   params,
-}: {
+}: Readonly<{
   params: { slug: string }
-}) {
+}>) {
   const t = useTranslations('grammar')
   const tCommon = useTranslations('common')
   const tNav = useTranslations('nav')

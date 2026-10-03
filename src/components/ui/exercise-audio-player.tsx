@@ -12,7 +12,7 @@ const SEEK_STEP_SECONDS = 5
 export function ExerciseAudioPlayer({
   exerciseId,
   onFirstPlay,
-}: ExerciseAudioPlayerProps) {
+}: Readonly<ExerciseAudioPlayerProps>) {
   const t = useTranslations('listening')
   const [state, setState] = useState<
     'idle' | 'loading' | 'playing' | 'paused' | 'error'
@@ -143,7 +143,7 @@ export function ExerciseAudioPlayer({
         </button>
 
         <div
-          className="bg-fl-border relative h-1.5 flex-1 cursor-pointer focus-visible:outline-fl-fg focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="bg-fl-border focus-visible:outline-fl-fg relative h-1.5 flex-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
           onClick={handleSeek}
           onKeyDown={handleKeyDown}
           role="slider"

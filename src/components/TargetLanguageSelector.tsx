@@ -12,7 +12,7 @@ export default function TargetLanguageSelector({
   value,
   onChange,
   availableCodes,
-}: Props) {
+}: Readonly<Props>) {
   const t = useTranslations('targetLanguages')
 
   const filtered = TARGET_LANGUAGE_CATALOG.filter((lang) =>

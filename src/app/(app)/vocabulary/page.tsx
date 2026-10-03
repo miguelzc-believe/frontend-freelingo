@@ -10,7 +10,10 @@ import { useLanguageStore } from '@/store/language'
 
 // ── Set card ──────────────────────────────────────────────────────────────────
 
-function SetCard({ s, wordsLabel }: { s: VocabularySet; wordsLabel: string }) {
+function SetCard({
+  s,
+  wordsLabel,
+}: Readonly<{ s: VocabularySet; wordsLabel: string }>) {
   return (
     <Link
       href={`/vocabulary/${s.id}`}

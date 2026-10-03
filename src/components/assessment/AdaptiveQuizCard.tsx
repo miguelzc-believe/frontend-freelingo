@@ -17,7 +17,7 @@ export default function AdaptiveQuizCard({
   totalQuestions,
   onAnswer,
   languageCode,
-}: Props) {
+}: Readonly<Props>) {
   const t = useTranslations('assessment')
   const progress = Math.round((questionNumber / totalQuestions) * 100)
 

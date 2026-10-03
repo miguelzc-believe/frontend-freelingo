@@ -7,7 +7,7 @@ import { CEFR_LEVELS } from '@/data/curriculum'
 import { useLanguageStore } from '@/store/language'
 import { PageLoading } from '@/components/ui/page-loading'
 
-function TopicCard({ topic }: { topic: GrammarTopic }) {
+function TopicCard({ topic }: { readonly topic: GrammarTopic }) {
   return (
     <Link
       href={`/grammar/${topic.slug}`}

@@ -30,7 +30,7 @@ export default function PricingSection({
   priceYearly,
   totalPriceMonthly,
   totalPriceYearly,
-}: PricingSectionProps) {
+}: Readonly<PricingSectionProps>) {
   const tBilling = useTranslations('billing')
   const tLanding = useTranslations('landing')
   const locale = useLocale()

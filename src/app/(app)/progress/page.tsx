@@ -75,10 +75,10 @@ const STATUS_COLOR: Record<CompetencyStatus, string> = {
 function UnitCompetencyBlock({
   unit,
   record,
-}: {
+}: Readonly<{
   unit: CurriculumUnit
   record: CompetencyRecord | undefined
-}) {
+}>) {
   const t = useTranslations('progress')
   const tPlan = useTranslations('plan')
   const masteredCount = record?.mastered_count ?? 0

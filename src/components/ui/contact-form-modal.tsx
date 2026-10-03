@@ -9,7 +9,10 @@ interface ContactFormModalProps {
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 
-export function ContactFormModal({ open, onClose }: ContactFormModalProps) {
+export function ContactFormModal({
+  open,
+  onClose,
+}: Readonly<ContactFormModalProps>) {
   const t = useTranslations('contact')
   const tCommon = useTranslations('common')
 

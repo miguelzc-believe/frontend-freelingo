@@ -13,7 +13,7 @@ export default function StatusIndicator({
   status,
   userSpeaking,
   assistantSpeaking,
-}: Props) {
+}: Readonly<Props>) {
   const t = useTranslations('conversation')
 
   let label: string

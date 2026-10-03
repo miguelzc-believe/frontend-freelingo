@@ -4,7 +4,13 @@ import { Star } from 'lucide-react'
 import { getLanguageByCode } from '@/lib/target-languages'
 import type { ReviewPublic } from '@/types/api'
 
-function Stars({ rating, label }: { rating: number; label: string }) {
+function Stars({
+  rating,
+  label,
+}: {
+  readonly rating: number
+  readonly label: string
+}) {
   return (
     <div className="flex gap-1" aria-label={label}>
       {[1, 2, 3, 4, 5].map((star) => (
@@ -21,7 +27,7 @@ function Stars({ rating, label }: { rating: number; label: string }) {
 export function LandingReviewsCarousel({
   reviews,
 }: {
-  reviews: ReviewPublic[]
+  readonly reviews: ReviewPublic[]
 }) {
   const t = useTranslations('landingReviews')
   const tTarget = useTranslations('targetLanguages')

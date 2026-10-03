@@ -11,7 +11,7 @@ export function AdminPageHeader({
   title,
   eyebrow,
   actions,
-}: AdminPageHeaderProps) {
+}: Readonly<AdminPageHeaderProps>) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
@@ -35,9 +35,9 @@ export function AdminPanel({
   meta,
   children,
 }: {
-  title?: string
-  meta?: ReactNode
-  children: ReactNode
+  readonly title?: string
+  readonly meta?: ReactNode
+  readonly children: ReactNode
 }) {
   return (
     <div className="border-fl-border bg-fl-surface border">
@@ -64,9 +64,9 @@ export function AdminMetric({
   value,
   icon: Icon,
 }: {
-  label: string
-  value: ReactNode
-  icon: LucideIcon
+  readonly label: string
+  readonly value: ReactNode
+  readonly icon: LucideIcon
 }) {
   return (
     <div className="border-fl-border bg-fl-surface flex items-center justify-between gap-3 border px-4 py-3">
@@ -85,8 +85,9 @@ export function AdminBadge({
   children,
   tone = 'neutral',
 }: {
-  children: ReactNode
-  tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger' | undefined
+  readonly children: ReactNode
+  readonly tone?:
+    'neutral' | 'info' | 'success' | 'warning' | 'danger' | undefined
 }) {
   const toneClass = {
     neutral: 'border-fl-border text-fl-muted-2',

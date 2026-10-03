@@ -23,7 +23,7 @@ export default function TranscriptBubble({
   userInitial,
   languageCode,
   onPointerUp,
-}: Props) {
+}: Readonly<Props>) {
   const t = useTranslations('conversation')
   const isUser = role === 'user'
 

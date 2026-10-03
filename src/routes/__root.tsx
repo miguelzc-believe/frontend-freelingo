@@ -96,7 +96,7 @@ function RootError({ error, reset }: ErrorComponentProps) {
     />
   )
 }
-function Document({ children }: { children: React.ReactNode }) {
+function Document({ children }: { readonly children: React.ReactNode }) {
   const runtime = Route.useLoaderData()
   if (!runtime)
     return (

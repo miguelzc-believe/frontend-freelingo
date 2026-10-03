@@ -56,7 +56,7 @@ export function ReviewForm({
   cancelLabel,
   onCancel,
   onSubmit,
-}: ReviewFormProps) {
+}: Readonly<ReviewFormProps>) {
   const t = useTranslations('reviewPrompt')
   const tStars = useTranslations('landingReviews')
   const [rating, setRating] = useState(initialReview?.rating ?? 0)
@@ -169,7 +169,7 @@ export function ReviewPrompt({
   open,
   onClose,
   onSubmitted,
-}: ReviewPromptProps) {
+}: Readonly<ReviewPromptProps>) {
   const t = useTranslations('reviewPrompt')
   const [checking, setChecking] = useState(true)
   const [hasReview, setHasReview] = useState(false)

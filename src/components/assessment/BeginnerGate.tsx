@@ -10,7 +10,7 @@ export default function BeginnerGate({
   onBeginner,
   onHasExperience,
   languageCode,
-}: Props) {
+}: Readonly<Props>) {
   const t = useTranslations('assessment')
   const tLang = useTranslations('targetLanguages')
 

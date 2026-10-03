@@ -83,6 +83,10 @@ describe('WhatsNew', () => {
       'Later update',
     ])
     expect(screen.getByText('new features').tagName).toBe('STRONG')
+    expect(screen.getByText('new features')).toHaveClass(
+      'text-fl-fg',
+      'font-semibold'
+    )
     expect(screen.getByText('Another improvement')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Earlier update'))
     fireEvent.click(screen.getByText("What's New"))

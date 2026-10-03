@@ -12,7 +12,7 @@ export function SettingsPageHeader({
   title,
   eyebrow,
   description,
-}: SettingsPageHeaderProps) {
+}: Readonly<SettingsPageHeaderProps>) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
@@ -38,7 +38,7 @@ export function SettingsPageHeader({
 export function SettingsNav({
   items,
 }: {
-  items: { href: string; label: string; icon: LucideIcon }[]
+  readonly items: { href: string; label: string; icon: LucideIcon }[]
 }) {
   return (
     <div className="border-fl-border bg-fl-surface flex flex-wrap items-center gap-1 border p-1">
@@ -64,9 +64,9 @@ export function SettingsPanel({
   title,
   children,
 }: {
-  id?: string
-  title?: string
-  children: ReactNode
+  readonly id?: string
+  readonly title?: string
+  readonly children: ReactNode
 }) {
   return (
     <section id={id} className="scroll-mt-24 space-y-3">
@@ -89,10 +89,10 @@ export function SettingsActionCard({
   description,
   icon: Icon,
 }: {
-  href: string
-  label: string
-  description: string
-  icon: LucideIcon
+  readonly href: string
+  readonly label: string
+  readonly description: string
+  readonly icon: LucideIcon
 }) {
   return (
     <Link

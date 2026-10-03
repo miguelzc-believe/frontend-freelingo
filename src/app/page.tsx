@@ -39,7 +39,7 @@ const jsonLd = {
   },
 }
 
-export default function Home({ data }: { data: LandingData }) {
+export default function Home({ data }: { readonly data: LandingData }) {
   const t = useTranslations('landing')
   const tCommon = useTranslations('common')
   const tBilling = useTranslations('billing')

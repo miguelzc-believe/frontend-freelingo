@@ -69,7 +69,10 @@ function formatDate(iso: string, locale: string): string {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function StatusBadge({ status, label }: { status: string; label: string }) {
+function StatusBadge({
+  status,
+  label,
+}: Readonly<{ status: string; label: string }>) {
   const cls = STATUS_STYLES[status] ?? STATUS_STYLES.pending
   return (
     <span
@@ -90,7 +93,7 @@ interface CreateModalProps {
   onCreated: () => void
 }
 
-function CreateModal({ type, onClose, onCreated }: CreateModalProps) {
+function CreateModal({ type, onClose, onCreated }: Readonly<CreateModalProps>) {
   const t = useTranslations('feedback')
   const tCommon = useTranslations('common')
   const [title, setTitle] = useState('')
@@ -256,7 +259,7 @@ function DetailView({
   onVoteToggled,
   onEntryRead,
   onEntryDeleted,
-}: DetailViewProps) {
+}: Readonly<DetailViewProps>) {
   const t = useTranslations('feedback')
   const locale = useLocale()
   const [entry, setEntry] = useState(initialEntry)

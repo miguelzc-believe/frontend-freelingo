@@ -29,7 +29,7 @@ export function Pagination({
   nextLabel,
   pageInfo,
   className = '',
-}: PaginationProps) {
+}: Readonly<PaginationProps>) {
   const incDone = useRef(false)
 
   useEffect(() => {

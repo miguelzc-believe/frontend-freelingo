@@ -42,7 +42,7 @@ export default function DurationSelector({
   onBack,
   cefr_level,
   loading,
-}: Props) {
+}: Readonly<Props>) {
   const t = useTranslations('assessment')
   const tCommon = useTranslations('common')
   const selected = DURATION_OPTIONS.find((o) => o.weeks === selectedWeeks) ??

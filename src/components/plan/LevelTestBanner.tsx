@@ -6,7 +6,7 @@ interface Props {
   level: string
 }
 
-export default function LevelTestBanner({ planId, level }: Props) {
+export default function LevelTestBanner({ planId, level }: Readonly<Props>) {
   const t = useTranslations('plan')
   const router = useRouter()
 

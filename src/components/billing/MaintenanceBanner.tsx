@@ -25,7 +25,11 @@ export function MaintenanceBanner() {
 }
 
 /** Gate that renders a maintenance banner when maintenance mode is active. */
-export function MaintenanceGate({ children }: { children: React.ReactNode }) {
+export function MaintenanceGate({
+  children,
+}: {
+  readonly children: React.ReactNode
+}) {
   const maintenanceMode = useConfigStore((s) => s.maintenanceMode)
   const isAdmin = useAuthStore((s) => s.user?.role === 'admin')
 

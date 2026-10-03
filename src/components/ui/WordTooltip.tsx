@@ -24,7 +24,7 @@ export function WordTooltip({
   onSave,
   onDismiss,
   labels,
-}: {
+}: Readonly<{
   word: string
   pos: TooltipPos
   saveState: SaveState
@@ -36,7 +36,7 @@ export function WordTooltip({
     wordAlreadySaved: string
     wordSaveError: string
   }
-}) {
+}>) {
   const tCommon = useTranslations('common')
   return (
     <div

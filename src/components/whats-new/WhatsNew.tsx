@@ -1,4 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from 'react'
 import Image from '@/components/ui/app-image'
 import { useTranslations, useMessages } from 'use-intl'
 import { CircleDot } from 'lucide-react'
@@ -6,6 +12,10 @@ import { CircleDot } from 'lucide-react'
 const WHATS_NEW_VERSION = 'v1.9.25'
 const STORAGE_KEY = `fl_whats_new_seen_${WHATS_NEW_VERSION}`
 const TOUR_KEY = 'fl_tour_done'
+
+function renderBold(chunks: ReactNode) {
+  return <strong className="text-fl-fg font-semibold">{chunks}</strong>
+}
 
 export default function WhatsNew() {
   const t = useTranslations('whatsNew')
@@ -99,11 +109,7 @@ export default function WhatsNew() {
                 </p>
                 <p className="text-fl-muted-1 font-sans text-sm leading-relaxed">
                   {t.rich(`${entry.key}.desc`, {
-                    bold: (chunks) => (
-                      <strong className="text-fl-fg font-semibold">
-                        {chunks}
-                      </strong>
-                    ),
+                    bold: renderBold,
                   })}
                 </p>
               </div>

@@ -10,7 +10,11 @@ function applyTheme(theme: 'dark' | 'light') {
   }
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export function ThemeProvider({
+  children,
+}: {
+  readonly children: React.ReactNode
+}) {
   const theme = useThemeStore((s) => s.theme)
 
   useEffect(() => {

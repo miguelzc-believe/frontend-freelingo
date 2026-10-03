@@ -18,7 +18,7 @@ export function TargetLanguageText({
   reading,
   translation,
   ...props
-}: TargetLanguageTextProps) {
+}: Readonly<TargetLanguageTextProps>) {
   const code = languageCode ?? ''
 
   return (

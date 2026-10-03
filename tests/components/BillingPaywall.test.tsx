@@ -140,6 +140,38 @@ beforeEach(() => {
 })
 
 describe('billing paywall UI', () => {
+  it.each([
+    { compact: false, recovery: false },
+    { compact: true, recovery: false },
+    { compact: false, recovery: true },
+    { compact: true, recovery: true },
+  ])(
+    'retains button identity and focus on parent rerender (compact=$compact, recovery=$recovery)',
+    ({ compact, recovery }) => {
+      if (recovery) {
+        useAuthStore.setState({
+          user: user({ subscription_status: 'past_due' }),
+        })
+      }
+      const view = render(<PaywallBanner compact={compact} />)
+      const action = screen.getByRole('button', {
+        name: recovery ? 'updatePayment' : 'planYearly',
+      })
+      action.focus()
+      expect(action).toHaveFocus()
+
+      view.rerender(<PaywallBanner compact={compact} />)
+
+      expect(
+        screen.getByRole('button', {
+          name: recovery ? 'updatePayment' : 'planYearly',
+        })
+      ).toBe(action)
+      expect(action).toHaveFocus()
+      expect(mockApiFetch).not.toHaveBeenCalled()
+    }
+  )
+
   it('formats the subscription end date with the selected interface locale', () => {
     localeState.value = 'fi'
     useAuthStore.setState({

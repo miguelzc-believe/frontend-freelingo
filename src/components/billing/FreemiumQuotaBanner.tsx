@@ -12,7 +12,7 @@ interface FreemiumQuotaBannerProps {
 export function FreemiumQuotaBanner({
   feature,
   className = '',
-}: FreemiumQuotaBannerProps) {
+}: Readonly<FreemiumQuotaBannerProps>) {
   const t = useTranslations('freemium')
   const user = useAuthStore((s) => s.user)
   const stripeEnabled = useConfigStore((s) => s.stripeEnabled)

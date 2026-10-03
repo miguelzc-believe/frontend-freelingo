@@ -24,7 +24,7 @@ export function PageLoading({
   minHeight = 'min-h-[60vh]',
   fullScreen = true,
   className = '',
-}: PageLoadingProps) {
+}: Readonly<PageLoadingProps>) {
   const t = useTranslations('common')
 
   useEffect(() => {

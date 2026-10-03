@@ -25,7 +25,7 @@ export function ConfirmDialog({
   error,
   onConfirm,
   onCancel,
-}: ConfirmDialogProps) {
+}: Readonly<ConfirmDialogProps>) {
   const tCommon = useTranslations('common')
   const titleId = useId()
   const descriptionId = useId()

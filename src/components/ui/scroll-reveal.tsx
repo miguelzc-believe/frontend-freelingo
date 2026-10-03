@@ -5,7 +5,10 @@ interface ScrollRevealProps {
   className?: string
 }
 
-export function ScrollReveal({ children, className }: ScrollRevealProps) {
+export function ScrollReveal({
+  children,
+  className,
+}: Readonly<ScrollRevealProps>) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

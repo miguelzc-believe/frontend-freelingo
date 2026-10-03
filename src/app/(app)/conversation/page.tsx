@@ -26,7 +26,7 @@ const LazyConversationMode = lazy(
 )
 
 function ConversationMode(
-  props: React.ComponentProps<typeof LazyConversationMode>
+  props: Readonly<React.ComponentProps<typeof LazyConversationMode>>
 ) {
   return (
     <Suspense fallback={<ConversationLoading />}>

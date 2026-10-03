@@ -73,7 +73,12 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
     controls, not completed submission; typed number/boolean unit-only.
     Geometry-only, no screenshots/contrast/physical-device claim. Nonfatal
     build warnings and aborted-request ECONNRESET observed, no failed assertion.
-    Sonar closure/native verdict still pending; one category commit follows.
+    Commit18df30540ac5eb2c6dbd550bb3878ff563c98422 (27files658diff lines).
+    Native review of C2+C3 slice (basec8acd0d,825diff lines) approved and
+    acknowledged: lineage review-8b38a3f634820ebf, exact authority burned.
+    Four suggestions R3-A1..A4 informational only, no correction or re-review
+    transition; do not expand scope on that metadata. C1 review remains without
+    verdict. Sonar closure still awaits final scan.
   - Mapper musmsilp-1x-s4m2 verified12missing Error diagnostics and3unsafe
     coercions across8sources; server393baseline, not scanned C1/C2.
   - User decisions: invalid present lesson explanation containers/text must
@@ -110,8 +115,126 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
     Native retry2requests/alertdisclosure/choiceusability/exitdialogfocus and
     stringinvitenavigation ready. Independent mustk1hi-21-glty now runs
     typecheck/lint and desktop/mobile12scenarios once. No browserGREEN yet.
-- [ ] C4: React component/props contracts — S6759/S6478/S6767, 89 — mapping in progress
-- [ ] C5: Test structure and conventions — S8980/S5906/S5976/S8782/S1607/S9332, 54
+- [x] C4: React component/props contracts — S6759/S6478/S6767, 89 baseline
+  - All five internal batches complete:15/14/12/12/4 source files, total57
+    mapped sources,2 exceptional test files. Type-only no fabricatedRED;
+    Paywall nested identity meaningful RED4 failed/83passed then GREEN87/87,
+    including compact/full checkout/recovery focus continuity.
+  - Independent verifier musx7cvn-2c-773b: combined40files/454tests,
+    typecheck/lint/scopedformat/whitespace clean, no blocker. All60changed
+    paths inspected:57sources+2tests+ledger. No new visual browser claim;
+    worktree/source scope aligned with category, exact issue key resolution
+    still awaits Sonar scan. Historic RED is writer-reported, not replayed by
+    verifier; batch tests overlap and are not summed.
+  - Native exact5e68745d lineage review-b66439f433d73d6a frozen60paths/
+    675diff lines, captureapproved and acknowledged/authorityburned. This is
+    only that frozen workspace candidate, not a blanket approval of future
+    commits/changes. Earlier drifted approved captures unburned; no reset.
+  - One category commit follows with tests+ledger; Sonar closure pending.
+  - Read-only mapper mustwtru-22-hk00 derives exact57file surfaces,
+    readonly/generic/ref type patterns, two nested-component identity issues
+    and unused prop/caller contract. Internal bounded batches share one C4
+    commit. Mapper completed89issues/57exact sources, baseline393unchanged.
+    Five internal batches partition15/14/12/12/4files. First batchA writer
+    musu5ik2-23-7w8c modifies only15component parameterannotations shallow
+    Readonly<Props>/single inline readonlyfields; baseline/post typeequivalence.
+    Runtime bodies/domainobjects/arrays remain mutable where currently needed.
+    No C4commit until all batches/checks. Next review boundary18df305.
+  - BatchA musu5ik2-23-7w8c completed15readonly parameter boundaries;
+    baseline/post89/89,typecheck/lint/final format passed. Runtime/interfaces/
+    callers unchanged; no directcoverage promised for every mockedcomponent.
+    Native slice f89dbc96 lineage review-79372035fe977ec8 approved on capture,
+    but acknowledgement blocked not-current after signatureformat drift:
+    authority not burned; no approval of final C4 inferred, no reset/recovery.
+  - BatchB writer musui123-24-p36z now handles14route/page inlinepropsfiles
+    only, baseline/post equivalence; batchA retained, oneC4commit atfinish.
+    Baseline136tests/15files passed. Parent paused writer after8annotations
+    across3sources for native reminder; no postchecks at pause.
+  - Native current slice started review-d28c82f3551e8e66 (19paths90diff
+    lines, target273404a4) after scope advanced beyond reminder target.
+    One forecast/run failed reviewer-empty-output stopReason:length~86s;
+    freshSTATUS reviewing/collect, no verdict orack. No replay/reset/recovery.
+    Parent released own writehold; resume writer musuqktz-25-cj04 finished
+    all14sources/21readonlyannotations. Baseline/post136/136,typecheck/lint
+    passed; five source signatures formatfailed, no writes during reviewhold.
+    Earlier review unavailable, not userdeclined.
+  - Stable A+B preformat targetd58b4f2b review-9c1d71efe8a285b9 started
+    natively (30paths134diff lines), reviewerapproved and exactacknowledgement
+    succeeded/authorityburned. Scope is exact preformatA+B, not finalC4.
+    Parent releasedhold; formatter followup musv0z0e-26-7y8a corrects only
+    five warned signatures, all14format/typecheck/focusedpost required.
+  - New reminder exact5c829b91 formattedA+B target reviewed while writes
+    paused: lineage review-76aaad23f263b5de,30paths158diff lines. Forecast1
+    reliabilityrun, capture failed revieweremptyoutput:length~101s; fresh
+    STATUSreviewing/collect, noverdict/ack/reset. Prior d58bapproval remains
+    scopedpreformatonly. Parentreleasedhold, musv9b4n-27-us0j validates final
+    BatchBformat/type/lint/focused136; no C4commit.
+  - Exact9fcd6905 reminder reviewed while writespaused: lineage
+    review-41a1a552f83fdf2f,30paths164diff lines; captureapproved and exact
+    acknowledgement completed/authorityburned. Applies A+Bscopeonly.
+    Final BatchB musvh1ru-28-vlb0:21annotations/14sources, finalall14format/
+    typecheck/lint/136tests passed, no further sourcewrites. Category remains
+    uncommitted; noreset/recovery.
+  - Exact41a5d3f9 lineage review-215cd0468b714d34 capturedapproved and
+    acknowledged/authorityburned; scope A+B only, not final C4.
+  - BatchC writer musvp5zb-29-vy3r active:12 UI adapters/controls shallow
+    readonly props boundaries, AppLink full inherited HTML props; preserve
+    C1 VoiceRecorder runtime. Baseline/post focused/static, uncommitted.
+  - Exact1f601071 reminder started review-064a4aa7b8315b08 over A+B
+    tracking drift (30paths175diff lines), reviewer approved and exact
+    acknowledgement completed/authorityburned. No finalC4 approval implied;
+    BatchC writer continues. No native reset/recover or source mutation from
+    review.
+  - Exact7466d6a0 native review-badeee7c605b73fb capturedapproved during
+    BatchC edits but candidate drifted before acknowledgement. Native returned
+    acknowledgement-not-current, mutation=false, authority NOT burned. The
+    approval cannot be projected onto current C4; no reset/recovery or replay.
+    Continue bounded worker and review the stable final category boundary.
+  - BatchC musvp5zb-29-vy3r completed12readonly UI adapter boundaries;
+    baseline/post117/117,typecheck/lint/format passed. Formatter reordered
+    preexisting focus-visible class in exercise-audio-player.tsx without
+    intended styling change; parent readback identified the exact reorder.
+    C1 recorder runtime unchanged. No fullsuite/browser/scan yet.
+  - Exact40c1b420 native review-170873f6e70bc1e5 scoped A+B+C snapshot
+    (42paths219diff lines) capturedapproved; boundSTATUS approved and exact
+    acknowledgement completed/authorityburned. Six advisory findings
+    informational only (AppImage,AppLink,layout,TargetLanguageText,ThemeProvider,
+    tasklog); no correction transition, no finalC4 approval inferred.
+  - BatchD writer muswdsya-2a-fvjt now handles12 primitive/grouped component
+    sources with vendor/ref types preserved, focused baseline/post. One C4
+    commit only after exceptional batchE and final independent checks.
+  - BatchD muswdsya-2a-fvjt completed33shallow readonly boundaries over12
+    sources; baseline/post/postformat69/69, typecheck/lint/final format clean.
+    Runtime/vendor/ref logic unchanged; no tests edited. Work paused before
+    native exact c796c3ef snapshot review-00e8943d0a2d5122 (54paths350diff
+    lines). Reviewer returned emptyoutput stopReason:length~87s; freshSTATUS
+    reviewing/collect, no verdict/ack/mutation. Hold released for batchE,
+    no reset/recovery/replay of this capture. FinalC4uncommitted.
+  - Exact82eb92f6 reminder started review-04b77310600554f3 over A+B+C+D
+    tracking snapshot (54paths357diff lines), reviewer captureapproved but
+    candidate drifted before acknowledgement; native not-current, mutation
+    false/authority unburned. No approval projected onto newerE changes,
+    no reset/recover/replay. Review stable final category commit instead.
+  - BatchE muswscsj-2b-gwjs completed four exceptional source paths plus
+    BillingPaywall/WhatsNew tests: PaywallContent module-scope readonly
+    presentation, parent hooks/state/async handlers preserved; t.rich stateless
+    bold callback hoisted; unused MicButton sessionActive typedprop and one
+    caller attr removed; readonly boundaries. Baseline83/83, meaningful
+    Paywall node/focus identity RED4failed/83passed, GREEN87/87; typecheck/
+    lint/format passed. No browser/full suite yet.
+  - Exact288ef9f3 reminder START selected updated target0883d28a A-E60paths/
+    662diff lines. Native review-c77fb1f665e5fd55 captureapproved and exact
+    acknowledgement completed/authorityburned for that frozen candidate;
+    no final committed C4 receipt inferred. Independent verifier
+    musx7cvn-2c-773b now checks combined affected suites/static/diff and
+    browser risk before one category commit; Sonar closure pending.
+  - Exceptional batchE: PaywallContent actually nested, extract module-scope
+    readonly presentation preserving parent stores/hooks/state/async lifetimes,
+    meaningful DOMidentity/focusRED. WhatsNew t.rich bold callback captures
+    nothing/no mountedstate, module-scope render callback equivalence only.
+    MicButton unused sessionActive prop remove declaration and single caller
+    attribute only, preserve parent sessionstate/guards; no invented policy.
+- [ ] C5: Test structure and conventions — S8980/S5906/S5976/S8782/S1607/S9332, 54 — mapping in progress
 - [ ] C6: List identity and DOM attributes — S6479/S7761, 48
 - [ ] C7: Semantic HTML/accessibility — S6819, 5
 - [ ] C8: Readability and complexity — S3358/S3776/S6660/S7721, 144

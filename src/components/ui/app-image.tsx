@@ -16,7 +16,7 @@ export default function AppImage({
   fill,
   style,
   ...props
-}: Props) {
+}: Readonly<Props>) {
   return (
     <img
       {...props}

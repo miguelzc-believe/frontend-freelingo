@@ -84,7 +84,10 @@ const tabs: {
   { key: 'subscription', labelKey: 'tabSubscription', icon: CreditCard },
 ]
 
-function StatRow({ label, value }: { label: string; value: React.ReactNode }) {
+function StatRow({
+  label,
+  value,
+}: Readonly<{ label: string; value: React.ReactNode }>) {
   return (
     <div className="border-fl-border flex items-center justify-between gap-4 border-b py-3 last:border-0">
       <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
@@ -100,10 +103,10 @@ function StatRow({ label, value }: { label: string; value: React.ReactNode }) {
 function Section({
   title,
   children,
-}: {
+}: Readonly<{
   title: string
   children: React.ReactNode
-}) {
+}>) {
   return (
     <div className="border-fl-border bg-fl-surface border">
       <div className="border-fl-border flex items-center gap-2 border-b px-5 py-4">
@@ -120,10 +123,10 @@ function Section({
 function SummaryCard({
   label,
   value,
-}: {
+}: Readonly<{
   label: string
   value: React.ReactNode
-}) {
+}>) {
   return (
     <div className="border-fl-border bg-fl-surface border px-4 py-3">
       <p className="text-fl-label text-fl-muted-4 mb-1 font-mono tracking-widest uppercase">
@@ -835,12 +838,12 @@ function QuotaInput({
   unit,
   value,
   onChange,
-}: {
+}: Readonly<{
   label: string
   unit: string
   value: string
   onChange: (value: string) => void
-}) {
+}>) {
   const invalid =
     value.trim() === '' || !Number.isInteger(Number(value)) || Number(value) < 0
 

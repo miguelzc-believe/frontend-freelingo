@@ -4,8 +4,8 @@ export function MemorySavedToast({
   visible,
   announcementId,
 }: {
-  visible: boolean
-  announcementId: number
+  readonly visible: boolean
+  readonly announcementId: number
 }) {
   const t = useTranslations('common')
   if (!visible) return null

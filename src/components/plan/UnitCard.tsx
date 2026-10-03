@@ -25,8 +25,8 @@ function StatusIcon({
   status,
   id,
 }: {
-  status: UnitStatus
-  id: string
+  readonly status: UnitStatus
+  readonly id: string
 }): ReactNode {
   const t = useTranslations('plan')
   const { label, Icon, className } = status.isLevelTest
@@ -77,7 +77,7 @@ export default function UnitCard({
   status,
   onClick,
   onStartLesson,
-}: Props) {
+}: Readonly<Props>) {
   const t = useTranslations('plan')
   const tCommon = useTranslations('common')
   const statusId = useId()

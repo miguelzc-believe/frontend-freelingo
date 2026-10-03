@@ -27,7 +27,7 @@ export function LandingNav({
   showReviews,
   signIn,
   dashboard,
-}: LandingNavProps) {
+}: Readonly<LandingNavProps>) {
   const tCommon = useTranslations('common')
   const [open, setOpen] = useState(false)
   const [showPricing, setShowPricing] = useState(stripeEnabled && !hasSession)

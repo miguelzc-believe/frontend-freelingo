@@ -36,7 +36,7 @@ export function VoiceRecorder({
   maxSeconds = 5,
   disabled = false,
   className = '',
-}: VoiceRecorderProps) {
+}: Readonly<VoiceRecorderProps>) {
   const [state, setState] = useState<RecorderState>('idle')
   const sessionRef = useRef<RecordingSession | null>(null)
   const errorResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)

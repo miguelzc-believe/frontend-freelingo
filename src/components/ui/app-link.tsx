@@ -5,6 +5,6 @@ export default function AppLink({
   href = '/',
   target,
   ...props
-}: AnchorHTMLAttributes<HTMLAnchorElement>) {
+}: Readonly<AnchorHTMLAttributes<HTMLAnchorElement>>) {
   return <Link to="." href={href} {...props} {...(target ? { target } : {})} />
 }

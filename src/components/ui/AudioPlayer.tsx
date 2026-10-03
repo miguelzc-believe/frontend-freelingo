@@ -23,7 +23,7 @@ export function AudioPlayer({
   size = 'sm',
   className = '',
   audioUrl,
-}: AudioPlayerProps) {
+}: Readonly<AudioPlayerProps>) {
   const [state, setState] = useState<PlayerState>('idle')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const controllerRef = useRef<AbortController | null>(null)

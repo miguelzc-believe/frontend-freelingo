@@ -28,12 +28,12 @@ function CategoryCard({
   registerFilter,
   search,
   language,
-}: {
+}: Readonly<{
   cat: PhrasebookCategory
   registerFilter: Register | 'All'
   search: string
   language: string
-}) {
+}>) {
   const t = useTranslations('phrasebook')
   const tCommon = useTranslations('common')
   const tLang = useTranslations('languages')
@@ -277,7 +277,7 @@ function CategoryCard({
   )
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text }: { readonly text: string }) {
   const t = useTranslations('phrasebook')
   const [copied, setCopied] = useState(false)
 

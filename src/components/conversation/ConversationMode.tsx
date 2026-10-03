@@ -40,12 +40,12 @@ function QuotaBar({
   used,
   limit,
   unlimited,
-}: {
+}: Readonly<{
   label: string
   used: number
   limit: number
   unlimited: boolean
-}) {
+}>) {
   const pct =
     unlimited || limit === 0
       ? null
@@ -108,10 +108,10 @@ function quotaPillSummary(quota: QuotaStatus): {
 function QuotaPill({
   quota,
   t,
-}: {
+}: Readonly<{
   quota: QuotaStatus
   t: (k: string) => string
-}) {
+}>) {
   const [open, setOpen] = useState(false)
   const { text, alert } = quotaPillSummary(quota)
 
@@ -270,7 +270,7 @@ export default function ConversationMode({
   freemiumVoiceRemaining,
   freemiumVoiceLimit,
   onClose,
-}: {
+}: Readonly<{
   initialContext?: ChatContextItem[] | undefined
   autoStart?: boolean | undefined
   cefrLevel?: string | null | undefined
@@ -281,7 +281,7 @@ export default function ConversationMode({
   freemiumVoiceRemaining?: number | undefined
   freemiumVoiceLimit?: number | undefined
   onClose?: () => void
-}) {
+}>) {
   const t = useTranslations('conversation')
   const tCommon = useTranslations('common')
   const locale = useLocale()
@@ -1271,7 +1271,6 @@ export default function ConversationMode({
         {!(trialMode && status === 'ended') && (
           <MicButton
             status={status}
-            sessionActive={sessionActive}
             onStart={handleStart}
             onStop={handleStop}
           />

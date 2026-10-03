@@ -1,6 +1,6 @@
 import { useTranslations } from 'use-intl'
 
-export function AdminAuthorBadge({ role }: { role: string }) {
+export function AdminAuthorBadge({ role }: { readonly role: string }) {
   const t = useTranslations('admin')
   if (role !== 'admin') return null
 
