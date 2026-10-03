@@ -2,6 +2,70 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { createAudioQueue, float32ToWav } from '@/lib/audio'
 
 describe('float32ToWav', () => {
+  it.each([
+    { samples: [], riffSize: 36, dataSize: 0, pcmBytes: [] },
+    {
+      samples: [-1, 0, 1],
+      riffSize: 42,
+      dataSize: 6,
+      pcmBytes: [0x00, 0x80, 0x00, 0x00, 0xff, 0x7f],
+    },
+  ])(
+    'preserves exact WAV bytes for $samples',
+    ({ samples, riffSize, dataSize, pcmBytes }) => {
+      const buffer = float32ToWav(new Float32Array(samples), 16000)
+
+      expect(Array.from(new Uint8Array(buffer))).toEqual([
+        0x52,
+        0x49,
+        0x46,
+        0x46, // RIFF
+        riffSize,
+        0x00,
+        0x00,
+        0x00,
+        0x57,
+        0x41,
+        0x56,
+        0x45, // WAVE
+        0x66,
+        0x6d,
+        0x74,
+        0x20, // fmt (including its trailing space)
+        0x10,
+        0x00,
+        0x00,
+        0x00, // PCM chunk size: 16
+        0x01,
+        0x00, // PCM format
+        0x01,
+        0x00, // Mono
+        0x80,
+        0x3e,
+        0x00,
+        0x00, // Sample rate: 16000
+        0x00,
+        0x7d,
+        0x00,
+        0x00, // Byte rate: 32000
+        0x02,
+        0x00, // Block alignment: 2
+        0x10,
+        0x00, // Bits per sample: 16
+        0x64,
+        0x61,
+        0x74,
+        0x61, // data
+        dataSize,
+        0x00,
+        0x00,
+        0x00,
+        ...pcmBytes,
+      ])
+      expect(buffer.byteLength).toBe(44 + dataSize)
+    }
+  )
+
   it('produces a valid WAV header', () => {
     const samples = new Float32Array(100)
     const buffer = float32ToWav(samples, 16000)

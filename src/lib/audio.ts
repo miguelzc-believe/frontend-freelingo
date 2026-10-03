@@ -17,8 +17,9 @@ export function float32ToWav(
   const view = new DataView(buffer)
 
   function writeStr(offset: number, s: string) {
+    // ASCII chunk literals and in-bounds indices make undefined unreachable.
     for (let i = 0; i < s.length; i++)
-      view.setUint8(offset + i, s.charCodeAt(i))
+      view.setUint8(offset + i, s.codePointAt(i) ?? 0)
   }
 
   writeStr(0, 'RIFF')
