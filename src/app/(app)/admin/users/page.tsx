@@ -422,7 +422,7 @@ export default function AdminUsersPage() {
     setInviteCopied(false)
     try {
       const res = await apiFetch('/api/admin/invite', { method: 'POST' })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('Failed to create user invitation')
       const data = await res.json()
       setInviteUrl(`${window.location.origin}${data.invite_url}`)
     } catch {

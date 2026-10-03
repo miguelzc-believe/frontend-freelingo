@@ -664,6 +664,7 @@
     "noPlanHint": "Demora cerca de 10 minutos"
   },
   "lesson": {
+    "invalidExplanation": "Esta explicação contém conteúdo inválido e não pode ser apresentada",
     "loading": "Carregando aula...",
     "notFound": "Aula não encontrada",
     "backToPlan": "Voltar ao plano",

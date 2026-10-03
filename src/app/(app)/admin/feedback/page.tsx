@@ -162,7 +162,7 @@ export default function AdminFeedbackPage() {
           setError(tAdmin('adminRequired'))
           return
         }
-        if (!res.ok) throw new Error()
+        if (!res.ok) throw new Error('Failed to load admin feedback entries')
         const [data, featureCount, bugCount] = await Promise.all([
           res.json(),
           loadTypeTotal('feature', query, currentStatus),
@@ -225,7 +225,7 @@ export default function AdminFeedbackPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('Failed to update feedback status')
       if (statusFilter && newStatus !== statusFilter) {
         await loadEntries(
           page,
@@ -253,7 +253,7 @@ export default function AdminFeedbackPage() {
       const res = await apiFetch(`/api/feedback/${entry.id}`, {
         method: 'DELETE',
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('Failed to delete feedback entry')
       setDeletePending(null)
       const newTotal = total - 1
       setTotal(newTotal)

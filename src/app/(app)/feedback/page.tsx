@@ -117,7 +117,7 @@ function CreateModal({ type, onClose, onCreated }: CreateModalProps) {
           description: description.trim(),
         }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('Failed to submit feedback')
       onCreated()
     } catch {
       setError(t('errorSubmit'))
@@ -318,7 +318,7 @@ function DetailView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: commentBody.trim() }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('Failed to submit feedback comment')
       const comment: FeedbackComment = await res.json()
       setComments((prev) => [...prev, comment])
       setEntry((e) => ({ ...e, comment_count: e.comment_count + 1 }))
@@ -536,7 +536,7 @@ export default function FeedbackPage() {
         })
         if (currentStatus) params.set('status', currentStatus)
         const res = await apiFetch(`/api/feedback?${params.toString()}`)
-        if (!res.ok) throw new Error()
+        if (!res.ok) throw new Error('Failed to load feedback entries')
         const data = await res.json()
         setEntries(data.items)
         setTotal(data.total)

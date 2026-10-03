@@ -664,6 +664,7 @@
     "noPlanHint": "Duurt ongeveer 10 minuten"
   },
   "lesson": {
+    "invalidExplanation": "Deze uitleg bevat ongeldige inhoud en kan niet worden weergegeven",
     "loading": "Les laden...",
     "notFound": "Les niet gevonden",
     "backToPlan": "Terug naar plan",

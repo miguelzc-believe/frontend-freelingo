@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import spanishMessages from '../../messages/es.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   completeLesson: vi.fn(),
   fetchStatus: vi.fn(),
   dismissTooltip: vi.fn(),
+  handleTextSelection: vi.fn(),
 }))
 
 vi.mock('@/lib/navigation', () => ({
@@ -19,7 +21,10 @@ vi.mock('@/components/ui/app-link', () => ({
   ),
 }))
 vi.mock('use-intl', () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string) =>
+    key === 'invalidExplanation'
+      ? spanishMessages.lesson.invalidExplanation
+      : key,
   useLocale: () => 'en',
 }))
 vi.mock('@/lib/api', () => ({ apiFetch: mocks.apiFetch }))
@@ -64,7 +69,7 @@ vi.mock('@/components/ui/WordTooltip', () => ({
     selectedWord: null,
     tooltipPos: null,
     saveState: 'idle',
-    handleTextSelection: vi.fn(),
+    handleTextSelection: mocks.handleTextSelection,
     handleSaveWord: vi.fn(),
     dismissTooltip: mocks.dismissTooltip,
   }),
@@ -76,9 +81,18 @@ vi.mock('@/components/reviews/ReviewPrompt', () => ({
   getReviewPromptDismissal: () => ({ count: 0, lastDismissedAt: null }),
 }))
 vi.mock('@/components/TargetLanguageText', () => ({
-  TargetLanguageText: ({ children }: { children: ReactNode }) => (
-    <>{children}</>
-  ),
+  TargetLanguageText: ({
+    children,
+    onPointerUp,
+  }: {
+    children: ReactNode
+    onPointerUp?: () => void
+  }) =>
+    onPointerUp ? (
+      <span onPointerUp={onPointerUp}>{children}</span>
+    ) : (
+      <>{children}</>
+    ),
 }))
 
 import LessonPage from '@/app/(app)/lesson/[id]/page'
@@ -141,6 +155,151 @@ describe('LessonPage lesson loading and answer flow', () => {
     mocks.completeLesson.mockReset()
     mocks.fetchStatus.mockReset()
     mocks.dismissTooltip.mockReset()
+  })
+
+  it.each([
+    { text: { secret: 'private-payload' } },
+    { text: ['private-payload'] },
+    { text: 42 },
+    { text: false },
+    ['private-payload'],
+    42,
+    false,
+    'private-payload',
+  ])(
+    'shows safe errors for malformed explanation records: %#',
+    async (value) => {
+      mockLessonLoad(
+        jsonResponse({
+          ...lessonPayload,
+          lesson: {
+            ...lessonPayload.lesson,
+            cefr_level: 'A1',
+            content: { explanation: value, native_explanation: value },
+          },
+        })
+      )
+      const { container } = render(<LessonPage />)
+      await screen.findByText('Eine Lektion')
+      expect(screen.getAllByRole('alert')).toHaveLength(2)
+      expect(
+        screen.getAllByText(spanishMessages.lesson.invalidExplanation)
+      ).toHaveLength(2)
+      expect(container.textContent).not.toMatch(
+        /private-payload|\[object Object\]/
+      )
+      expect(screen.getByRole('button', { name: 'retry' })).toBeEnabled()
+    }
+  )
+
+  it.each([undefined, null, {}, { text: null }, { text: '' }])(
+    'preserves absent and empty explanation contracts: %#',
+    async (value) => {
+      mockLessonLoad(
+        jsonResponse({
+          ...lessonPayload,
+          lesson: {
+            ...lessonPayload.lesson,
+            cefr_level: 'A1',
+            content: { explanation: value, native_explanation: value },
+          },
+        })
+      )
+      render(<LessonPage />)
+      await screen.findByText('Eine Lektion')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'retry' })
+      ).not.toBeInTheDocument()
+      expect(
+        !!screen.queryByRole('button', { name: /showNativeExplanation/ })
+      ).toBe(value == null)
+    }
+  )
+
+  it('uses the displayed validated target text for selection and recovers invalid native content', async () => {
+    const payload = {
+      ...lessonPayload,
+      lesson: {
+        ...lessonPayload.lesson,
+        cefr_level: 'A1',
+        content: {
+          explanation: { text: 'Validated target rule' },
+          native_explanation: { text: { secret: 'private-payload' } },
+        },
+      },
+    }
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        jsonResponse(
+          url === '/api/lessons/1'
+            ? payload
+            : url === '/api/lessons/1/native-explanation'
+              ? { native_explanation: { text: 'Recovered native rule' } }
+              : {}
+        )
+      )
+    )
+    render(<LessonPage />)
+    fireEvent.pointerUp(await screen.findByText('Validated target rule'))
+    expect(mocks.handleTextSelection).toHaveBeenCalledWith(
+      'Validated target rule',
+      'A1'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(await screen.findByText('Recovered native rule')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      '/api/lessons/1/native-explanation',
+      { method: 'POST' }
+    )
+  })
+
+  it('keeps malformed generated native content recoverable after a failed retry', async () => {
+    let attempts = 0
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(
+          jsonResponse({
+            ...lessonPayload,
+            lesson: { ...lessonPayload.lesson, content: {} },
+          })
+        )
+      if (url === '/api/lessons/1/native-explanation') {
+        attempts += 1
+        return Promise.resolve(
+          attempts === 1
+            ? jsonResponse({
+                native_explanation: { text: ['private-payload'] },
+              })
+            : attempts === 2
+              ? jsonResponse({}, 503)
+              : jsonResponse({
+                  native_explanation: { text: 'Recovered generated rule' },
+                })
+        )
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+    const { container } = render(<LessonPage />)
+    await screen.findByText('Eine Lektion')
+    fireEvent.click(screen.getByRole('button', { name: /^en/ }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /showNativeExplanation/ })
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      spanishMessages.lesson.invalidExplanation
+    )
+    expect(container.textContent).not.toContain('private-payload')
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'retry' })).toBeEnabled()
+    )
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(
+      await screen.findByText('Recovered generated rule')
+    ).toBeInTheDocument()
   })
 
   it('shows a load error and retries the lesson request', async () => {

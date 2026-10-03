@@ -71,6 +71,21 @@ interface LessonVocabularyItem {
   reading?: string | null
 }
 
+function validateExplanation(value: unknown) {
+  if (value == null) return { record: null, text: null, invalid: false }
+  if (typeof value !== 'object' || Array.isArray(value))
+    return { record: null, text: null, invalid: true }
+  const record = value as Record<string, unknown>
+  const text = record.text
+  if (text != null && typeof text !== 'string')
+    return { record: null, text: null, invalid: true }
+  return {
+    record,
+    text: typeof text === 'string' ? text : null,
+    invalid: false,
+  }
+}
+
 function getLessonUnitId(lesson: LessonData | null): string | null {
   const unitId = lesson?.content?.unit_id
   return typeof unitId === 'string' && unitId ? unitId : null
@@ -571,10 +586,14 @@ export default function LessonPage() {
     Array.isArray(exercise.options) &&
     exercise.options.length > 0
   const targetLanguageCode = activeLanguage?.code ?? 'en-GB'
-  const explanation = lesson?.content?.explanation as
-    Record<string, unknown> | undefined
-  const nativeExplanation = lesson?.content?.native_explanation as
-    Record<string, unknown> | undefined
+  const targetExplanation = validateExplanation(lesson?.content?.explanation)
+  const validatedNativeExplanation = validateExplanation(
+    lesson?.content?.native_explanation
+  )
+  const explanation = targetExplanation.record
+  const explanationText = targetExplanation.text
+  const nativeExplanation = validatedNativeExplanation.record
+  const nativeExplanationText = validatedNativeExplanation.text
 
   return (
     <>
@@ -623,21 +642,26 @@ export default function LessonPage() {
             <p className="text-fl-fg font-mono text-base font-bold tracking-wide">
               {lesson?.title}
             </p>
+            {targetExplanation.invalid && (
+              <p role="alert" className="text-fl-error mt-4 text-sm">
+                {t('invalidExplanation')}
+              </p>
+            )}
             {explanation && (
               <div className="mt-4 max-w-[70ch] space-y-3">
-                {explanation.text != null && (
+                {explanationText != null && (
                   <TargetLanguageText
                     as="p"
                     languageCode={targetLanguageCode}
                     className="text-fl-muted-1 word-selectable cursor-text select-text"
                     onPointerUp={() =>
                       handleTextSelection(
-                        String(explanation.text),
+                        explanationText,
                         lesson?.cefr_level ?? 'B1'
                       )
                     }
                   >
-                    {String(explanation.text)}
+                    {explanationText}
                   </TargetLanguageText>
                 )}
                 {(explanation.key_points as string[])?.length > 0 && (
@@ -703,9 +727,9 @@ export default function LessonPage() {
                 {nativeExplanationOpen &&
                   (nativeExplanation ? (
                     <div className="mt-3 max-w-[70ch] space-y-3">
-                      {String(nativeExplanation.text ?? '') && (
+                      {nativeExplanationText && (
                         <p className="text-fl-muted-1 text-base leading-relaxed">
-                          {String(nativeExplanation.text)}
+                          {nativeExplanationText}
                         </p>
                       )}
                       {(nativeExplanation.key_points as string[])?.length >
@@ -828,6 +852,11 @@ export default function LessonPage() {
                     </div>
                   ) : (
                     <div className="mt-3 text-center">
+                      {validatedNativeExplanation.invalid && (
+                        <p role="alert" className="text-fl-error mb-3 text-sm">
+                          {t('invalidExplanation')}
+                        </p>
+                      )}
                       <button
                         onClick={generateNativeExplanation}
                         disabled={loadingNativeExplanation}
@@ -835,7 +864,8 @@ export default function LessonPage() {
                       >
                         {loadingNativeExplanation
                           ? '...'
-                          : nativeExplanationError
+                          : nativeExplanationError ||
+                              validatedNativeExplanation.invalid
                             ? tCommon('retry')
                             : `${t('showNativeExplanation')} ${nativeLanguageName}`}
                       </button>

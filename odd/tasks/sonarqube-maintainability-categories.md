@@ -41,7 +41,13 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
     stopReason:length (~171s), no verdict/mutation/approval. Fresh STATUS
     reviewing/collect reoffers slot; no automatic replay or authority reset.
     Independent functional acceptance stands; native review unavailable.
-- [ ] C2: Modern JavaScript/TypeScript APIs — S6606/S6582/S7755/S7770/S7776/S7765/S4138/S7780, 18 — implementation in progress
+- [x] C2: Modern JavaScript/TypeScript APIs — `589b7ea`, 18 baseline
+  - Independent verifier musmkh23-1w-gmdq: 11 files/156 tests passed,
+    typecheck/lint/format clean. All18 minimal rewrites and four related test
+    surfaces inspected; no blocker or introduced mock leak. Commit
+    589b7ea28d1e07a5fed08d564798f14d8c9435e6 (17files169diff lines).
+    Committed ASSESS medium, reviewDue=false/under_budget; native outcome
+    unknown, deferred to bounded slice. No Sonar closure yet.
   - Mapper muslpd4t-1u-4e0b verified18findings/12sources, server baseline393
     unchanged (not C1scan). Writer muslzqg3-1v-pi1w applies only mapped
     expressions plus directly related characterization tests; no commit yet.
@@ -59,8 +65,52 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
   - ASSESS unassessable due untracked new test/outcomeunknown; independent
     verifier musmkh23-1w-gmdq running focused156/static checks and semantic
     diff inspection. Server still baseline393 until a scan, no closure claim.
-- [ ] C3: Error messages and stringification — S7722/S6551, 15
-- [ ] C4: React component/props contracts — S6759/S6478/S6767, 89
+- [x] C3: Error messages and stringification — S7722/S6551, 15 baseline
+  - Independent unit180/180 and static checks passed. Browser verifier
+    mustk1hi-21-glty:12/12 desktop/mobile scenarios passed, all final assertions
+    reached. Safe alert/nondisclosure, two-request native retry, exit-dialog
+    keyboard/focus and invitation URL verified. Submission evidence is enabled
+    controls, not completed submission; typed number/boolean unit-only.
+    Geometry-only, no screenshots/contrast/physical-device claim. Nonfatal
+    build warnings and aborted-request ECONNRESET observed, no failed assertion.
+    Sonar closure/native verdict still pending; one category commit follows.
+  - Mapper musmsilp-1x-s4m2 verified12missing Error diagnostics and3unsafe
+    coercions across8sources; server393baseline, not scanned C1/C2.
+  - User decisions: invalid present lesson explanation containers/text must
+    show localized safe error and recovery where existing generation permits,
+    not silently become absence. Valid string and original missing/null/empty
+    contracts preserved; selection context equals validated displayed text.
+    Router retains boolean compatibility with string/number, omitsnullundefined,
+    rejects object/array/unsupported with constant non-sensitive diagnostic.
+  - Writer musspfp2-1y-4f89 handles mapped sources/tests and necessary localized
+    message keys only; one writer, no C3commit until checks. New semantic
+    behaviour test-first; constantError messages baselineequivalence.
+    Never echo query keys/values, payloads, usertext or credentials.
+  - Writer musspfp2-1y-4f89 completed12diagnostics plus validated lesson/
+    router contracts and15locale invalidExplanation keys. Baseline159/159;
+    RED14intendedfailed/165passed, final180/180 across10files. Typecheck/lint/
+    final scopedformatpassed. Intermediate existing multiplechoice test failed;
+    fragment-preserving mock correction recorded, not hidden.
+  - Native preflight while writer active stopped before lineage on newrouter
+    untracked selection; no candidate frozen/approval. ASSESSunassessable,
+    independent must44ze-1z-ygcd now validates semantic diff,180tests/static
+    and maps browser invalid-alert/native-recovery/navigation acceptance.
+    No C3commit or server/native/browser closure yet.
+  - Independent must44ze-1z-ygcd completed180/180/typecheck/lint and semantic
+    inspection: no blocker. Safe constant errors, validation/absence contract,
+    immutable native recovery, same display/selection text,15locale keys,
+    router primitive/privacy constraints and fragment mock corroborated.
+  - Browser harness writer must9r88-20-e1ts adds only
+    tests/e2e/lesson-explanation-errors.spec.ts: real mock-auth, isolated
+    lesson/nativegeneration fixtures, visible alert/nondisclosure/retry and
+    desktop/mobilegeometry. No new productionroute/routerfixture. Typed
+    number/boolean serialization remains actualrouter unit evidence, not
+    browser-navigation claim. Harness must9r88-20-e1ts completed onlynew
+    spec, typecheck/lint/format/listpassed:6scenariosx2projects=12collected.
+    Native retry2requests/alertdisclosure/choiceusability/exitdialogfocus and
+    stringinvitenavigation ready. Independent mustk1hi-21-glty now runs
+    typecheck/lint and desktop/mobile12scenarios once. No browserGREEN yet.
+- [ ] C4: React component/props contracts — S6759/S6478/S6767, 89 — mapping in progress
 - [ ] C5: Test structure and conventions — S8980/S5906/S5976/S8782/S1607/S9332, 54
 - [ ] C6: List identity and DOM attributes — S6479/S7761, 48
 - [ ] C7: Semantic HTML/accessibility — S6819, 5

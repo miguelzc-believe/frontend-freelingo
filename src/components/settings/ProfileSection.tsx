@@ -46,7 +46,8 @@ function resizeImage(file: File, maxPx: number): Promise<Blob> {
       canvas.height = height
       canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
       canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error())),
+        (b) =>
+          b ? resolve(b) : reject(new Error('Failed to encode avatar image')),
         file.type,
         0.9
       )
@@ -112,7 +113,7 @@ export function ProfileSection({ title }: { title?: string } = {}) {
         method: 'POST',
         body: form,
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('Failed to upload avatar')
       const updated = await res.json()
       clearAvatarCache()
       setUser({ ...user!, avatar: updated.avatar })
@@ -128,7 +129,7 @@ export function ProfileSection({ title }: { title?: string } = {}) {
     setAvatarError(null)
     try {
       const res = await apiFetch('/api/auth/me/avatar', { method: 'DELETE' })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('Failed to remove avatar')
       clearAvatarCache()
       setUser({ ...user!, avatar: null })
     } catch {

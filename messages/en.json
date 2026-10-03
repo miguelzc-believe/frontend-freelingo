@@ -664,6 +664,7 @@
     "noPlanHint": "Takes about 10 minutes"
   },
   "lesson": {
+    "invalidExplanation": "This explanation contains invalid content and cannot be displayed",
     "loading": "Loading lesson...",
     "notFound": "Lesson not found",
     "backToPlan": "Back to Plan",

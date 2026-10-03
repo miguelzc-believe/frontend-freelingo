@@ -664,6 +664,7 @@
     "noPlanHint": "Traje oko 10 minuta"
   },
   "lesson": {
+    "invalidExplanation": "Ovo objašnjenje sadrži neispravan sadržaj i ne može se prikazati",
     "loading": "Učitavanje lekcije...",
     "notFound": "Lekcija nije pronađena",
     "backToPlan": "Natrag na plan",

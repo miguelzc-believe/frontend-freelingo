@@ -664,6 +664,7 @@
     "noPlanHint": "Durează aproximativ 10 minute"
   },
   "lesson": {
+    "invalidExplanation": "Această explicație conține conținut nevalid și nu poate fi afișată",
     "loading": "Se încarcă lecția...",
     "notFound": "Lecția nu a fost găsită",
     "backToPlan": "Înapoi la plan",

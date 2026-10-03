@@ -664,6 +664,7 @@
     "noPlanHint": "Tar cirka 10 minuter"
   },
   "lesson": {
+    "invalidExplanation": "Den här förklaringen innehåller ogiltigt innehåll och kan inte visas",
     "loading": "Laddar lektion...",
     "notFound": "Lektionen hittades inte",
     "backToPlan": "Tillbaka till planen",

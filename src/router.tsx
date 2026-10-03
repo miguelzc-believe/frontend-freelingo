@@ -7,8 +7,13 @@ export function getRouter() {
     parseSearch: (search) => Object.fromEntries(new URLSearchParams(search)),
     stringifySearch: (search) => {
       const params = new URLSearchParams()
-      for (const [key, value] of Object.entries(search))
-        if (value != null) params.set(key, String(value))
+      for (const [key, value] of Object.entries(search)) {
+        if (value == null) continue
+        if (typeof value === 'string') params.set(key, value)
+        else if (typeof value === 'number' || typeof value === 'boolean')
+          params.set(key, value.toString())
+        else throw new Error('Unsupported search parameter type')
+      }
       return params.size ? `?${params}` : ''
     },
     scrollRestoration: true,

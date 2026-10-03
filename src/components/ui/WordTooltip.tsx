@@ -176,7 +176,7 @@ export function useWordSave() {
           cefr_level: selectedCefrLevel,
         }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('Failed to save vocabulary word')
       const data = await res.json()
       if (selectionId !== selectionIdRef.current) return
       setSaveState(data.already_saved ? 'exists' : 'saved')

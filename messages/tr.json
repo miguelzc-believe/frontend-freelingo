@@ -664,6 +664,7 @@
     "noPlanHint": "Yaklaşık 10 dakika sürer"
   },
   "lesson": {
+    "invalidExplanation": "Bu açıklama geçersiz içerik barındırıyor ve görüntülenemiyor",
     "loading": "Ders yükleniyor...",
     "notFound": "Ders bulunamadı",
     "backToPlan": "Plana Dön",

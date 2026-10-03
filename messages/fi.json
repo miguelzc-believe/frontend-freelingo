@@ -664,6 +664,7 @@
     "noPlanHint": "Kestää noin 10 minuuttia"
   },
   "lesson": {
+    "invalidExplanation": "Tämä selitys sisältää virheellistä sisältöä, eikä sitä voida näyttää",
     "loading": "Ladataan oppituntia...",
     "notFound": "Oppituntia ei löytynyt",
     "backToPlan": "Takaisin suunnitelmaan",

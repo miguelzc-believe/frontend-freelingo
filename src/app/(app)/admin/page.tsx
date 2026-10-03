@@ -76,7 +76,7 @@ export default function AdminOverviewPage() {
       setStatsError('')
       try {
         const res = await apiFetch('/api/admin/stats')
-        if (!res.ok) throw new Error()
+        if (!res.ok) throw new Error('Failed to load admin statistics')
         const data = await res.json()
         if (!cancelled) setStats(data)
       } catch {

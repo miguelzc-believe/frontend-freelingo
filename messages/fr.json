@@ -664,6 +664,7 @@
     "noPlanHint": "Prend environ 10 minutes"
   },
   "lesson": {
+    "invalidExplanation": "Cette explication contient du contenu invalide et ne peut pas être affichée",
     "loading": "Chargement de la leçon...",
     "notFound": "Leçon introuvable",
     "backToPlan": "Retour au plan",

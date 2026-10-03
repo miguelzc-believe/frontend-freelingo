@@ -664,6 +664,7 @@
     "noPlanHint": "Zajmuje około 10 minut"
   },
   "lesson": {
+    "invalidExplanation": "To wyjaśnienie zawiera nieprawidłową treść i nie może zostać wyświetlone",
     "loading": "Ładowanie lekcji...",
     "notFound": "Nie znaleziono lekcji",
     "backToPlan": "Wróć do planu",
