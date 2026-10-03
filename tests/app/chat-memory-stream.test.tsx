@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import type { ElementType, HTMLAttributes, ReactNode } from 'react'
 import {
   afterAll,
@@ -70,10 +77,20 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
   ConfirmDialog: ({
     open,
     onConfirm,
+    onCancel,
   }: {
     open: boolean
     onConfirm: () => void
-  }) => (open ? <button onClick={onConfirm}>confirmDelete</button> : null),
+    onCancel: () => void
+  }) => {
+    if (!open) return null
+    return (
+      <div>
+        <button onClick={onConfirm}>confirmDelete</button>
+        <button onClick={onCancel}>cancelDelete</button>
+      </div>
+    )
+  },
 }))
 vi.mock('@/components/ui/WordTooltip', () => ({
   WordTooltip: () => null,
@@ -375,6 +392,157 @@ describe('chat memory stream', () => {
     fireEvent.click(screen.getByRole('button', { name: /newConversation/ }))
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
     expect(screen.queryByText('Existing history')).not.toBeInTheDocument()
+  })
+
+  it.each([390, 1024])(
+    'selects a conversation through a native sibling action at width %i',
+    async (width) => {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        value: width,
+      })
+      mocks.apiFetch.mockImplementation((path: string) => {
+        if (path === '/api/chat/conversations') {
+          return Promise.resolve(
+            jsonResponse([
+              { id: 7, title: 'Current', source: 'text' },
+              { id: 3, title: 'Older voice', source: 'voice' },
+            ])
+          )
+        }
+        if (path === '/api/chat') {
+          return Promise.resolve(chatStreamResponse([{ done: true }]))
+        }
+        return Promise.resolve(
+          jsonResponse({
+            messages: [
+              {
+                role: 'assistant',
+                content:
+                  path === '/api/chat/conversations/3/messages'
+                    ? 'Selected history'
+                    : 'Current history',
+              },
+            ],
+          })
+        )
+      })
+      render(<ChatPage />)
+      await screen.findByText('Current history')
+      if (width < 768) {
+        fireEvent.click(screen.getByTitle('toggleSidebarShow'))
+      }
+      const sidebar = screen.getByRole('complementary')
+      const primary = within(sidebar).getByRole('button', {
+        name: /Older voice/,
+      })
+      const current = within(sidebar).getByRole('button', {
+        name: 'Current',
+      })
+      const row = primary.parentElement!
+      const remove = within(row).getByRole('button', {
+        name: 'deleteConfirm',
+      })
+      expect(primary.tagName).toBe('BUTTON')
+      expect(primary).toHaveAttribute('type', 'button')
+      expect(primary).toHaveClass('focus-visible:outline-fl-fg')
+      expect(primary.querySelector('button')).toBeNull()
+      expect(remove.parentElement).toBe(row)
+      expect(remove).toHaveAttribute('type', 'button')
+      expect(remove.closest('button')).toBe(remove)
+      expect(row.tagName).toBe('DIV')
+      expect(row).not.toHaveAttribute('role')
+      expect(row).not.toHaveAttribute('tabindex')
+      expect(current.parentElement).toHaveClass('bg-fl-surface-2')
+      expect(row).toHaveClass('border-l-transparent')
+      expect(within(primary).getByTitle('voiceSession')).toBeInTheDocument()
+      const callsBeforeSelection = mocks.apiFetch.mock.calls.length
+      fireEvent.click(primary)
+      const selectedHistory = await screen.findByText('Selected history')
+      expect(selectedHistory).toBeInTheDocument()
+      expect(screen.queryByText('Current history')).not.toBeInTheDocument()
+      const selectionCalls =
+        mocks.apiFetch.mock.calls.slice(callsBeforeSelection)
+      const expectedPath = '/api/chat/conversations/3/messages'
+      expect(selectionCalls).toEqual([[expectedPath]])
+      expect(mocks.push).not.toHaveBeenCalled()
+      if (width < 768) {
+        expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+      } else {
+        expect(sidebar).toBeInTheDocument()
+        expect(row).toHaveClass('bg-fl-surface-2', 'border-l-fl-fg')
+        expect(current.parentElement).toHaveClass('border-l-transparent')
+      }
+      const input = screen.getByPlaceholderText('placeholder')
+      fireEvent.change(input, { target: { value: 'Follow up' } })
+      fireEvent.click(screen.getByRole('button', { name: 'send' }))
+      await waitFor(() =>
+        expect(mocks.apiFetch).toHaveBeenCalledWith(
+          '/api/chat',
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+              message: 'Follow up',
+              conversation_id: 3,
+            }),
+          })
+        )
+      )
+      await waitFor(() => expect(input).not.toBeDisabled())
+    }
+  )
+
+  it('cancels and confirms inactive deletion without selecting its conversation', async () => {
+    let deleted = false
+    const respond = (path: string, options?: RequestInit) => {
+      if (
+        path === '/api/chat/conversations/3' &&
+        options?.method === 'DELETE'
+      ) {
+        deleted = true
+        return Promise.resolve(jsonResponse({}))
+      }
+      if (path === '/api/chat/conversations') {
+        return Promise.resolve(
+          jsonResponse([
+            { id: 7, title: 'Current', source: 'text' },
+            ...(!deleted ? [{ id: 3, title: 'Older', source: 'text' }] : []),
+          ])
+        )
+      }
+      return Promise.resolve(
+        jsonResponse({
+          messages: [{ role: 'assistant', content: 'Current history' }],
+        })
+      )
+    }
+    mocks.apiFetch.mockImplementation(respond)
+    render(<ChatPage />)
+    await screen.findByText('Current history')
+    const primary = screen.getByRole('button', { name: 'Older' })
+    const remove = within(primary.parentElement!).getByRole('button', {
+      name: 'deleteConfirm',
+    })
+    const callsBeforeDelete = mocks.apiFetch.mock.calls.length
+    fireEvent.click(remove)
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(callsBeforeDelete)
+    expect(screen.getByText('Current history')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'cancelDelete' }))
+    const confirmation = screen.queryByRole('button', {
+      name: 'confirmDelete',
+    })
+    expect(confirmation).toBeNull()
+    expect(primary).toBeInTheDocument()
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(callsBeforeDelete)
+    fireEvent.click(remove)
+    fireEvent.click(screen.getByRole('button', { name: 'confirmDelete' }))
+    await waitFor(() => expect(primary).not.toBeInTheDocument())
+    expect(mocks.apiFetch.mock.calls.slice(callsBeforeDelete)).toEqual([
+      ['/api/chat/conversations/3', { method: 'DELETE' }],
+      ['/api/chat/conversations'],
+    ])
+    expect(screen.getByText('Current history')).toBeInTheDocument()
+    expect(screen.getByRole('complementary')).toBeInTheDocument()
   })
 
   it('retries a failed conversation list and selects the newest conversation', async () => {

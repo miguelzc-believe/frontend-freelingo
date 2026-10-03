@@ -390,15 +390,16 @@ export default function ChatPage() {
                 conversations.map((c) => (
                   <div
                     key={c.id}
-                    onClick={() => selectConversation(c.id)}
-                    className={`group border-fl-surface-2 flex cursor-pointer items-center justify-between border-b px-4 py-3 transition-colors ${
+                    className={`group border-fl-surface-2 flex items-stretch justify-between border-b transition-colors ${
                       activeId === c.id
                         ? 'bg-fl-surface-2 border-l-fl-fg border-l-2'
                         : 'hover:bg-fl-surface border-l-2 border-l-transparent'
                     }`}
                   >
-                    <span
-                      className={`text-fl-label truncate pr-1 font-mono leading-tight ${activeId === c.id ? 'text-fl-fg' : 'text-fl-muted-1'}`}
+                    <button
+                      type="button"
+                      onClick={() => selectConversation(c.id)}
+                      className={`text-fl-label focus-visible:outline-fl-fg min-w-0 flex-1 cursor-pointer truncate py-3 pr-1 pl-4 text-left font-mono leading-tight focus-visible:outline-2 focus-visible:-outline-offset-2 ${activeId === c.id ? 'text-fl-fg' : 'text-fl-muted-1'}`}
                     >
                       {c.source === 'voice' && (
                         <span
@@ -409,13 +410,11 @@ export default function ChatPage() {
                         </span>
                       )}
                       {c.title}
-                    </span>
+                    </button>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setDeletePending(c.id)
-                      }}
-                      className="text-fl-label text-fl-error-fg hover:text-fl-error shrink-0 font-mono opacity-0 transition-all group-hover:opacity-100"
+                      type="button"
+                      onClick={() => setDeletePending(c.id)}
+                      className="text-fl-label text-fl-error-fg hover:text-fl-error focus-visible:outline-fl-fg shrink-0 cursor-pointer py-3 pr-4 font-mono opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:-outline-offset-2"
                       title={t('deleteConfirm')}
                       aria-label={t('deleteConfirm')}
                     >
