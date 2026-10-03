@@ -226,6 +226,157 @@ describe('chat memory stream', () => {
       : Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   )
 
+  it('opens the mobile sidebar with a separate native localized dismiss button', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 390,
+    })
+    render(<ChatPage />)
+    await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalled())
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'close' })
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByTitle('toggleSidebarShow'))
+    const close = screen.getByRole('button', { name: 'close' })
+    const sidebar = screen.getByRole('complementary')
+    expect(close.tagName).toBe('BUTTON')
+    expect(close).toHaveAttribute('type', 'button')
+    expect(close.tabIndex).toBe(0)
+    expect(close.parentElement).toBe(sidebar.parentElement)
+    expect(close).not.toContainElement(sidebar)
+    expect(close).toHaveClass(
+      'fixed',
+      'inset-x-0',
+      'top-14',
+      'bottom-0',
+      'z-10',
+      'bg-black/40',
+      'md:hidden'
+    )
+
+    fireEvent.click(close)
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTitle('toggleSidebarShow'))
+    expect(screen.getByRole('complementary')).toBeInTheDocument()
+  })
+
+  it('ignores other keys and closes the open sidebar on Escape', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 390,
+    })
+    render(<ChatPage />)
+    await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalled())
+    fireEvent.click(screen.getByTitle('toggleSidebarShow'))
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(screen.getByRole('complementary')).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('button', { name: /newConversation/ }), {
+      key: 'Escape',
+    })
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  })
+
+  it.each([768, 1024])(
+    'keeps the desktop sidebar open on input Escape at width %i',
+    async (width) => {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        value: width,
+      })
+      render(<ChatPage />)
+      await screen.findByText('noConversation')
+      const input = screen.getByPlaceholderText('placeholder')
+      input.focus()
+      fireEvent.keyDown(input, { key: 'Escape' })
+      expect(screen.getByRole('complementary')).toBeInTheDocument()
+      expect(input).toHaveFocus()
+    }
+  )
+
+  it('checks the current breakpoint after resizing an open mobile sidebar', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 767,
+    })
+    render(<ChatPage />)
+    await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalled())
+    fireEvent.click(screen.getByTitle('toggleSidebarShow'))
+    const input = screen.getByPlaceholderText('placeholder')
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 768,
+    })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.getByRole('complementary')).toBeInTheDocument()
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 767,
+    })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  })
+
+  it('registers Escape only while open and cleans up on hide and unmount', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 390,
+    })
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    try {
+      const { unmount } = render(<ChatPage />)
+      await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalled())
+      const keydownCalls = () =>
+        add.mock.calls.filter(([type]) => type === 'keydown')
+      expect(keydownCalls()).toHaveLength(0)
+      fireEvent.keyDown(window, { key: 'Escape' })
+      fireEvent.click(screen.getByTitle('toggleSidebarShow'))
+      expect(keydownCalls()).toHaveLength(1)
+      const firstListener = keydownCalls()[0]![1]
+      fireEvent.click(screen.getByTitle('toggleSidebarHide'))
+      expect(remove).toHaveBeenCalledWith('keydown', firstListener)
+      fireEvent.click(screen.getByTitle('toggleSidebarShow'))
+      expect(keydownCalls()).toHaveLength(2)
+      const secondListener = keydownCalls()[1]![1]
+      unmount()
+      expect(remove).toHaveBeenCalledWith('keydown', secondListener)
+    } finally {
+      add.mockRestore()
+      remove.mockRestore()
+    }
+  })
+
+  it('keeps the sidebar open for its delete control and preserves new-chat dismissal', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 390,
+    })
+    mocks.apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        jsonResponse(
+          path === '/api/chat/conversations'
+            ? [{ id: 7, title: 'Existing', source: 'text' }]
+            : { messages: [{ role: 'assistant', content: 'Existing history' }] }
+        )
+      )
+    )
+    render(<ChatPage />)
+    await screen.findByText('Existing history')
+    fireEvent.click(screen.getByTitle('toggleSidebarShow'))
+    const callsBeforeDelete = mocks.apiFetch.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'deleteConfirm' }))
+    expect(screen.getByRole('complementary')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'confirmDelete' })
+    ).toBeInTheDocument()
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(callsBeforeDelete)
+    fireEvent.click(screen.getByRole('button', { name: /newConversation/ }))
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    expect(screen.queryByText('Existing history')).not.toBeInTheDocument()
+  })
+
   it('retries a failed conversation list and selects the newest conversation', async () => {
     const latest = { id: 9, title: 'Latest', source: 'text' }
     const older = { id: 4, title: 'Older', source: 'text' }

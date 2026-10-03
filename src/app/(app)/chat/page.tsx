@@ -111,6 +111,17 @@ export default function ChatPage() {
     setSidebarOpen(window.innerWidth >= 768)
   }, [])
 
+  useEffect(() => {
+    if (!sidebarOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && window.innerWidth < 768) {
+        setSidebarOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [sidebarOpen])
+
   // Warn if LLM takes longer than 60 s
   useEffect(() => {
     if (sending) {
@@ -321,7 +332,9 @@ export default function ChatPage() {
         />
         {/* Sidebar backdrop — mobile only */}
         {sidebarOpen && (
-          <div
+          <button
+            type="button"
+            aria-label={tCommon('close')}
             className="fixed inset-x-0 top-14 bottom-0 z-10 bg-black/40 md:hidden"
             onClick={() => setSidebarOpen(false)}
           />
