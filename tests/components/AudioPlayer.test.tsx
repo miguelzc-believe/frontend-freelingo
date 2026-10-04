@@ -146,8 +146,12 @@ describe('AudioPlayer', () => {
 
     render(<AudioPlayer text="Hello world" />)
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
+    const initialAudio = currentAudioMock
+    fireEvent.click(screen.getByRole('button'))
+    await waitFor(() => {
+      expect(currentAudioMock).not.toBe(initialAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -208,11 +212,11 @@ describe('AudioPlayer', () => {
 
     render(<AudioPlayer text="Hello" />)
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
-    })
+    fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => {
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(currentAudioMock!.play).toHaveBeenCalled()
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
@@ -235,11 +239,11 @@ describe('AudioPlayer', () => {
 
     render(<AudioPlayer text="Hello" />)
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
-    })
+    fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => {
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       const c = screen
         .getByRole('button')
         .className.split(/\s+/)
@@ -301,17 +305,15 @@ describe('AudioPlayer', () => {
     render(<AudioPlayer text="Hello" />)
     const btn = screen.getByRole('button')
 
-    await act(async () => {
-      fireEvent.click(btn)
-    })
+    fireEvent.click(btn)
 
     await waitFor(() => {
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
 
-    await act(async () => {
-      fireEvent.click(btn)
-    })
+    fireEvent.click(btn)
 
     expect(currentAudioMock!.pause).toHaveBeenCalled()
     expect(screen.getByText(PLAY)).toBeDefined()
@@ -496,11 +498,9 @@ describe('AudioPlayer', () => {
 
     const { unmount } = render(<AudioPlayer text="Hello" />)
 
-    act(() => {
-      fireEvent.click(screen.getByRole('button'))
-    })
+    fireEvent.click(screen.getByRole('button'))
 
-    // After act flushes, React has committed the 'loading' state
+    // Testing Library wraps the click's event updates, committing the 'loading' state
     expect(screen.getByText(LOADING)).toBeDefined()
     expect(() => unmount()).not.toThrow()
   })
@@ -510,11 +510,11 @@ describe('AudioPlayer', () => {
 
     const { unmount } = render(<AudioPlayer text="Hello" />)
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
-    })
+    fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => {
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
 
@@ -554,25 +554,27 @@ describe('AudioPlayer', () => {
     expect(buttons).toHaveLength(2)
 
     // Start A
-    await act(async () => {
-      fireEvent.click(buttons[0]!)
-    })
+    const initialAudio = currentAudioMock
+    fireEvent.click(buttons[0]!)
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(initialAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(buttons[0]!.textContent).toBe(PAUSE)
     })
+    const audioA = currentAudioMock!
 
     // Start B
-    await act(async () => {
-      fireEvent.click(buttons[1]!)
-    })
+    fireEvent.click(buttons[1]!)
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(audioA)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(buttons[1]!.textContent).toBe(PAUSE)
     })
 
     // Stop A — B should keep playing
-    await act(async () => {
-      fireEvent.click(buttons[0]!)
-    })
+    fireEvent.click(buttons[0]!)
     // Note: each click creates a fresh Audio(), so after pausing A,
     // its audioRef is set to null. The next click on A would create a new audio.
     // currentAudioMock here points to the LAST-created Audio (B's), but
@@ -596,14 +598,20 @@ describe('AudioPlayer', () => {
 
     const buttons = screen.getAllByRole('button')
 
-    await act(async () => {
-      fireEvent.click(buttons[0]!)
-    })
-    await act(async () => {
-      fireEvent.click(buttons[1]!)
-    })
-
+    const initialAudio = currentAudioMock
+    fireEvent.click(buttons[0]!)
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(initialAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
+    })
+    const audioA = currentAudioMock!
+
+    fireEvent.click(buttons[1]!)
+    await waitFor(() => {
+      expect(currentAudioMock).not.toBe(audioA)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(fetchMock).toHaveBeenCalledTimes(2)
     })
 
@@ -623,12 +631,15 @@ describe('AudioPlayer', () => {
     const btn = screen.getByRole('button')
 
     // First play
-    await act(async () => {
-      fireEvent.click(btn)
-    })
+    const initialAudio = currentAudioMock
+    fireEvent.click(btn)
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(initialAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
+    const firstAudio = currentAudioMock!
 
     // Audio ends
     await act(async () => {
@@ -640,10 +651,11 @@ describe('AudioPlayer', () => {
     expect(revokeCalls).toContain('blob:fake-url-1')
 
     // Second play
-    await act(async () => {
-      fireEvent.click(btn)
-    })
+    fireEvent.click(btn)
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(firstAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -670,10 +682,12 @@ describe('AudioPlayer', () => {
     vi.useRealTimers()
     fetchMock.mockResolvedValueOnce(makeOkResponse())
 
-    await act(async () => {
-      fireEvent.click(btn)
-    })
+    const initialAudio = currentAudioMock
+    fireEvent.click(btn)
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(initialAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -687,11 +701,11 @@ describe('AudioPlayer', () => {
     const longText = 'A'.repeat(5000)
     render(<AudioPlayer text={longText} />)
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
-    })
+    fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => {
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
 
@@ -710,24 +724,25 @@ describe('AudioPlayer', () => {
     const btn = screen.getByRole('button')
 
     // Play
-    await act(async () => {
-      fireEvent.click(btn)
-    })
+    fireEvent.click(btn)
     await waitFor(() => {
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
 
+    const firstAudio = currentAudioMock!
+
     // Pause
-    await act(async () => {
-      fireEvent.click(btn)
-    })
+    fireEvent.click(btn)
     expect(screen.getByText(PLAY)).toBeDefined()
 
     // Play again — should trigger a new fetch
-    await act(async () => {
-      fireEvent.click(btn)
-    })
+    fireEvent.click(btn)
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(firstAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)

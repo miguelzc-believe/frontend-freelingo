@@ -20,29 +20,39 @@ describe('isSubscribed', () => {
     expect(isSubscribed(null, true)).toBe(false)
   })
 
-  it('returns true for active subscription', () => {
-    const user = { ...baseUser, subscription_status: 'active' as const }
-    expect(isSubscribed(user, true)).toBe(true)
-  })
-
-  it('returns true for trialing subscription', () => {
-    const user = { ...baseUser, subscription_status: 'trialing' as const }
-    expect(isSubscribed(user, true)).toBe(true)
-  })
-
-  it('returns false for past_due subscription', () => {
-    const user = { ...baseUser, subscription_status: 'past_due' as const }
-    expect(isSubscribed(user, true)).toBe(false)
-  })
-
-  it('returns false for canceled subscription', () => {
-    const user = { ...baseUser, subscription_status: 'canceled' as const }
-    expect(isSubscribed(user, true)).toBe(false)
-  })
-
-  it('returns false for none subscription', () => {
-    const user = { ...baseUser, subscription_status: 'none' as const }
-    expect(isSubscribed(user, true)).toBe(false)
+  it.each<{
+    name: string
+    subscription_status: NonNullable<User['subscription_status']>
+    expected: boolean
+  }>([
+    {
+      name: 'returns true for active subscription',
+      subscription_status: 'active',
+      expected: true,
+    },
+    {
+      name: 'returns true for trialing subscription',
+      subscription_status: 'trialing',
+      expected: true,
+    },
+    {
+      name: 'returns false for past_due subscription',
+      subscription_status: 'past_due',
+      expected: false,
+    },
+    {
+      name: 'returns false for canceled subscription',
+      subscription_status: 'canceled',
+      expected: false,
+    },
+    {
+      name: 'returns false for none subscription',
+      subscription_status: 'none',
+      expected: false,
+    },
+  ])('$name', ({ subscription_status, expected }) => {
+    const user = { ...baseUser, subscription_status }
+    expect(isSubscribed(user, true)).toBe(expected)
   })
 
   it('returns false when subscription_status is undefined', () => {

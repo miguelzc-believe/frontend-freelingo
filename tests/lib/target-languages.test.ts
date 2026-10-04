@@ -135,28 +135,31 @@ describe('getLanguageByCode', () => {
     expect(lang!.iso639).toBe('es')
   })
 
-  it('returns English (UK) for en-GB', () => {
-    const lang = getLanguageByCode('en-GB')
+  it.each<{ name: string; code: string; expectedName: string }>([
+    {
+      name: 'returns English (UK) for en-GB',
+      code: 'en-GB',
+      expectedName: 'English (UK)',
+    },
+    {
+      name: 'returns English (US) for en-US',
+      code: 'en-US',
+      expectedName: 'English (US)',
+    },
+    {
+      name: 'returns Italian for it-IT',
+      code: 'it-IT',
+      expectedName: 'Italiano',
+    },
+    {
+      name: 'returns Portuguese for pt-PT',
+      code: 'pt-PT',
+      expectedName: 'Português',
+    },
+  ])('$name', ({ code, expectedName }) => {
+    const lang = getLanguageByCode(code)
     expect(lang).toBeDefined()
-    expect(lang!.name).toBe('English (UK)')
-  })
-
-  it('returns English (US) for en-US', () => {
-    const lang = getLanguageByCode('en-US')
-    expect(lang).toBeDefined()
-    expect(lang!.name).toBe('English (US)')
-  })
-
-  it('returns Italian for it-IT', () => {
-    const lang = getLanguageByCode('it-IT')
-    expect(lang).toBeDefined()
-    expect(lang!.name).toBe('Italiano')
-  })
-
-  it('returns Portuguese for pt-PT', () => {
-    const lang = getLanguageByCode('pt-PT')
-    expect(lang).toBeDefined()
-    expect(lang!.name).toBe('Português')
+    expect(lang!.name).toBe(expectedName)
   })
 
   it('returns French for fr-FR', () => {

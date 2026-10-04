@@ -108,6 +108,14 @@ describe('WordTooltip component', () => {
 })
 
 describe('useWordSave', () => {
+  beforeEach(() => {
+    mockApiFetch.mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('does not schedule dismissal or clear browser selection after unmount', async () => {
     vi.useFakeTimers()
     mockSelection('perro')
@@ -145,14 +153,6 @@ describe('useWordSave', () => {
     vi.mocked(window.getSelection).mockClear()
     act(() => vi.advanceTimersByTime(0))
     expect(window.getSelection).not.toHaveBeenCalled()
-  })
-
-  beforeEach(() => {
-    mockApiFetch.mockReset()
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
   })
 
   it('sets saveState to saved when already_saved is false', async () => {

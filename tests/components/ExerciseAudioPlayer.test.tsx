@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }))
@@ -43,9 +43,15 @@ function response(ok = true) {
   }
 }
 
-async function startPlaying() {
-  await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+async function startPlaying(outcome: 'playing' | 'error' = 'playing') {
+  fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+  await waitFor(() => {
+    if (outcome === 'error') {
+      expect(screen.getByText('audioError')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled()
+    } else {
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled()
+    }
   })
 }
 
@@ -137,19 +143,15 @@ describe('ExerciseAudioPlayer', () => {
     render(<ExerciseAudioPlayer exerciseId={9} />)
     await startPlaying()
 
-    await act(async () =>
-      fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
     expect(audio.pause).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
 
     await startPlaying()
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
-    await act(async () =>
-      fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
     audio.play.mockRejectedValueOnce(new Error('resume denied'))
-    await startPlaying()
+    await startPlaying('error')
     expect(screen.getByText('audioError')).toBeInTheDocument()
   })
 
@@ -171,7 +173,7 @@ describe('ExerciseAudioPlayer', () => {
   ])('shows translated error for %s', async (_case, setup) => {
     setup()
     render(<ExerciseAudioPlayer exerciseId={18} />)
-    await startPlaying()
+    await startPlaying('error')
     expect(screen.getByText('audioError')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled()
   })

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ElementType, HTMLAttributes, ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -180,13 +180,21 @@ async function submitFreeWriteAnswer() {
   fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
 }
 
-async function renderLoadedLesson() {
-  // Flush the async lesson load and answer-restoration effect before typing.
-  let view: ReturnType<typeof render> | undefined
-  await act(async () => {
-    view = render(<LessonPage />)
+async function renderLoadedLesson(mode: 'fresh' | 'persisted') {
+  const view = render(<LessonPage />)
+  await waitFor(() => {
+    expect(screen.getByText('Describe your last trip.')).toBeInTheDocument()
+    if (mode === 'persisted') {
+      expect(screen.getByText('corrections')).toBeInTheDocument()
+      expect(scoreBadge('corrections')).toHaveClass('text-fl-warning')
+      expect(view.container.querySelector('ins')).toHaveTextContent('Abenteuer')
+      expect(screen.queryByPlaceholderText('yourAnswer')).toBeNull()
+    } else {
+      const textarea = screen.getByPlaceholderText('yourAnswer')
+      expect(textarea).toBeEnabled()
+      expect(textarea).toHaveValue('')
+    }
   })
-  if (!view) throw new Error('Lesson did not render')
   return view
 }
 
@@ -213,7 +221,7 @@ describe('LessonPage free-write corrections', () => {
       correct_answer: 'Sample answer.',
       corrections: CORRECTIONS,
     })
-    const { container } = await renderLoadedLesson()
+    const { container } = await renderLoadedLesson('fresh')
 
     await submitFreeWriteAnswer()
 
@@ -274,7 +282,7 @@ describe('LessonPage free-write corrections', () => {
         },
       })
     )
-    const { container } = await renderLoadedLesson()
+    const { container } = await renderLoadedLesson('persisted')
 
     await screen.findByText('corrections')
 
@@ -298,7 +306,7 @@ describe('LessonPage free-write corrections', () => {
       correct_answer: 'Sample answer.',
       corrections: null,
     })
-    const { container } = await renderLoadedLesson()
+    const { container } = await renderLoadedLesson('fresh')
 
     await submitFreeWriteAnswer()
 
@@ -320,7 +328,7 @@ describe('LessonPage free-write corrections', () => {
       correct_answer: 'Sample answer.',
       corrections: [],
     })
-    await renderLoadedLesson()
+    await renderLoadedLesson('fresh')
 
     await submitFreeWriteAnswer()
 

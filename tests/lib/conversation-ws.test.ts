@@ -19,22 +19,21 @@ describe('buildConversationWsUrl', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses PUBLIC_API_URL with https → wss', () => {
-    setPublicConfig({
+  it.each<{ name: string; publicApiUrl: string; expectedUrl: string }>([
+    {
+      name: 'uses PUBLIC_API_URL with https → wss',
       publicApiUrl: 'https://api.example.com',
-      umamiWebsiteId: '',
-    })
-    const url = buildConversationWsUrl()
-    expect(url).toBe('wss://api.example.com/ws/conversation')
-  })
-
-  it('uses PUBLIC_API_URL with http → ws', () => {
-    setPublicConfig({
+      expectedUrl: 'wss://api.example.com/ws/conversation',
+    },
+    {
+      name: 'uses PUBLIC_API_URL with http → ws',
       publicApiUrl: 'http://api.example.com',
-      umamiWebsiteId: '',
-    })
+      expectedUrl: 'ws://api.example.com/ws/conversation',
+    },
+  ])('$name', ({ publicApiUrl, expectedUrl }) => {
+    setPublicConfig({ publicApiUrl, umamiWebsiteId: '' })
     const url = buildConversationWsUrl()
-    expect(url).toBe('ws://api.example.com/ws/conversation')
+    expect(url).toBe(expectedUrl)
   })
 
   it('derives ws:// from window.location when PUBLIC_API_URL is empty', () => {

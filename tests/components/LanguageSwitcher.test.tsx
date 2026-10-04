@@ -91,7 +91,20 @@ describe('LanguageSwitcher', () => {
     expect(screen.queryByText('en-GB')).toBeNull()
   })
 
-  it('opens dropdown when multiple languages exist', () => {
+  it.each<{ name: string; expectedText: string }>([
+    {
+      name: 'opens dropdown when multiple languages exist',
+      expectedText: 'es-ES',
+    },
+    {
+      name: 'shows CEFR level in dropdown items',
+      expectedText: 'A1',
+    },
+    {
+      name: 'shows checkmark on active language in dropdown',
+      expectedText: '✓',
+    },
+  ])('$name', ({ expectedText }) => {
     useLanguageStore.setState({
       userLanguages: [
         {
@@ -129,89 +142,7 @@ describe('LanguageSwitcher', () => {
     const button = screen.getByRole('button')
     fireEvent.click(button)
 
-    expect(screen.getByText('es-ES')).toBeDefined()
-  })
-
-  it('shows CEFR level in dropdown items', () => {
-    useLanguageStore.setState({
-      userLanguages: [
-        {
-          target_language: 'en-US',
-          is_active: true,
-          plan: {
-            id: 1,
-            cefr_level: 'B1',
-            progress_day: 42,
-            total_days: 48,
-            completion_pct: 87.5,
-          },
-          progress: {
-            total_xp: 12500,
-            current_streak: 23,
-            lessons_completed: 38,
-          },
-        },
-        {
-          target_language: 'es-ES',
-          is_active: false,
-          plan: {
-            id: 2,
-            cefr_level: 'A1',
-            progress_day: 3,
-            total_days: 40,
-            completion_pct: 7.5,
-          },
-          progress: { total_xp: 850, current_streak: 3, lessons_completed: 3 },
-        },
-      ],
-    })
-
-    render(<LanguageSwitcher />)
-    const button = screen.getByRole('button')
-    fireEvent.click(button)
-
-    expect(screen.getByText('A1')).toBeDefined()
-  })
-
-  it('shows checkmark on active language in dropdown', () => {
-    useLanguageStore.setState({
-      userLanguages: [
-        {
-          target_language: 'en-US',
-          is_active: true,
-          plan: {
-            id: 1,
-            cefr_level: 'B1',
-            progress_day: 42,
-            total_days: 48,
-            completion_pct: 87.5,
-          },
-          progress: {
-            total_xp: 12500,
-            current_streak: 23,
-            lessons_completed: 38,
-          },
-        },
-        {
-          target_language: 'es-ES',
-          is_active: false,
-          plan: {
-            id: 2,
-            cefr_level: 'A1',
-            progress_day: 3,
-            total_days: 40,
-            completion_pct: 7.5,
-          },
-          progress: { total_xp: 850, current_streak: 3, lessons_completed: 3 },
-        },
-      ],
-    })
-
-    render(<LanguageSwitcher />)
-    const button = screen.getByRole('button')
-    fireEvent.click(button)
-
-    expect(screen.getByText('✓')).toBeDefined()
+    expect(screen.getByText(expectedText)).toBeDefined()
   })
 
   it('calls switchLanguage and shows toast on switch', async () => {

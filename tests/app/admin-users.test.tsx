@@ -479,7 +479,7 @@ describe('AdminUsersPage', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'submitCreate' }))
 
-    expect((await screen.findAllByText('usernameTaken')).length).toBe(2)
+    expect(await screen.findAllByText('usernameTaken')).toHaveLength(2)
     expect(
       screen.getByRole('dialog', { name: 'createUser' })
     ).toBeInTheDocument()

@@ -76,7 +76,15 @@ async function fillAndSubmit(container: HTMLElement) {
     fireEvent.change(inputs[index]!, { target: { value } })
   )
   fireEvent.click(screen.getByRole('checkbox'))
-  await act(async () => fireEvent.submit(form))
+  fireEvent.submit(form)
+  expect(
+    screen.getByRole('button', { name: 'auth.register.creatingAccount' })
+  ).toBeDisabled()
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'auth.register.submit' })
+    ).toBeEnabled()
+  )
 }
 
 describe('registration availability', () => {

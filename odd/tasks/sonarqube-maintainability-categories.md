@@ -130,7 +130,14 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
     675diff lines, captureapproved and acknowledged/authorityburned. This is
     only that frozen workspace candidate, not a blanket approval of future
     commits/changes. Earlier drifted approved captures unburned; no reset.
-  - One category commit follows with tests+ledger; Sonar closure pending.
+  - Single category commit a29965077cba192bd6f7823b4d6004e86cf249f1
+    (60files694diff lines) completed with tests+ledger. Committed ASSESSmedium,
+    reviewDue slice_budget_reached. Exact committed review lineage
+    review-7083de281a06cc8f started, one reviewer hostrelay failed
+    emptyoutput stopReason:length~95s; freshSTATUS reviewing/collect,
+    no verdict/ack/authorityburn. Independent combined454tests/typecheck/
+    lint/format alreadypassed; native on exactcommit remains unavailable.
+    Sonar closure awaits scan; no claim of final approval.
   - Read-only mapper mustwtru-22-hk00 derives exact57file surfaces,
     readonly/generic/ref type patterns, two nested-component identity issues
     and unused prop/caller contract. Internal bounded batches share one C4
@@ -234,7 +241,313 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
     nothing/no mountedstate, module-scope render callback equivalence only.
     MicButton unused sessionActive prop remove declaration and single caller
     attribute only, preserve parent sessionstate/guards; no invented policy.
-- [ ] C5: Test structure and conventions — S8980/S5906/S5976/S8782/S1607/S9332, 54 — mapping in progress
+- [x] C5: Test structure and conventions — source/test work complete
+  - User explicitly requested closure: "Cierralo". One category commit
+    includes all 18 test surfaces and this ledger; no merge or push.
+  - Final independent unit checks: 17 files / 407 tests passed, typecheck,
+    lint and all 18 test-file formatting checks passed.
+  - Final browser verifier muu3damh-8-o78v: typecheck/lint/format passed;
+    Playwright 12/12, no skips, all 38 desktop + 38 mobile route checks and
+    final accumulated framework/page/CSP-error assertions reached and passed.
+    Fixture-backed empty/error/404 states are intentionally tested; no live
+    backend, physical-device, pixel-perfect or deployment acceptance claimed.
+  - Four AudioPlayer fake-timer rejection act boundaries remain deliberately
+    intact. Necessary async settlement acts are not suppressed. Therefore
+    closure of every baseline Sonar finding is NOT claimed; scan/triage remains
+    pending. Final code-review attempt review-604bf5f5d9b33e9b failed host
+    transport (request timeout), no admitted verdict or approval for final C5.
+    Earlier snapshot receipts do not substitute for a final committed review.
+  - This final closure record supersedes intermediate 'pending route' statuses
+    below; historical failed runs are retained as evidence.
+  - Mapper musxn10w-2d-1lrf validated54 unique open findings/18 paths and exact
+    counts. Initial safe batch only tests/components/AudioPlayer.test.tsx:5
+    synchronous fireEvent clicks at prior lines312,499,573,673,721. Keep act
+    import, async fake-timer acts415/437/530/643, native callbacks/timer acts.
+    Do not mechanically delete async completion boundaries.
+  - migration.spec.ts S1607 skip already has reason, possible analyzer false
+    positive not adjudicated; preserve pending explicit false-positive policy.
+    S9332 networkidle requires positive readiness replacement; do not weaken.
+  - Writer musxwpy7-2e-e8jw executes focused baseline/post single test-file
+    redundant-act slice only; one eventual C5 commit, no configuration changes.
+  - First batch musxwpy7-2e-e8jw completed four safe direct-click replacements
+    in AudioPlayer.test.tsx (original312/499/573/721), baseline/post36/36 and
+    Prettier clean. Mapped original673 replay is NOT synchronous: resolved
+    fetch/blob/play; wrapper kept, remains unresolved pending async mapping.
+    act import/nativecallback/timer wrappers kept. No commit or Sonar claim.
+  - Exact5e82ce8b C5 partial snapshot review-9f9731700cd75a10 started;
+    reviewer host relay emptyoutput stopReason:length~71s, fresh boundSTATUS
+    reviewing/collect, no verdict/ack/reset/replay. User did not decline;
+    review stable category boundary after checks.
+  - Mapper musy445e-2g-mevb classified all remaining AudioPlayer wrappers:
+    RTL eventact only flushes sync updates; async fetch/blob/play requires
+    callback installation as completion barrier. Native onended/onerror and
+    fake-timer advances retain act. HTTPrejection/faketimer, multiinstance
+    and replay (incl original673) deferred. Six single-start sites current
+    ~211/238/304/509/684/707 can use bareclick+await new audio onended/
+    onerror function readiness via waitFor. Bounded writer musyaq62-2h-gh34
+    implemented only six: bareclick plus waitFor new audio onended/onerror
+    callback readiness (post play() promise), baseline/post36/36 and Prettier
+    passed. Rejection/fake-timer/nativecallback acts kept; no C5commit.
+  - Exact213fe72c snapshot review-a4e2e978a47919bd started; reviewer
+    approved and bound acknowledgement succeeded/authorityburned for doc+
+    AudioPlayer test at that moment. Scope is partial C5, not final category.
+  - Bounded writer musyiynf-2i-ee3g now tackles seven multi-instance/replay
+    async sites only; must observe NEW audio identity callback readiness,
+    preserve nativecallback/timer/rejection acts and resolved error replay673.
+    Batch musyiynf-2i-ee3g completed seven multiinstance/replay click
+    replacements; each awaits a distinct newly constructed Audio instance
+    with onended/onerror callback readiness. Baseline/post36/36, format clean.
+    Native callbacks/timers/rejections/original673 still guarded.
+  - Exact4c777ed9 snapshot review-3f6e45d1b4c718cd capturedapproved,
+    boundSTATUS approved and acknowledgement completed/authorityburned.
+    Scope only doc+AudioPlayer test at that snapshot, not final C5.
+  - Writer musysuc7-2j-z6vd now examines six remaining fetch rejection,
+    fake-timer and recovery/replay async click wrappers. Keep meaningful act
+    if no deterministic await exists; no forced Sonar closure. One C5commit
+    later after all18testfiles verified.
+  - Writer musysuc7-2j-z6vd converted2 further wrappers: request-payload
+    first playback and recovery replay after restoring real timers, awaiting
+    new Audio identity plus onended/onerror installation. Baseline/post36/36
+    and formatting pass. Four HTTP/network rejection wrappers under fake
+    timers retained: ordinary waitFor unsafe and relocation of async act
+    alone would not establish completion. Native callback/timer acts retained.
+  - Exacte3bf9699 partial snapshot review-6fb5c198d7e94750 started,
+    reviewer emptyoutput stopReason:length~90s, freshSTATUS reviewing/collect;
+    no verdict/ack/reset/replay. Later final C5 independent checks required.
+  - Exactb8a34ca3 partial snapshot review-f1e403f90d79aee6 approved and
+    acknowledged/authorityburned for doc+AudioPlayer test only; no finalC5
+    approval. Four fake-timer rejection wrappers remain justified until a
+    deterministic equivalent exists; do not delete for a cosmetic count.
+  - Read-only mapper musz3i5y-2k-x6dt classifies remaining17testfiles,
+    S5906 assertion specificity/S5976 parameterization/S8782 hook scope,
+    S1607 reasoned skip and S9332 positive readiness. Mapper completed
+    remaining17files/29findings, no source writes; one tool-owned truncated
+    /tmp output artifact was not deliberately created/cleaned. S5906 equality
+    only, S5976 case-name/setup preservation, S8782 hook scope, S8980
+    per-component async waits; S1607 skip already reasoned, possible analyzer
+    mismatch (not adjudicated). S9332 requires positive readiness for all
+    routes, not URL-only or absence-of-error.
+  - Mapper mut0fvsg-2p-of37 inspected actual migration sweep:38paths, not39.
+    Existing mobile skip reason claiming coverage above is not accurate for
+    all38; mobile sweep is real coverage decision, not presumed falsepositive.
+    Route readiness is static/loadedempty/error/redirect/polling-specific;
+    `/plan` redirects to `/assessment`, `/vocabulary` needs response waiter
+    registered before goto, billing success polls5/me with adequate timeout,
+    chat sidebar opens manually on mobile. Positive signal for each route,
+    not URL-only/generic h1/framework-error absence.
+  - Writer mut0pbqb-2q-y335 completed tests/e2e/migration.spec.ts only:
+    typed38-route positive readiness, removes mobile skip, preserves cookie,
+    framework/page/CSP checks. Typecheck/lint/format/--list passed,12entries.
+    Independent verifier mut14izj-2r-48cu now runs desktop/mobile38routes
+    with production fixture; first run typecheck/lint/format passed, E2E
+    10passed/2failed: both sweeps reached /onboarding after five routes then
+    exact accessible button British English mismatch, actual name includes
+    image alt 'en-GB British English'. Remaining32routes/final error sweep
+    checks NOT reached, no acceptance claim. Artifacts/traces preserved.
+    Bounded spec-only selector correction mut1g5z1-2s-dp44 completed:
+    exact enabled button 'en-GB British English' matches observed image alt+
+    visible label, preserves settled-data readiness; typecheck/lint/format/
+    --list12 passed. Other37cases untouched. Independent mut1k15n-2t-jqw8
+    now ran both desktop/mobile sweeps once:10other smoke tests passed;
+    each route sweep completed10/38 then /dashboard readiness failed.
+    Destination /dashboard correct; expected empty-assessment heading missing,
+    observed existing-plan heading 'Your plan, at your pace' plus levelA1/day2
+    of48. Onboarding and billing passed in both projects; remaining27routes
+    and final page/CSP checks not reached. Bounded test-only dashboard
+    selector correction mut1rohd-2u-bxo9 changed readiness to exact heading
+    'Your plan, at your pace'. Mapper mut36yl1-2w-7h81 confirmed it matches
+    preserved desktop/mobile snapshots; /api/study-plan/today returns200 A1/
+    day1of48, dashboard shows day2. /current404 belongs to OTHER routes.
+    Static checks on corrected bytes not independently observed; no browser
+    pass yet. Predicted /assessment/level-test mismatch: start-warning dialog
+    is open before missing plan validation. Writer mut3i2ga-2x-tg5w changes
+    only that initial gate readiness to visible 'Before you begin' dialog+
+    Start; preserves other37cases. Writer mut3i2ga-2x-tg5w completed scoped
+    selector: exact alertdialog 'Before you begin' and dialog-scoped visible
+    Start, no click. Typecheck/lint/format/--list12 passed. This establishes
+    initial gate only, not question-bank/invalid-plan subsequent state.
+    Independent mut3mqsh-2y-6rte now reruns static+desktop/mobile38route
+    sweeps once. Completed result retrieved on user-authorized resume:
+    typecheck/lint/format passed, browser10other tests passed/2sweeps failed.
+    Both projects completed16/38routes (32/76 checks), stopped /feedback:
+    exact failure text expected without rendered prefix✕, snapshot actual
+    '✕ Failed to load. Please try again.'. First16destinations/readiness pass;
+    remaining21perproject/finalerrorCSPchecks NOT reached. No sourcebug claim.
+    Resume writer mutxbgv7-1-o384 corrects only evidenced readiness selectors,
+    spot-checks remaining markup to avoid repeat speculative mismatches.
+    No C5commit or full acceptance yet.
+  - Exactadf92490 high-risk partial19path review-5d7f322f43762d8d
+    four lenses approved and acknowledged/authorityburned. Scope exact
+    candidate with dashboard selector at that moment, not final C5commit.
+    Browser acceptance remains independent and must reach all38routes.
+  - Independent test verifier mut21f5e-2v-htxl now checks 17focused Vitest
+    files/typecheck/lint/format and preserving async completion contracts.
+    No C5 category commit pending route browser result.
+  - Independent mut21f5e-2v-htxl checked all18changed test paths:
+    17Vitest files/407tests, typecheck/lint/18fileformat pass. Inspected
+    AudioPlayer4 retained fake-timer rejection acts and newAudio callback
+    readiness, WordTooltip hook scope, 12toHaveLength,5it.each/19names,
+    verify-email14999+1ms, registration/onboarding/lesson completion. No
+    semantic blocker; migration browser acceptance remains outstanding.
+  - Exacta3b9e621 partial19path high-risk review-45f904c095023e8d
+    four-lens group failed revieweremptyoutput:length~118s,0outputs;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset. Independent
+    functional checks remain separate from native review.
+  - Exact1d3b9893 partial19path review-ea171ad8822fde96 grouped4lenses
+    failed revieweremptyoutput:length~120s,0submitted; freshSTATUS reviewing/
+    collect4, noverdict/ack/reset/replay. The repaired migration test still
+    requires actual all38route execution; don't conflate native result.
+  - Exact5e470729 partial19path high-risk review-90036f673f555b4f
+    grouped4lenses failed revieweremptyoutput:length~142s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset. Browser route
+    acceptance still incomplete and is independent of native review.
+  - Exactb7d8c68f partial19path high-risk review-9d5dae5c791fbf2d
+    grouped4lenses failed revieweremptyoutput:length~89s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. The route
+    suite is still separate and must finish before one C5category commit.
+  - Exacte3ddda69 partial19path high-risk review-b516cd9e46011395
+    grouped4lenses failed revieweremptyoutput:length~105s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. Migration
+    browser acceptance still outstanding independently.
+  - Exact38fd6f81 partial19path high-risk review-3ac1acd8fde2e6ca
+    four-lens group preparation failed review-risk Request timed out,
+    0submitted/no mutation; freshSTATUS reviewing/collect4. No verdict,
+    acknowledgement or automatic replay/reset; full browser gate remains
+    independent and incomplete.
+  - Exact421f23cc partial19path high-risk review-3c8286e36345e6b1
+    grouped4lenses failed revieweremptyoutput:length~102s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. Full
+    browser migration sweep remains independent and not yet accepted.
+  - Exact6045c15e partial19path high-risk review-2c062625c46f52b7
+    grouped4lenses failed revieweremptyoutput:length~103s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. Route
+    acceptance remains a separate unmet check.
+  - Exact4fe3cfac partial19path high-risk review-6a4b7dab417b372f
+    grouped4lenses failed revieweremptyoutput:length~132s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. The route
+    suite must finish independently before one C5category commit.
+  - Exact5b7ee513 partial19path high-risk review-8394eb9f2e10f600
+    grouped4lenses failed revieweremptyoutput:length~121s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. Full
+    migration sweep remains separate and not accepted.
+  - Exact7de5df17 partial19path high-risk review-a5636fbe43e6ff3f
+    grouped4lenses failed revieweremptyoutput:length~104s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. Functional
+    route acceptance still unmet; never substitute native review for it.
+  - Exactbc4db1ec partial19path high-risk review-f1fe2eb11adef2df
+    grouped4lenses approved and exact acknowledgement succeeded/
+    authorityburned;3informational warnings, no correction route. Scope
+    frozen pre-full38route browser acceptance, not final C5commit.
+  - Exact591ce0ca partial19path high-risk review-13a22e0177fc5942
+    grouped4lenses failed revieweremptyoutput:length~137s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. Browser
+    full route result remains independently required.
+  - Exact244685d9 partial19path high-risk review-bb21ddf047dc6dde
+    grouped4lenses failed revieweremptyoutput:length~107s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. Full
+    desktop/mobile route sweep remains independent before C5commit.
+  - Exact0c89a023 partial19path high-risk review-3b66c662f2b35ec2
+    grouped4lenses failed revieweremptyoutput:length~120s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. Full
+    route result remains a separate functional check before C5commit.
+  - Exact88cddd0e partial19path high-risk review-e73fadfacf8f4ccb
+    grouped4lenses failed revieweremptyoutput:length~154s,0submitted;
+    freshSTATUS reviewing/collect4, no verdict/ack/reset/replay. The
+    functional route suite remains independent and not fully accepted.
+  - Exact97f523f9 partial19path high-risk review-5524b69dd82c4142
+    grouped4lenses preparation failed review-readability Request timed out,
+    0submitted/no mutation; freshSTATUS reviewing/collect4, no verdict/
+    acknowledgement/reset/replay. Browser route result still independent.
+  - Exactf7d846c8 partial19path high-risk review-f34ba8e7417ecb7a
+    grouped4lenses preparation failed review-readability Request timed out,
+    0submitted/no mutation; freshSTATUS reviewing/collect4, no verdict/
+    acknowledgement/reset/replay. Full browser route result still required.
+  - Exact5fcafb43 partial19path high-risk review-3369f76ba54ea989
+    grouped4lenses capturedapproved and bound acknowledgement completed/
+    authorityburned. Four informational suggestions, no correction route.
+    Scope only frozen C5 workspace before full route acceptance; no final
+    category review or browser pass inferred.
+  - Exactbc6b876b high-risk partial19path review-4835aeb3fbdb6e15
+    grouped4reviewers, provider requested inferential refuter. FreshSTATUS
+    refuter slot captured, CRITICAL migration-vocabulary-readiness claim was
+    refuted, final stateapproved and exact acknowledgement succeeded/
+    authorityburned. Other suggestions informational only, no correction.
+    Scope frozen pre-dashboard/level-test readiness fixes; does NOT establish
+    the full38route browser acceptance nor approve finalC5commit.
+  - Read-only mapper mut36yl1-2w-7h81 checks dashboard readiness correction
+    and fixture state mismatch before another independent desktop/mobile run.
+    No C5commit until full route acceptance.
+  - Exacta5537765 partial18path high-risk review-d1a179477dbdb899
+    four-lens group failed revieweremptyoutput:length~106s,0submitted,
+    freshSTATUS reviewing/collect4slots. No verdict/ack/replay/reset;
+    independent checks and stable category boundary still required.
+  - Batch2 muszdybo-2l-qk0g completed12 S5906 equality matcher rewrites
+    across5files; await queries/counts retained, inequalities unchanged.
+    Baseline/post145/145, typecheck/lint/format clean. No C5commit.
+  - Batch3 writer muszm6ap-2m-rr9h parameterizes5 mapped S5976 groups
+    preserving per-case names/setup/assertions; baseline/post same test counts.
+    Batch3 muszm6ap-2m-rr9h completed five S5976 parameterized groups,
+    19 named cases preserved with fresh per-rowsetup and assertions.
+    Baseline/post120/120 across5files, typecheck/lint/format/whitespace pass.
+    All C5 batches remain uncommitted for single category commit.
+  - Exact791905a1 partial snapshot high risk from auth test, lineage
+    review-30302d6e03f9b529, four lenses capturedapproved; while group ran
+    batch4 writer modified additional tests, so boundSTATUS/ack returned
+    not-current, mutation=false/authority unburned. Twenty-seven advisory
+    suggestions are non-blocking frozen metadata and do not authorize scope
+    expansion or re-review on that candidate. Preserve source/test progress,
+    no reset/recovery; final stable category review remains pending.
+  - Batch4 muszxrh9-2n-lqp6 completed7 S8980 sites across4testfiles,
+    baseline/post85/85,typecheck/lint/format passed. ExerciseAudioPlayer
+    success waits enabledPause after play; errors wait audioError+enabledPlay.
+    Onboarding waits savedgoals+navigation, registration requires observed
+    disabled loading then enabled afterfinally, lesson fresh/persisted UI
+    restored explicitly. Native audio.emit/deferred promise/fake timers acts
+    preserved. No C5commit or Sonar claim.
+  - Batch5 writer mut06zo1-2o-h2xi now groups WordTooltip hooks and
+    characterizes verify-email pending/settled fake timer boundaries;
+    legitimate act retained unless deterministic replacement. OneC5commit.
+  - Batch5 mut06zo1-2o-h2xi completed2files, baseline/post21/21 and
+    typecheck/lint/format clean. WordTooltip hooks grouped at start of existing
+    useWordSave describe, same scope/functions; native/timer acts retained.
+    Verify-email render separated from named verificationRequest settlement;
+    required async act awaits Promise.allSettled without fake clock advance,
+    pending14999+1ms and abort/unmount acts retained. If S8980 still flags the
+    necessary settlement act, rule mismatch needs Sonar triage, not weaker test.
+  - Exact2432ba37 high-risk partial snapshot review-1d538c5e6abcb89a
+    four-lens materialize forecast/run failed pi-host-relay Request timed out;
+    no reviewers submitted or verdict, freshSTATUS reviewing/collect4slots.
+    No replay/reset; independent checks and final stable category review.
+  - Exactb649a1c8 partial19path review-ccf1f5451763d7e5 four-lens group
+    failed revieweremptyoutput:length~96s,0outputs submitted; freshSTATUS
+    reviewing/collect4, noverdict/ack/reset. Browser route verification remains
+    blocked independently; don't treat review failure as browser pass.
+  - Exactf50a8f67 high-risk partial19path review-c12f790e41f422a0
+    grouped four lenses, capturedapproved and acknowledged/authorityburned.
+    Scope exact pre-selector C5 snapshot, not repaired migration test or final
+    category commit. Functional browser still blocked at /onboarding; native
+    approval cannot substitute for its remaining route checks.
+  - Exact91b5bf1e high-risk partial snapshot review-996d02bb53e6d3a1
+    four lenses capturedapproved but candidate drifted during Batch5; native
+    acknowledgement-not-current/mutation=false/unburned. No finalC5 verdict
+    inferred; preserve authority, no reset/recovery/replay.
+  - Exact7ea7a854 snapshot native high risk due tests/store/auth hotpath;
+    lineage review-d208df7e1c9b4b97 grouped four lenses forecast/run,
+    all outputs admitted, approved and exact acknowledgement succeeded/
+    authorityburned. Scope only doc+11testpaths at that frozen moment,
+    not final C5 nor future edits. No blocking correction.
+  - Exactdb941310 partial AudioPlayer snapshot review-ed3a1e3072a02d7f
+    captureapproved but candidate changed while S5906 batch writer ran;
+    acknowledgement not-current/mutation=false/authority unburned. No final
+    C5 approval inferred; no reset/recover/replay. Review stable category
+    commit after scoped checks.
+  - Native reminder exacte65c7ceb started doc-only low review-f19533241a15358f,
+    but writer changed test before acknowledgement; provider not-current,
+    mutation=false/authority unburned. No approval projected onto current C5.
+    Wait for stable category boundary, no reset/recovery.
+  - Mapper musxn10w-2d-1lrf derives exact18test surfaces, meaningful act
+    boundaries, assertion/parameterization/hook/skip/networkidle contracts.
+    No test source writes yet; internal batches, one C5commit.
 - [ ] C6: List identity and DOM attributes — S6479/S7761, 48
 - [ ] C7: Semantic HTML/accessibility — S6819, 5
 - [ ] C8: Readability and complexity — S3358/S3776/S6660/S7721, 144

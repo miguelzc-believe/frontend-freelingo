@@ -1,4 +1,314 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+
+type RouteCase = {
+  path: string
+  destination: string
+  ready: (page: Page) => Promise<void>
+}
+
+const visibleText = (text: string) => async (page: Page) => {
+  await expect(page.getByText(text, { exact: true })).toBeVisible()
+}
+
+const enabledButton = (name: string | RegExp) => async (page: Page) => {
+  const button = page.getByRole('button', { name, exact: true })
+  await expect(button).toBeVisible()
+  await expect(button).toBeEnabled()
+}
+
+const retryState =
+  (message: string, retry = 'Retry') =>
+  async (page: Page) => {
+    await visibleText(message)(page)
+    await enabledButton(retry)(page)
+  }
+
+const fixtureNotFound = async (page: Page) => {
+  await expect(
+    page.getByRole('heading', { name: 'Page not found', exact: true })
+  ).toBeVisible()
+  const dashboard = page.getByRole('link', {
+    name: 'Go to dashboard',
+    exact: true,
+  })
+  await expect(dashboard).toBeVisible()
+  await expect(dashboard).toHaveAttribute('href', '/dashboard')
+  const home = page.getByRole('link', { name: 'Home', exact: true })
+  await expect(home).toBeVisible()
+  await expect(home).toHaveAttribute('href', '/')
+}
+
+// These settled states match the existing HTTP fixture (including its 404s).
+const migratedRoutes: readonly RouteCase[] = [
+  { path: '/login', destination: '/login', ready: enabledButton('Sign in') },
+  {
+    path: '/register',
+    destination: '/register',
+    ready: enabledButton('Create account'),
+  },
+  {
+    path: '/forgot-password',
+    destination: '/forgot-password',
+    ready: enabledButton('Send reset link'),
+  },
+  {
+    path: '/reset-password',
+    destination: '/reset-password',
+    ready: visibleText(
+      'Invalid reset link. Please request a new password reset.'
+    ),
+  },
+  {
+    path: '/verify-email',
+    destination: '/verify-email',
+    ready: visibleText(
+      'Invalid or expired verification link. Please request a new one from your account.'
+    ),
+  },
+  {
+    path: '/onboarding',
+    destination: '/onboarding',
+    ready: enabledButton('en-GB British English'),
+  },
+  {
+    path: '/billing/success',
+    destination: '/billing/success',
+    ready: async (page) => {
+      // Five confirmation requests have four real 1.5s intervals between them.
+      await expect(
+        page.getByRole('heading', {
+          name: 'Your subscription is being confirmed',
+          exact: true,
+        })
+      ).toBeVisible({ timeout: 15000 })
+    },
+  },
+  {
+    path: '/billing/canceled',
+    destination: '/billing/canceled',
+    ready: async (page) => {
+      await expect(
+        page.getByRole('heading', { name: 'No charge was made', exact: true })
+      ).toBeVisible()
+    },
+  },
+  {
+    path: '/terms',
+    destination: '/terms',
+    ready: visibleText('1. About FreeLingo'),
+  },
+  {
+    path: '/privacy',
+    destination: '/privacy',
+    ready: visibleText('1. Overview'),
+  },
+  {
+    path: '/dashboard',
+    destination: '/dashboard',
+    ready: async (page) => {
+      await expect(
+        page.getByRole('heading', {
+          name: 'Your plan, at your pace',
+          exact: true,
+        })
+      ).toBeVisible()
+    },
+  },
+  {
+    path: '/assessment',
+    destination: '/assessment',
+    ready: enabledButton(/I am a complete beginner/),
+  },
+  {
+    path: '/assessment/level-test',
+    destination: '/assessment/level-test',
+    ready: async (page) => {
+      const dialog = page.getByRole('alertdialog', {
+        name: 'Before you begin',
+        exact: true,
+      })
+      await expect(dialog).toBeVisible()
+      await expect(
+        dialog.getByRole('button', { name: 'Start', exact: true })
+      ).toBeVisible()
+    },
+  },
+  {
+    path: '/chat',
+    destination: '/chat',
+    ready: async (page) => {
+      if ((page.viewportSize()?.width ?? 0) < 768) {
+        await page.getByTitle('Show chats', { exact: true }).click()
+      }
+      const sidebar = page.locator('aside').filter({
+        has: page.getByRole('button', { name: 'Retry', exact: true }),
+      })
+      await expect(sidebar.getByText('Error', { exact: true })).toBeVisible()
+      await expect(
+        sidebar.getByRole('button', { name: 'Retry', exact: true })
+      ).toBeEnabled()
+    },
+  },
+  {
+    path: '/conversation',
+    destination: '/conversation',
+    ready: enabledButton('Start Session'),
+  },
+  {
+    path: '/faq',
+    destination: '/faq',
+    ready: enabledButton(/^Where do I start\?/),
+  },
+  {
+    path: '/feedback',
+    destination: '/feedback',
+    ready: visibleText('✕ Failed to load. Please try again.'),
+  },
+  {
+    path: '/flashcards',
+    destination: '/flashcards',
+    ready: visibleText('No cards due for review'),
+  },
+  {
+    path: '/flashcards/vocabulary',
+    destination: '/flashcards/vocabulary',
+    ready: visibleText(
+      'No saved words yet. Select a word while reading to save it here.'
+    ),
+  },
+  {
+    path: '/grammar',
+    destination: '/grammar',
+    ready: async (page) => {
+      // Non-OK grammar responses resolve to []; this renders only after loading.
+      await visibleText('Grammar Reference')(page)
+      await visibleText('No topics found.')(page)
+    },
+  },
+  {
+    path: '/grammar/fixture',
+    destination: '/grammar/fixture',
+    // Non-OK topics resolve to []; the missing slug calls notFound().
+    ready: fixtureNotFound,
+  },
+  {
+    path: '/lesson/1',
+    destination: '/lesson/1',
+    ready: retryState(
+      'An unexpected error occurred. You can try again or go back to the dashboard.',
+      'Try again'
+    ),
+  },
+  {
+    path: '/listening',
+    destination: '/listening',
+    ready: async (page) => {
+      await expect(
+        page.getByRole('heading', { name: 'Listening', exact: true })
+      ).toBeVisible()
+      // A non-OK /next response settles idle; only a thrown fetch sets error.
+      await visibleText('No exercises available for your level.')(page)
+      await enabledButton('Generate exercise')(page)
+    },
+  },
+  {
+    path: '/phrasebook',
+    destination: '/phrasebook',
+    // Non-OK categories resolve to []; empty results render after loading.
+    ready: visibleText('No phrases match your filters'),
+  },
+  {
+    path: '/plan',
+    destination: '/assessment',
+    ready: enabledButton(/I am a complete beginner/),
+  },
+  {
+    path: '/progress',
+    destination: '/progress',
+    ready: async (page) => {
+      await expect(
+        page.getByRole('heading', {
+          name: 'Create your study plan',
+          exact: true,
+        })
+      ).toBeVisible()
+      await enabledButton('Take assessment first')(page)
+    },
+  },
+  {
+    path: '/reading',
+    destination: '/reading',
+    ready: async (page) => {
+      await expect(
+        page.getByRole('heading', { name: 'Reading', exact: true })
+      ).toBeVisible()
+      // A non-OK /next response settles idle; only a thrown fetch sets error.
+      await visibleText('No exercises available for your level.')(page)
+      await enabledButton('Generate exercise')(page)
+    },
+  },
+  {
+    path: '/settings',
+    destination: '/settings',
+    ready: async (page) => {
+      await visibleText('Profile and access')(page)
+      await expect(page.locator('input[type="email"]')).toHaveValue(
+        'learner@example.invalid'
+      )
+    },
+  },
+  {
+    path: '/settings/languages',
+    destination: '/settings/languages',
+    ready: visibleText('Active'),
+  },
+  {
+    path: '/settings/memories',
+    destination: '/settings/memories',
+    ready: retryState('Memories could not be loaded.'),
+  },
+  {
+    path: '/vocabulary',
+    destination: '/vocabulary',
+    ready: visibleText('No vocabulary sets match your search'),
+  },
+  {
+    path: '/vocabulary/fixture',
+    destination: '/vocabulary/fixture',
+    // A non-OK detail leaves vocabSet null after loading and calls notFound().
+    ready: fixtureNotFound,
+  },
+  {
+    path: '/admin',
+    destination: '/admin',
+    ready: visibleText('Failed to load admin metrics.'),
+  },
+  {
+    path: '/admin/feedback',
+    destination: '/admin/feedback',
+    ready: visibleText('Failed to load. Please try again.'),
+  },
+  {
+    path: '/admin/reviews',
+    destination: '/admin/reviews',
+    ready: visibleText('Failed to load reviews.'),
+  },
+  {
+    path: '/admin/system',
+    destination: '/admin/system',
+    ready: visibleText('Failed to load the dashboard announcement.'),
+  },
+  {
+    path: '/admin/users',
+    destination: '/admin/users',
+    ready: visibleText('Failed to load users'),
+  },
+  {
+    path: '/admin/users/1',
+    destination: '/admin/users/1',
+    ready: visibleText('Failed to load user data'),
+  },
+]
 
 test('SSR landing preserves identity, navigation and local fonts', async ({
   page,
@@ -181,11 +491,7 @@ test('login and logout preserve the httpOnly session cookie', async ({
 test('all migrated route families render without framework errors', async ({
   page,
   context,
-}, info) => {
-  test.skip(
-    info.project.name === 'mobile',
-    'Route mapping is shared across viewport sizes; mobile flows are covered above.'
-  )
+}) => {
   test.setTimeout(120000)
   await context.addCookies([
     {
@@ -206,58 +512,39 @@ test('all migrated route families render without framework errors', async ({
     )
       errors.push(message.text().slice(0, 200))
   })
-  const paths = [
-    '/login',
-    '/register',
-    '/forgot-password',
-    '/reset-password',
-    '/verify-email',
-    '/onboarding',
-    '/billing/success',
-    '/billing/canceled',
-    '/terms',
-    '/privacy',
-    '/dashboard',
-    '/assessment',
-    '/assessment/level-test',
-    '/chat',
-    '/conversation',
-    '/faq',
-    '/feedback',
-    '/flashcards',
-    '/flashcards/vocabulary',
-    '/grammar',
-    '/grammar/fixture',
-    '/lesson/1',
-    '/listening',
-    '/phrasebook',
-    '/plan',
-    '/progress',
-    '/reading',
-    '/settings',
-    '/settings/languages',
-    '/settings/memories',
-    '/vocabulary',
-    '/vocabulary/fixture',
-    '/admin',
-    '/admin/feedback',
-    '/admin/reviews',
-    '/admin/system',
-    '/admin/users',
-    '/admin/users/1',
-  ]
-  for (const path of paths) {
-    await page.goto(path)
-    await page.waitForLoadState('networkidle')
-    await expect(
-      page.getByRole('heading', { name: 'Something went wrong', exact: true })
-    ).toHaveCount(0)
-    if (path === '/settings/memories')
+  expect(migratedRoutes).toHaveLength(38)
+  for (const { path, destination, ready } of migratedRoutes) {
+    await test.step(path, async () => {
+      // The vocabulary empty state exists before fetching: observe the request
+      // before navigation so that initial empty DOM cannot satisfy readiness.
+      const vocabularyResponse =
+        path === '/vocabulary'
+          ? page.waitForResponse((response) => {
+              const url = new URL(response.url())
+              return (
+                url.pathname === '/api/vocabulary' &&
+                url.searchParams.get('language') === 'en-GB'
+              )
+            })
+          : undefined
+      await page.goto(path)
+      if (vocabularyResponse) {
+        const response = await vocabularyResponse
+        expect(response.status()).toBe(404)
+        await response.finished()
+      }
+      await expect(page).toHaveURL((url) => url.pathname === destination)
+      await ready(page)
       await expect(
-        page.getByRole('heading', { name: 'Memory', exact: true }).first()
-      ).toBeVisible()
-    if (path === '/settings/languages')
-      await expect(page.locator('a[href="/settings"]').last()).toBeVisible()
+        page.getByRole('heading', { name: 'Something went wrong', exact: true })
+      ).toHaveCount(0)
+      if (path === '/settings/memories')
+        await expect(
+          page.getByRole('heading', { name: 'Memory', exact: true }).first()
+        ).toBeVisible()
+      if (path === '/settings/languages')
+        await expect(page.locator('a[href="/settings"]').last()).toBeVisible()
+    })
   }
   expect(errors).toEqual([])
 })

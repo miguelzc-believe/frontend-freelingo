@@ -1,6 +1,13 @@
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { IntlProvider } from 'use-intl'
 import { TARGET_LANGUAGE_CATALOG } from '@/lib/target-languages'
 import { useAuthStore } from '@/store/auth'
@@ -154,9 +161,14 @@ describe('onboarding goals subtitle', () => {
     await openGoalsStep()
     fireEvent.click(screen.getByRole('button', { name: /Travel & Tourism/ }))
     fireEvent.click(screen.getByRole('button', { name: /Work & Professional/ }))
-    await act(async () =>
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await waitFor(() => {
+      expect(useAuthStore.getState().user).toMatchObject({
+        target_language: 'es-ES',
+        learning_goals: ['travel', 'work'],
+      })
+      expect(routerPush).toHaveBeenCalledWith('/dashboard')
+    })
 
     expect(apiFetch).toHaveBeenCalledWith('/api/auth/me', {
       method: 'PATCH',
@@ -191,9 +203,14 @@ describe('onboarding goals subtitle', () => {
     fireEvent.click(screen.getByRole('button', { name: /Travel & Tourism/ }))
     fireEvent.click(screen.getByRole('button', { name: /Work & Professional/ }))
     fireEvent.click(screen.getByRole('button', { name: /Travel & Tourism/ }))
-    await act(async () =>
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await waitFor(() => {
+      expect(useAuthStore.getState().user).toMatchObject({
+        target_language: 'es-ES',
+        learning_goals: ['work'],
+      })
+      expect(routerPush).toHaveBeenCalledWith('/dashboard')
+    })
 
     expect(apiFetch).toHaveBeenCalledWith(
       '/api/auth/me',

@@ -383,7 +383,7 @@ describe('UnitDrawer', () => {
     renderUnitDrawer()
     const circles = screen.getAllByRole('img', { name: 'lessonPending' })
     // 2 incomplete lessons (id:2 and id:3)
-    expect(circles.length).toBe(2)
+    expect(circles).toHaveLength(2)
   })
 
   it('renders lesson type label for each lesson', () => {
@@ -396,7 +396,7 @@ describe('UnitDrawer', () => {
   it('renders week/day info for each lesson', () => {
     renderUnitDrawer()
     const weekDayEls = screen.getAllByText(/weekDay/)
-    expect(weekDayEls.length).toBe(3)
+    expect(weekDayEls).toHaveLength(3)
   })
 
   it('shows empty state when lessons array is empty', () => {

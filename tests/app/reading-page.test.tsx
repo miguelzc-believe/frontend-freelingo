@@ -282,8 +282,8 @@ describe('ReadingPage', () => {
       replay: false,
     })
     const review = document.querySelectorAll('.text-fl-success')
-    expect(review.length).toBe(2)
-    expect(document.querySelectorAll('.text-fl-error-fg').length).toBe(0)
+    expect(review).toHaveLength(2)
+    expect(document.querySelectorAll('.text-fl-error-fg')).toHaveLength(0)
   })
 
   it('strikes through the wrong answer and highlights the correct one', async () => {
@@ -302,11 +302,11 @@ describe('ReadingPage', () => {
     await answerExercise(['a', 'a'])
 
     await screen.findByText('resultsLabel')
-    expect(document.querySelectorAll('.line-through').length).toBe(1)
+    expect(document.querySelectorAll('.line-through')).toHaveLength(1)
     expect(
       document.querySelectorAll('.text-fl-error-fg').length
     ).toBeGreaterThan(0)
-    expect(document.querySelectorAll('.text-fl-success').length).toBe(2)
+    expect(document.querySelectorAll('.text-fl-success')).toHaveLength(2)
   })
 
   it('completes the flow by loading the next exercise from the results', async () => {

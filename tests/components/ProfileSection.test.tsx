@@ -120,34 +120,36 @@ describe('ProfileSection', () => {
     expect(screen.getByText('sectionProfile')).toBeDefined()
   })
 
-  it('renders display name input with user value', () => {
+  it.each<{ name: string; label: string; expectedValue: string }>([
+    {
+      name: 'renders display name input with user value',
+      label: 'displayName',
+      expectedValue: 'Test User',
+    },
+    {
+      name: 'renders email input with user value',
+      label: 'email',
+      expectedValue: 'test@example.com',
+    },
+    {
+      name: 'renders bio textarea with user value',
+      label: 'bio',
+      expectedValue: 'Hello world',
+    },
+    {
+      name: 'renders native language select with user value',
+      label: 'nativeLanguage',
+      expectedValue: 'es',
+    },
+    {
+      name: 'renders ui locale select with user value',
+      label: 'uiLocale',
+      expectedValue: 'en',
+    },
+  ])('$name', ({ label, expectedValue }) => {
     render(<ProfileSection />)
-    const input = inputAfterLabelText('displayName') as HTMLInputElement
-    expect(input.value).toBe('Test User')
-  })
-
-  it('renders email input with user value', () => {
-    render(<ProfileSection />)
-    const input = inputAfterLabelText('email') as HTMLInputElement
-    expect(input.value).toBe('test@example.com')
-  })
-
-  it('renders bio textarea with user value', () => {
-    render(<ProfileSection />)
-    const textarea = inputAfterLabelText('bio') as HTMLTextAreaElement
-    expect(textarea.value).toBe('Hello world')
-  })
-
-  it('renders native language select with user value', () => {
-    render(<ProfileSection />)
-    const select = selectAfterLabelText('nativeLanguage')
-    expect(select.value).toBe('es')
-  })
-
-  it('renders ui locale select with user value', () => {
-    render(<ProfileSection />)
-    const select = selectAfterLabelText('uiLocale')
-    expect(select.value).toBe('en')
+    const control = inputAfterLabelText(label)
+    expect(control.value).toBe(expectedValue)
   })
 
   it('renders empty fields when user has no optional values', () => {

@@ -22,9 +22,20 @@ vi.mock('@/lib/navigation', () => ({
   },
 }))
 
-async function renderPage() {
+function renderPendingPage() {
+  return render(<VerifyEmailPage />)
+}
+
+async function renderSettledPage(verificationRequest: Promise<Response>) {
+  mocks.apiFetch.mockReturnValueOnce(verificationRequest)
+  renderPendingPage()
+  expect(screen.getByRole('status')).toBeVisible()
+  expect(vi.getTimerCount()).toBe(1)
+
+  // RTL render covers mounting, not the request's asynchronous state updates.
+  // Await both success and rejection without polling or advancing fake timers.
   await act(async () => {
-    render(<VerifyEmailPage />)
+    await Promise.allSettled([verificationRequest])
   })
 }
 
@@ -72,9 +83,11 @@ describe('verify email request equivalence', () => {
 
   it('encodes the token and shows success with a login link', async () => {
     mocks.token = 'a+b/c?d=e&f ü'
-    mocks.apiFetch.mockResolvedValue(new Response(null, { status: 200 }))
+    const verificationRequest = Promise.resolve(
+      new Response(null, { status: 200 })
+    )
 
-    await renderPage()
+    await renderSettledPage(verificationRequest)
 
     expect(mocks.apiFetch).toHaveBeenCalledExactlyOnceWith(
       `/api/auth/verify-email?token=${encodeURIComponent(mocks.token)}`,
@@ -100,9 +113,9 @@ describe('verify email request equivalence', () => {
       () => Promise.reject(new DOMException('Aborted', 'AbortError')),
     ],
   ])('shows the same error UI for %s', async (_label, response) => {
-    mocks.apiFetch.mockImplementation(response)
+    const verificationRequest = response()
 
-    await renderPage()
+    await renderSettledPage(verificationRequest)
 
     expectError()
     expect(vi.getTimerCount()).toBe(0)
@@ -111,7 +124,7 @@ describe('verify email request equivalence', () => {
   it('does not request verification without a token, including retry', async () => {
     mocks.token = ''
 
-    await renderPage()
+    renderPendingPage()
     expectError()
     fireEvent.click(screen.getByRole('button', { name: 'common.retry' }))
 
@@ -122,7 +135,7 @@ describe('verify email request equivalence', () => {
 
   it('keeps loading until the 15-second timeout aborts and settles the request', async () => {
     mockAbortableRequest()
-    await renderPage()
+    renderPendingPage()
     const signal = requestSignal()
 
     expect(screen.getByRole('status')).toHaveAccessibleName('common.loading')

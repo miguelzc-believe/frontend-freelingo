@@ -171,9 +171,9 @@ describe('AdminUserStatsPage subscription visibility', () => {
 
     render(<AdminUserStatsPage />)
 
-    expect((await screen.findAllByText('Ada Admin')).length).toBe(2)
-    expect(screen.getAllByText('inactive').length).toBe(2)
-    expect(screen.getAllByText('roleAdmin').length).toBe(2)
+    expect(await screen.findAllByText('Ada Admin')).toHaveLength(2)
+    expect(screen.getAllByText('inactive')).toHaveLength(2)
+    expect(screen.getAllByText('roleAdmin')).toHaveLength(2)
     expect(screen.queryByText('ada@example.com')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'tabQuota' }))
     expect(screen.getByText('statsNoData')).toBeDefined()
@@ -201,7 +201,7 @@ describe('AdminUserStatsPage subscription visibility', () => {
     render(<AdminUserStatsPage />)
     fireEvent.click(await screen.findByRole('button', { name: 'tabQuota' }))
 
-    expect(screen.getAllByText('quotaUnlimitedLabel').length).toBe(3)
+    expect(screen.getAllByText('quotaUnlimitedLabel')).toHaveLength(3)
   })
 
   it('cancels email verification without sending an update', async () => {
