@@ -116,13 +116,15 @@ describe('ReviewSection', () => {
       'true'
     )
 
+    const comment = screen.getByLabelText('commentLabel')
     const fiveStarRadio = screen.getByLabelText('5 out of 5 stars')
     expect(fiveStarRadio.isConnected).toBe(true)
     fireEvent.click(fiveStarRadio)
     expect(fiveStarRadio).toHaveAttribute('aria-checked', 'true')
-    fireEvent.change(screen.getByLabelText('commentLabel'), {
+    fireEvent.change(comment, {
       target: { value: 'Updated comment' },
     })
+    comment.focus()
     fireEvent.click(screen.getByText('reviewUpdate'))
     await waitFor(() =>
       expect(mockUpdateMyReview).toHaveBeenCalledWith({
@@ -131,6 +133,9 @@ describe('ReviewSection', () => {
       })
     )
     expect(fiveStarRadio.isConnected).toBe(true)
+    expect(screen.getByLabelText('commentLabel')).toBe(comment)
+    expect(comment).toHaveFocus()
+    expect(screen.getByText('reviewUpdate')).toBeDisabled()
 
     await act(async () => {
       update.resolve(updatedReview)

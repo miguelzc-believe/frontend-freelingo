@@ -56,6 +56,169 @@ function computeSkillBreakdown(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+function LevelTestResults({
+  result,
+  questions,
+  answers,
+  cefrLevel,
+  getSkillLabel,
+  t,
+  onNavigate,
+}: Readonly<{
+  result: LevelTestResult
+  questions: LevelTestQuestion[]
+  answers: AnswerRecord[]
+  cefrLevel: string
+  getSkillLabel: (skill: string) => string
+  t: ReturnType<typeof useTranslations>
+  onNavigate: (path: string) => void
+}>) {
+  const pct = Math.round(result.score * 100)
+  const breakdown = computeSkillBreakdown(questions, answers)
+  const weakAreas = Object.entries(breakdown)
+    .filter(([, value]) => value.total > 0 && value.correct / value.total < 0.6)
+    .map(([skill]) => getSkillLabel(skill))
+
+  const recConfig: Record<
+    LevelTestResult['recommendation'],
+    {
+      icon: string
+      label: string
+      message: string
+      nextAction: string
+      nextLabel: string
+    }
+  > = {
+    advance: {
+      icon: '🎉',
+      label: t('levelTest.advanceLabel', {
+        level: result.next_level ?? t('levelTest.nextLevelFallback'),
+      }),
+      message: t('levelTest.advanceMessage', {
+        level: cefrLevel,
+        next: result.next_level ?? t('levelTest.nextLevelFallback'),
+      }),
+      nextAction: result.next_level ? '/assessment' : '/plan',
+      nextLabel: result.next_level
+        ? `${t('retake')} →`
+        : t('levelTest.goToPlan'),
+    },
+    extend: {
+      icon: '⚠',
+      label: t('levelTest.extendLabel'),
+      message: t('levelTest.extendMessage', {
+        areas: weakAreas.join(', ') || t('skills.reading'),
+      }),
+      nextAction: '/plan',
+      nextLabel: t('levelTest.reviewPlan'),
+    },
+    repeat: {
+      icon: '↺',
+      label: t('levelTest.repeatLabel', { level: cefrLevel }),
+      message: t('levelTest.repeatMessage', { level: cefrLevel }),
+      nextAction: '/plan',
+      nextLabel: t('levelTest.reviewPlan'),
+    },
+  }
+
+  const rec = recConfig[result.recommendation]
+
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center p-6">
+      <div className="border-fl-border bg-fl-surface w-full max-w-lg border">
+        {/* Header */}
+        <div className="border-fl-border flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <span className="text-fl-label text-fl-muted-3">●</span>
+            <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
+              {t('levelTest.resultsTitle', { level: cefrLevel })}
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-6 p-8">
+          {/* Score */}
+          <div className="space-y-2 text-center">
+            <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
+              {t('levelTest.finalScore')}
+            </p>
+            <p className="text-fl-fg font-mono text-7xl font-bold tracking-widest">
+              {pct}%
+            </p>
+            <p className="text-fl-muted-3 font-mono text-xs">
+              {t('levelTest.correctCount', {
+                correct: answers.filter((a) => a.correct).length,
+                total: questions.length,
+              })}
+            </p>
+          </div>
+
+          {/* Skill breakdown */}
+          <div className="space-y-2">
+            {Object.entries(breakdown).map(([skill, v]) => {
+              const skillPct =
+                v.total > 0 ? Math.round((v.correct / v.total) * 100) : 0
+              const isWeak = skillPct < 60
+              const label = getSkillLabel(skill)
+              return (
+                <div key={skill} className="flex items-center gap-3">
+                  <span className="text-fl-label text-fl-muted-3 w-6 text-center font-mono uppercase">
+                    {label[0]?.toUpperCase() ?? '?'}
+                  </span>
+                  <span className="text-fl-label text-fl-muted-2 w-24 font-mono tracking-widest uppercase">
+                    {label}
+                  </span>
+                  <div className="bg-fl-border h-1.5 flex-1">
+                    <div
+                      className={`h-full transition-all ${isWeak ? 'bg-amber-500' : 'bg-fl-fg'}`}
+                      style={{ width: `${skillPct}%` }}
+                    />
+                  </div>
+                  <span
+                    className={`text-fl-label w-16 text-right font-mono ${isWeak ? 'text-amber-500' : 'text-fl-fg'}`}
+                  >
+                    {v.correct}/{v.total} ({skillPct}%)
+                    {isWeak && ' ◂'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Recommendation */}
+          <div className="border-fl-border space-y-3 border p-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">{rec.icon}</span>
+              <span className="text-fl-label text-fl-fg font-mono font-bold tracking-widest uppercase">
+                {t('levelTest.result.recommendation')}: {rec.label}
+              </span>
+            </div>
+            <p className="text-fl-muted-2 font-mono text-xs leading-relaxed">
+              {rec.message}
+            </p>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => onNavigate(rec.nextAction)}
+              className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full py-3.5 font-mono text-sm font-bold tracking-widest uppercase transition-colors"
+            >
+              {rec.nextLabel}
+            </button>
+            <button
+              onClick={() => onNavigate('/plan')}
+              className="border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg w-full border py-3 font-mono text-xs tracking-widest uppercase transition-colors"
+            >
+              ← {t('levelTest.result.back')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function LevelTestPage() {
   const t = useTranslations('assessment')
   const router = useRouter()
@@ -251,149 +414,16 @@ export default function LevelTestPage() {
   }
 
   if (step === 'result' && result) {
-    const pct = Math.round(result.score * 100)
-    const breakdown = computeSkillBreakdown(questions, answers)
-    const weakAreas = Object.entries(breakdown)
-      .filter(([, v]) => v.total > 0 && v.correct / v.total < 0.6)
-      .map(([skill]) => getSkillLabel(skill))
-
-    const recConfig: Record<
-      LevelTestResult['recommendation'],
-      {
-        icon: string
-        label: string
-        message: string
-        nextAction: string
-        nextLabel: string
-      }
-    > = {
-      advance: {
-        icon: '🎉',
-        label: t('levelTest.advanceLabel', {
-          level: result.next_level ?? t('levelTest.nextLevelFallback'),
-        }),
-        message: t('levelTest.advanceMessage', {
-          level: cefrLevel,
-          next: result.next_level ?? t('levelTest.nextLevelFallback'),
-        }),
-        nextAction: result.next_level ? '/assessment' : '/plan',
-        nextLabel: result.next_level
-          ? `${t('retake')} →`
-          : t('levelTest.goToPlan'),
-      },
-      extend: {
-        icon: '⚠',
-        label: t('levelTest.extendLabel'),
-        message: t('levelTest.extendMessage', {
-          areas: weakAreas.join(', ') || t('skills.reading'),
-        }),
-        nextAction: '/plan',
-        nextLabel: t('levelTest.reviewPlan'),
-      },
-      repeat: {
-        icon: '↺',
-        label: t('levelTest.repeatLabel', { level: cefrLevel }),
-        message: t('levelTest.repeatMessage', { level: cefrLevel }),
-        nextAction: '/plan',
-        nextLabel: t('levelTest.reviewPlan'),
-      },
-    }
-
-    const rec = recConfig[result.recommendation]
-
     return (
-      <div className="flex min-h-[60vh] items-center justify-center p-6">
-        <div className="border-fl-border bg-fl-surface w-full max-w-lg border">
-          {/* Header */}
-          <div className="border-fl-border flex items-center justify-between border-b px-6 py-4">
-            <div className="flex items-center gap-2">
-              <span className="text-fl-label text-fl-muted-3">●</span>
-              <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
-                {t('levelTest.resultsTitle', { level: cefrLevel })}
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-6 p-8">
-            {/* Score */}
-            <div className="space-y-2 text-center">
-              <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                {t('levelTest.finalScore')}
-              </p>
-              <p className="text-fl-fg font-mono text-7xl font-bold tracking-widest">
-                {pct}%
-              </p>
-              <p className="text-fl-muted-3 font-mono text-xs">
-                {t('levelTest.correctCount', {
-                  correct: answers.filter((a) => a.correct).length,
-                  total: questions.length,
-                })}
-              </p>
-            </div>
-
-            {/* Skill breakdown */}
-            <div className="space-y-2">
-              {Object.entries(breakdown).map(([skill, v]) => {
-                const skillPct =
-                  v.total > 0 ? Math.round((v.correct / v.total) * 100) : 0
-                const isWeak = skillPct < 60
-                const label = getSkillLabel(skill)
-                return (
-                  <div key={skill} className="flex items-center gap-3">
-                    <span className="text-fl-label text-fl-muted-3 w-6 text-center font-mono uppercase">
-                      {label[0]?.toUpperCase() ?? '?'}
-                    </span>
-                    <span className="text-fl-label text-fl-muted-2 w-24 font-mono tracking-widest uppercase">
-                      {label}
-                    </span>
-                    <div className="bg-fl-border h-1.5 flex-1">
-                      <div
-                        className={`h-full transition-all ${isWeak ? 'bg-amber-500' : 'bg-fl-fg'}`}
-                        style={{ width: `${skillPct}%` }}
-                      />
-                    </div>
-                    <span
-                      className={`text-fl-label w-16 text-right font-mono ${isWeak ? 'text-amber-500' : 'text-fl-fg'}`}
-                    >
-                      {v.correct}/{v.total} ({skillPct}%)
-                      {isWeak && ' ◂'}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Recommendation */}
-            <div className="border-fl-border space-y-3 border p-6">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{rec.icon}</span>
-                <span className="text-fl-label text-fl-fg font-mono font-bold tracking-widest uppercase">
-                  {t('levelTest.result.recommendation')}: {rec.label}
-                </span>
-              </div>
-              <p className="text-fl-muted-2 font-mono text-xs leading-relaxed">
-                {rec.message}
-              </p>
-            </div>
-
-            {/* Actions */}
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => router.push(rec.nextAction)}
-                className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full py-3.5 font-mono text-sm font-bold tracking-widest uppercase transition-colors"
-              >
-                {rec.nextLabel}
-              </button>
-              <button
-                onClick={() => router.push('/plan')}
-                className="border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg w-full border py-3 font-mono text-xs tracking-widest uppercase transition-colors"
-              >
-                ← {t('levelTest.result.back')}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <LevelTestResults
+        result={result}
+        questions={questions}
+        answers={answers}
+        cefrLevel={cefrLevel}
+        getSkillLabel={getSkillLabel}
+        t={t}
+        onNavigate={(path) => router.push(path)}
+      />
     )
   }
 
@@ -401,7 +431,6 @@ export default function LevelTestPage() {
 
   const q = questions[currentIndex]
   if (!q) return
-  if (!q) return null
 
   const progress = (currentIndex / questions.length) * 100
   const skillLabel = getSkillLabel(q.skill)

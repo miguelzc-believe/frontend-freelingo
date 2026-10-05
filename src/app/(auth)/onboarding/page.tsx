@@ -44,6 +44,92 @@ function getOnboardingHeadline(
   return t(trialEligible ? 'trialHeadline' : 'trialHeadlineTrialUsed')
 }
 
+function OnboardingLanguageChoice({
+  loaded,
+  availableCodes,
+  value,
+  onChange,
+  onRetry,
+  t,
+  tCommon,
+}: Readonly<{
+  loaded: boolean
+  availableCodes: string[]
+  value: string
+  onChange: (value: string) => void
+  onRetry: () => void
+  t: ReturnType<typeof useTranslations>
+  tCommon: ReturnType<typeof useTranslations>
+}>) {
+  if (!loaded) {
+    return (
+      <div className="border-fl-border text-fl-muted-2 border px-4 py-3 font-mono text-xs tracking-widest">
+        ...
+      </div>
+    )
+  }
+  if (availableCodes.length > 0) {
+    return (
+      <TargetLanguageSelector
+        value={value}
+        onChange={onChange}
+        availableCodes={availableCodes}
+      />
+    )
+  }
+  return (
+    <div className="space-y-3 text-center">
+      <p className="text-fl-muted-2 font-mono text-xs">{t('saveFailed')}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="text-fl-label text-fl-accent font-mono text-xs tracking-widest uppercase underline"
+      >
+        {tCommon('retry')}
+      </button>
+    </div>
+  )
+}
+
+function OnboardingCheckoutLabel({
+  loading,
+  plan,
+  trialEligible,
+  locale,
+  priceMonthly,
+  yearlyCta,
+  isPrimary,
+  t,
+}: Readonly<{
+  loading: boolean
+  plan: BillingInterval
+  trialEligible: boolean
+  locale: string
+  priceMonthly: number
+  yearlyCta: ReturnType<typeof splitYearlyCta>
+  isPrimary: boolean
+  t: ReturnType<typeof useTranslations>
+}>) {
+  if (loading) return '...'
+  if (plan === 'monthly') {
+    return t(trialEligible ? 'trialCtaMonthly' : 'trialCtaMonthlyTrialUsed', {
+      price: new Intl.NumberFormat(locale).format(priceMonthly),
+    })
+  }
+  return (
+    <span className="flex flex-col items-center gap-0.5 leading-relaxed">
+      <span>{yearlyCta.main}</span>
+      {yearlyCta.savings && (
+        <span
+          className={`text-xs ${isPrimary ? 'text-fl-accent-fg' : 'text-fl-muted-3'}`}
+        >
+          {yearlyCta.savings}
+        </span>
+      )}
+    </span>
+  )
+}
+
 export default function OnboardingPage() {
   const t = useTranslations('onboarding')
   const tCommon = useTranslations('common')
@@ -230,33 +316,18 @@ export default function OnboardingPage() {
                 <label className="text-fl-muted-2 mb-3 block font-mono text-xs tracking-widest uppercase">
                   {t('chooseVariant')}
                 </label>
-                {!languagesLoaded ? (
-                  <div className="border-fl-border text-fl-muted-2 border px-4 py-3 font-mono text-xs tracking-widest">
-                    ...
-                  </div>
-                ) : availableLanguageCodes.length > 0 ? (
-                  <TargetLanguageSelector
-                    value={targetLanguage}
-                    onChange={setTargetLanguage}
-                    availableCodes={availableLanguageCodes}
-                  />
-                ) : (
-                  <div className="space-y-3 text-center">
-                    <p className="text-fl-muted-2 font-mono text-xs">
-                      {t('saveFailed')}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLanguagesLoaded(false)
-                        fetchLanguages()
-                      }}
-                      className="text-fl-label text-fl-accent font-mono text-xs tracking-widest uppercase underline"
-                    >
-                      {tCommon('retry')}
-                    </button>
-                  </div>
-                )}
+                <OnboardingLanguageChoice
+                  loaded={languagesLoaded}
+                  availableCodes={availableLanguageCodes}
+                  value={targetLanguage}
+                  onChange={setTargetLanguage}
+                  onRetry={() => {
+                    setLanguagesLoaded(false)
+                    fetchLanguages()
+                  }}
+                  t={t}
+                  tCommon={tCommon}
+                />
               </div>
               <button
                 type="submit"
@@ -383,35 +454,16 @@ export default function OnboardingPage() {
                           : 'border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2 border'
                       }`}
                     >
-                      {checkoutLoading === plan ? (
-                        '...'
-                      ) : plan === 'monthly' ? (
-                        t(
-                          trialEligible
-                            ? 'trialCtaMonthly'
-                            : 'trialCtaMonthlyTrialUsed',
-                          {
-                            price: new Intl.NumberFormat(locale).format(
-                              priceMonthly
-                            ),
-                          }
-                        )
-                      ) : (
-                        <span className="flex flex-col items-center gap-0.5 leading-relaxed">
-                          <span>{yearlyCta.main}</span>
-                          {yearlyCta.savings && (
-                            <span
-                              className={`text-xs ${
-                                isPrimary
-                                  ? 'text-fl-accent-fg'
-                                  : 'text-fl-muted-3'
-                              }`}
-                            >
-                              {yearlyCta.savings}
-                            </span>
-                          )}
-                        </span>
-                      )}
+                      <OnboardingCheckoutLabel
+                        loading={checkoutLoading === plan}
+                        plan={plan}
+                        trialEligible={trialEligible}
+                        locale={locale}
+                        priceMonthly={priceMonthly}
+                        yearlyCta={yearlyCta}
+                        isPrimary={isPrimary}
+                        t={t}
+                      />
                     </button>
                   )
                 })}

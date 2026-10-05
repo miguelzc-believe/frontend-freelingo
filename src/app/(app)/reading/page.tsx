@@ -64,6 +64,205 @@ function getOptionReviewClass(
   return 'text-fl-muted-1'
 }
 
+function areAllQuestionsAnswered(
+  exercise: ReadingExercise | null,
+  answers: Record<string, string>
+): boolean {
+  if (!exercise) return false
+  return Object.keys(answers).length === exercise.questions.length
+}
+
+function ReadingHistoryContent({
+  historyLoading,
+  history,
+  onReplay,
+  t,
+}: Readonly<{
+  historyLoading: boolean
+  history: AttemptItem[]
+  onReplay: (item: AttemptItem) => void
+  t: (key: string) => string
+}>) {
+  if (historyLoading && history.length === 0) {
+    return <PageLoading fullScreen={false} className="block p-5" />
+  }
+  if (history.length === 0) {
+    return (
+      <div className="border-fl-border bg-fl-surface border p-6 text-center">
+        <p className="text-fl-muted-3 font-mono text-xs tracking-wide">
+          {t('historyEmpty')}
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      {history.map((item) => (
+        <div
+          key={item.id}
+          className="border-fl-border bg-fl-surface border p-4"
+        >
+          <div className="mb-3 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-fl-fg truncate font-mono text-xs font-bold tracking-wide">
+                {item.exercise.topic}
+              </p>
+              <p className="text-fl-label text-fl-muted-3 mt-0.5 font-mono tracking-widest uppercase">
+                {item.exercise.level} · {item.exercise.exercise_type}
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-fl-fg font-mono text-xs font-bold">
+                {item.score}/{item.exercise.questions.length}
+              </p>
+              <p className="text-fl-label text-fl-accent font-mono">
+                +{item.xp_earned} XP
+              </p>
+            </div>
+          </div>
+          <TargetLanguageText
+            as="p"
+            languageCode={item.exercise.target_language}
+            className="text-fl-muted-2 border-fl-border mb-3 line-clamp-3 border-t pt-3"
+          >
+            {item.exercise.text}
+          </TargetLanguageText>
+          <button
+            onClick={() => onReplay(item)}
+            className="text-fl-muted-2 hover:text-fl-fg font-mono text-xs tracking-widest uppercase transition-colors"
+          >
+            {t('practiceAgain')}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ReadingResults({
+  result,
+  exercise,
+  answers,
+  isReplay,
+  targetLanguageCode,
+  loadNext,
+  loadHistory,
+  reviewPromptOpen,
+  onCloseReview,
+  t,
+}: Readonly<{
+  result: SubmitResult
+  exercise: ReadingExercise
+  answers: Record<string, string>
+  isReplay: boolean
+  targetLanguageCode: string
+  loadNext: () => void
+  loadHistory: (page: number) => void
+  reviewPromptOpen: boolean
+  onCloseReview: () => void
+  t: (key: string) => string
+}>) {
+  return (
+    <div className="mx-auto max-w-4xl space-y-5 px-4 py-6 md:px-8">
+      {/* Score card */}
+      <div className="border-fl-border bg-fl-surface border p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
+              {t('resultsLabel')}
+            </p>
+            <p className="text-fl-fg mt-1 font-mono text-2xl font-bold">
+              {result.score}/{exercise.questions.length}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
+              XP
+            </p>
+            {isReplay ? (
+              <p className="text-fl-label text-fl-muted-3 mt-1 font-mono">
+                {t('replayNoXp')}
+              </p>
+            ) : (
+              <p className="text-fl-accent mt-1 font-mono text-xl font-bold">
+                +{result.xp_earned}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Question review */}
+      <div className="space-y-3">
+        <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
+          {t('review')}
+        </p>
+        {exercise.questions.map((q) => {
+          const correctKey = result.correct_answers.find(
+            (c) => c.index === q.index
+          )?.correct
+          const userAnswer = answers[String(q.index)]
+          const isCorrect = userAnswer === correctKey
+          return (
+            <div
+              key={q.index}
+              className={`border p-4 ${
+                isCorrect
+                  ? 'border-fl-success/50 bg-fl-success/5'
+                  : 'border-fl-error-fg/50 bg-fl-error-fg/5'
+              }`}
+            >
+              <TargetLanguageText
+                as="p"
+                languageCode={targetLanguageCode}
+                className="text-fl-fg mb-3"
+              >
+                {q.index + 1}. {q.question}
+              </TargetLanguageText>
+              <div className="space-y-1">
+                {Object.entries(q.options).map(([k, v]) => (
+                  <div
+                    key={k}
+                    className={`px-3 py-1.5 ${getOptionReviewClass(k, correctKey, userAnswer, isCorrect)}`}
+                  >
+                    <span className="text-fl-label font-mono font-bold">
+                      {k}.
+                    </span>{' '}
+                    <TargetLanguageText languageCode={targetLanguageCode}>
+                      {v}
+                    </TargetLanguageText>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-3 pt-1">
+        <button
+          onClick={loadNext}
+          className="border-fl-border bg-fl-surface text-fl-fg hover:bg-fl-surface-2 flex-1 border py-3 font-mono text-sm tracking-widest uppercase transition-colors"
+        >
+          {t('nextExercise')}
+        </button>
+        <button
+          onClick={() => loadHistory(0)}
+          className="border-fl-border bg-fl-surface text-fl-muted-2 hover:text-fl-fg hover:bg-fl-surface-2 border px-4 py-3 font-mono text-xs tracking-widest uppercase transition-colors"
+        >
+          {t('viewHistory')}
+        </button>
+      </div>
+      <ReviewPrompt
+        open={reviewPromptOpen}
+        onClose={onCloseReview}
+        onSubmitted={onCloseReview}
+      />
+    </div>
+  )
+}
+
 function ReadingPage() {
   const t = useTranslations('reading')
   const tCommon = useTranslations('common')
@@ -280,9 +479,7 @@ function ReadingPage() {
     }
   }
 
-  const allAnswered = exercise
-    ? Object.keys(answers).length === exercise.questions.length
-    : false
+  const allAnswered = areAllQuestionsAnswered(exercise, answers)
   const targetLanguageCode = activeLanguage?.code ?? 'en-GB'
 
   // ── Loading ──────────────────────────────────────────────────────────────
@@ -321,62 +518,18 @@ function ReadingPage() {
           </button>
         </div>
 
-        {historyLoading && history.length === 0 ? (
-          <PageLoading fullScreen={false} className="block p-5" />
-        ) : history.length === 0 ? (
-          <div className="border-fl-border bg-fl-surface border p-6 text-center">
-            <p className="text-fl-muted-3 font-mono text-xs tracking-wide">
-              {t('historyEmpty')}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {history.map((item) => (
-              <div
-                key={item.id}
-                className="border-fl-border bg-fl-surface border p-4"
-              >
-                <div className="mb-3 flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-fl-fg truncate font-mono text-xs font-bold tracking-wide">
-                      {item.exercise.topic}
-                    </p>
-                    <p className="text-fl-label text-fl-muted-3 mt-0.5 font-mono tracking-widest uppercase">
-                      {item.exercise.level} · {item.exercise.exercise_type}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-fl-fg font-mono text-xs font-bold">
-                      {item.score}/{item.exercise.questions.length}
-                    </p>
-                    <p className="text-fl-label text-fl-accent font-mono">
-                      +{item.xp_earned} XP
-                    </p>
-                  </div>
-                </div>
-                <TargetLanguageText
-                  as="p"
-                  languageCode={item.exercise.target_language}
-                  className="text-fl-muted-2 border-fl-border mb-3 line-clamp-3 border-t pt-3"
-                >
-                  {item.exercise.text}
-                </TargetLanguageText>
-                <button
-                  onClick={() => {
-                    setExercise(item.exercise)
-                    setAnswers({})
-                    setResult(null)
-                    setIsReplay(true)
-                    setPageState('exercise')
-                  }}
-                  className="text-fl-muted-2 hover:text-fl-fg font-mono text-xs tracking-widest uppercase transition-colors"
-                >
-                  {t('practiceAgain')}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <ReadingHistoryContent
+          historyLoading={historyLoading}
+          history={history}
+          t={t}
+          onReplay={(item) => {
+            setExercise(item.exercise)
+            setAnswers({})
+            setResult(null)
+            setIsReplay(true)
+            setPageState('exercise')
+          }}
+        />
 
         <Pagination
           page={historyPage}
@@ -394,103 +547,18 @@ function ReadingPage() {
   // ── Results ───────────────────────────────────────────────────────────────
   if (pageState === 'results' && result && exercise) {
     return (
-      <div className="mx-auto max-w-4xl space-y-5 px-4 py-6 md:px-8">
-        {/* Score card */}
-        <div className="border-fl-border bg-fl-surface border p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                {t('resultsLabel')}
-              </p>
-              <p className="text-fl-fg mt-1 font-mono text-2xl font-bold">
-                {result.score}/{exercise.questions.length}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                XP
-              </p>
-              {isReplay ? (
-                <p className="text-fl-label text-fl-muted-3 mt-1 font-mono">
-                  {t('replayNoXp')}
-                </p>
-              ) : (
-                <p className="text-fl-accent mt-1 font-mono text-xl font-bold">
-                  +{result.xp_earned}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Question review */}
-        <div className="space-y-3">
-          <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-            {t('review')}
-          </p>
-          {exercise.questions.map((q) => {
-            const correctKey = result.correct_answers.find(
-              (c) => c.index === q.index
-            )?.correct
-            const userAnswer = answers[String(q.index)]
-            const isCorrect = userAnswer === correctKey
-            return (
-              <div
-                key={q.index}
-                className={`border p-4 ${
-                  isCorrect
-                    ? 'border-fl-success/50 bg-fl-success/5'
-                    : 'border-fl-error-fg/50 bg-fl-error-fg/5'
-                }`}
-              >
-                <TargetLanguageText
-                  as="p"
-                  languageCode={targetLanguageCode}
-                  className="text-fl-fg mb-3"
-                >
-                  {q.index + 1}. {q.question}
-                </TargetLanguageText>
-                <div className="space-y-1">
-                  {Object.entries(q.options).map(([k, v]) => (
-                    <div
-                      key={k}
-                      className={`px-3 py-1.5 ${getOptionReviewClass(k, correctKey, userAnswer, isCorrect)}`}
-                    >
-                      <span className="text-fl-label font-mono font-bold">
-                        {k}.
-                      </span>{' '}
-                      <TargetLanguageText languageCode={targetLanguageCode}>
-                        {v}
-                      </TargetLanguageText>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3 pt-1">
-          <button
-            onClick={loadNext}
-            className="border-fl-border bg-fl-surface text-fl-fg hover:bg-fl-surface-2 flex-1 border py-3 font-mono text-sm tracking-widest uppercase transition-colors"
-          >
-            {t('nextExercise')}
-          </button>
-          <button
-            onClick={() => loadHistory(0)}
-            className="border-fl-border bg-fl-surface text-fl-muted-2 hover:text-fl-fg hover:bg-fl-surface-2 border px-4 py-3 font-mono text-xs tracking-widest uppercase transition-colors"
-          >
-            {t('viewHistory')}
-          </button>
-        </div>
-        <ReviewPrompt
-          open={reviewPromptOpen}
-          onClose={() => setReviewPromptOpen(false)}
-          onSubmitted={() => setReviewPromptOpen(false)}
-        />
-      </div>
+      <ReadingResults
+        result={result}
+        exercise={exercise}
+        answers={answers}
+        isReplay={isReplay}
+        targetLanguageCode={targetLanguageCode}
+        loadNext={loadNext}
+        loadHistory={loadHistory}
+        reviewPromptOpen={reviewPromptOpen}
+        t={t}
+        onCloseReview={() => setReviewPromptOpen(false)}
+      />
     )
   }
 

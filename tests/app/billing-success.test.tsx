@@ -101,6 +101,38 @@ describe('BillingSuccessPage', () => {
     expect(useAuthStore.getState().user?.subscription_status).toBe('trialing')
   })
 
+  it('does not publish a late /me result after unmount', async () => {
+    let resolveMe!: (value: Response) => void
+    mockApiFetch.mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveMe = resolve
+      })
+    )
+    const { unmount } = render(<BillingSuccessPage />)
+    expect(mockApiFetch).toHaveBeenCalledTimes(1)
+    unmount()
+    await act(async () => resolveMe(jsonResponse(me('active'))))
+    expect(useAuthStore.getState().user).toBeNull()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('keeps ongoing polling after unmount without publishing user updates', async () => {
+    vi.useFakeTimers()
+    mockApiFetch.mockImplementation(() =>
+      Promise.resolve(jsonResponse(me('none')))
+    )
+    const { unmount } = render(<BillingSuccessPage />)
+    unmount()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6100)
+    })
+
+    expect(mockApiFetch).toHaveBeenCalledTimes(5)
+    expect(useAuthStore.getState().user).toBeNull()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
   it('does not show active Premium copy when /me never confirms the subscription', async () => {
     vi.useFakeTimers()
     mockApiFetch.mockImplementation(() =>
@@ -115,6 +147,8 @@ describe('BillingSuccessPage', () => {
       await vi.advanceTimersByTimeAsync(6100)
     })
 
+    expect(mockApiFetch).toHaveBeenCalledTimes(5)
+    expect(mockApiFetch).toHaveBeenNthCalledWith(5, '/api/auth/me')
     expect(screen.getByText('successPendingTitle')).toBeDefined()
     expect(screen.queryByText('successTitle')).toBeNull()
     expect(screen.queryByText('successRedirect:5')).toBeNull()

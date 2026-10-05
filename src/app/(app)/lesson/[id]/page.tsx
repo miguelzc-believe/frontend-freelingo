@@ -31,6 +31,7 @@ import { documentOccurrences } from '@/lib/document-occurrences'
 import {
   annotateAnswer,
   type FreeWriteCorrection,
+  type AnswerSegment,
 } from '@/lib/free-write-corrections'
 import {
   formatLanguageName,
@@ -90,6 +91,1393 @@ function validateExplanation(value: unknown) {
 function getLessonUnitId(lesson: LessonData | null): string | null {
   const unitId = lesson?.content?.unit_id
   return typeof unitId === 'string' && unitId ? unitId : null
+}
+
+type Translate = ReturnType<typeof useTranslations>
+type AuthoredOccurrence<T> = Readonly<{ key: string; value: T }>
+type ExplanationExample = { sentence: string; note: string }
+type ExplanationTrap = { mistake: string; fix: string }
+type ExplanationGlossaryItem = { term: string; meaning: string; note?: string }
+
+function nativeRequestLabel(
+  loading: boolean,
+  retry: boolean,
+  retryLabel: () => string,
+  requestLabel: () => string
+) {
+  if (loading) return '...'
+  if (retry) return retryLabel()
+  return requestLabel()
+}
+
+function LessonCompletionView({
+  t,
+  tCommon,
+  lesson,
+  exercises,
+  dayComplete,
+  reviewPromptOpen,
+  onCloseReviewPrompt,
+}: Readonly<{
+  t: Translate
+  tCommon: Translate
+  lesson: LessonData | null
+  exercises: readonly ExerciseItem[]
+  dayComplete: boolean
+  reviewPromptOpen: boolean
+  onCloseReviewPrompt: () => void
+}>) {
+  return (
+    <>
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 p-6">
+        <div className="border-fl-border bg-fl-surface w-full max-w-xl border px-6 py-10 text-center sm:px-10">
+          <p className="text-fl-label text-fl-muted-2 mb-4 flex items-center justify-center gap-2 font-mono tracking-widest uppercase">
+            <Check className="size-4 shrink-0" aria-hidden="true" />
+            {tCommon('complete')}
+          </p>
+          <p className="text-fl-fg font-mono text-xl font-bold tracking-widest">
+            {t('lessonDone')}
+          </p>
+          <p className="text-fl-muted-1 mt-3 font-mono text-sm">
+            {lesson?.title}
+          </p>
+          {exercises.length > 0 && (
+            <p className="text-fl-caption text-fl-muted-1 mt-4 font-mono">
+              {t('exerciseSummary', {
+                completed: exercises.filter((item) => item.score != null)
+                  .length,
+                total: exercises.length,
+              })}
+            </p>
+          )}
+          {dayComplete && (
+            <div className="border-fl-accent/30 bg-fl-accent/5 mt-6 border px-6 py-4">
+              <p className="text-fl-accent font-mono text-sm font-bold tracking-widest">
+                {t('dayComplete')}
+              </p>
+              <p className="text-fl-muted-1 mt-1 font-mono text-xs">
+                {t('dayCompleteMsg')}
+              </p>
+            </div>
+          )}
+          <div className="mt-8 flex flex-col items-center gap-4">
+            <Link
+              href="/plan"
+              className="bg-fl-fg text-fl-bg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-8 py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              {t('backToPlan')}
+            </Link>
+            <Link
+              href="/dashboard"
+              className="text-fl-muted-1 hover:text-fl-fg focus-visible:outline-fl-fg font-mono text-xs underline underline-offset-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              {tCommon('backToDashboard')}
+            </Link>
+          </div>
+        </div>
+      </div>
+      <ReviewPrompt
+        open={reviewPromptOpen}
+        onClose={onCloseReviewPrompt}
+        onSubmitted={onCloseReviewPrompt}
+      />
+    </>
+  )
+}
+
+function LessonExplanation({
+  t,
+  targetLanguageCode,
+  id,
+  lesson,
+  handleTextSelection,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  id: string
+  lesson: LessonData | null
+  handleTextSelection: ReturnType<typeof useWordSave>['handleTextSelection']
+}>) {
+  const targetExplanation = validateExplanation(lesson?.content?.explanation)
+  const explanation = targetExplanation.record
+  const explanationText = targetExplanation.text
+  return (
+    <>
+      {targetExplanation.invalid && (
+        <p role="alert" className="text-fl-error mt-4 text-sm">
+          {t('invalidExplanation')}
+        </p>
+      )}
+      {explanation && (
+        <div className="mt-4 max-w-[70ch] space-y-3">
+          {explanationText != null && (
+            <TargetLanguageText
+              as="p"
+              languageCode={targetLanguageCode}
+              className="text-fl-muted-1 word-selectable cursor-text select-text"
+              onPointerUp={() =>
+                handleTextSelection(explanationText, lesson?.cefr_level ?? 'B1')
+              }
+            >
+              {explanationText}
+            </TargetLanguageText>
+          )}
+          <LessonExplanationPoints
+            id={id}
+            explanation={explanation}
+            targetLanguageCode={targetLanguageCode}
+          />
+          <LessonExplanationExamples
+            t={t}
+            id={id}
+            explanation={explanation}
+            targetLanguageCode={targetLanguageCode}
+          />
+        </div>
+      )}
+    </>
+  )
+}
+
+function LessonExplanationPoints({
+  id,
+  explanation,
+  targetLanguageCode,
+}: Readonly<{
+  id: string
+  explanation: Record<string, unknown>
+  targetLanguageCode: string
+}>) {
+  const points = (explanation.key_points ?? []) as string[]
+  if (!points.length) return null
+  const occurrences = documentOccurrences(
+    ['lesson', id, 'explanation', 'key_points'],
+    points
+  )
+  return (
+    <ul className="border-fl-border space-y-1 border-t pt-3">
+      {occurrences.map(({ value: kp, key }) => (
+        <li key={key} className="text-fl-muted-1">
+          <span className="text-fl-muted-2 mr-2">·</span>
+          <TargetLanguageText languageCode={targetLanguageCode}>
+            {kp}
+          </TargetLanguageText>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function LessonExplanationExamples({
+  t,
+  id,
+  explanation,
+  targetLanguageCode,
+}: Readonly<{
+  t: Translate
+  id: string
+  explanation: Record<string, unknown>
+  targetLanguageCode: string
+}>) {
+  const examples = (explanation.examples ?? []) as ExplanationExample[]
+  if (!examples.length) return null
+  const occurrences = documentOccurrences(
+    ['lesson', id, 'explanation', 'examples'],
+    examples
+  )
+  return (
+    <div className="border-fl-border space-y-2 border-t pt-3">
+      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
+        {t('examples')}
+      </p>
+      {occurrences.map(({ value: ex, key }) => (
+        <div key={key} className="flex items-start gap-3">
+          <span className="text-fl-muted-3 mt-0.5">·</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <TargetLanguageText
+                languageCode={targetLanguageCode}
+                className="text-fl-muted-1 italic"
+              >
+                {ex.sentence}
+              </TargetLanguageText>
+              <AudioPlayer text={ex.sentence} size="sm" />
+            </div>
+            {ex.note && (
+              <p className="text-fl-muted-1 mt-0.5 font-sans text-sm leading-relaxed">
+                {ex.note}
+              </p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function NativeExplanationExamples({
+  t,
+  targetLanguageCode,
+  nativeExamples,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  nativeExamples: readonly AuthoredOccurrence<ExplanationExample>[]
+}>) {
+  if (!nativeExamples.length) return null
+  return (
+    <div className="space-y-2">
+      <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
+        {t('examples')}
+      </p>
+      {nativeExamples.map(({ value: ex, key }) => (
+        <div key={key} className="flex items-start gap-3">
+          <span className="text-fl-muted-3 mt-0.5 text-sm">·</span>
+          <div className="min-w-0 flex-1">
+            <TargetLanguageText
+              languageCode={targetLanguageCode}
+              className="text-fl-muted-1 text-sm italic"
+            >
+              {ex.sentence}
+            </TargetLanguageText>
+            {ex.note && (
+              <p className="text-fl-muted-1 mt-0.5 text-sm leading-relaxed">
+                {ex.note}
+              </p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function NativeExplanationTraps({
+  t,
+  nativeTraps,
+}: Readonly<{
+  t: Translate
+  nativeTraps: readonly AuthoredOccurrence<ExplanationTrap>[]
+}>) {
+  if (!nativeTraps.length) return null
+  return (
+    <div className="border-fl-border space-y-2 border-t pt-3">
+      <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
+        {t('commonTraps')}
+      </p>
+      {nativeTraps.map(({ value: trap, key }) => (
+        <div key={key} className="space-y-0.5">
+          <p className="text-fl-muted-2 text-sm">{trap.mistake}</p>
+          <p className="text-fl-muted-1 text-sm leading-relaxed">{trap.fix}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function NativeExplanationGlossary({
+  t,
+  targetLanguageCode,
+  nativeGlossary,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  nativeGlossary: readonly AuthoredOccurrence<ExplanationGlossaryItem>[]
+}>) {
+  if (!nativeGlossary.length) return null
+  return (
+    <div className="border-fl-border space-y-2 border-t pt-3">
+      <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
+        {t('miniGlossary')}
+      </p>
+      {nativeGlossary.map(({ value: item, key }) => (
+        <div key={key}>
+          <TargetLanguageText
+            languageCode={targetLanguageCode}
+            className="text-fl-muted-1 text-sm font-bold"
+          >
+            {item.term}
+          </TargetLanguageText>
+          <p className="text-fl-muted-2 text-sm">{item.meaning}</p>
+          {item.note && (
+            <p className="text-fl-muted-1 text-sm leading-relaxed">
+              {item.note}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function NativeExplanationContent({
+  t,
+  targetLanguageCode,
+  nativeExplanationText,
+  nativePoints,
+  nativeExamples,
+  nativeTraps,
+  nativeGlossary,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  nativeExplanationText: string | null
+  nativePoints: readonly AuthoredOccurrence<string>[]
+  nativeExamples: readonly AuthoredOccurrence<ExplanationExample>[]
+  nativeTraps: readonly AuthoredOccurrence<ExplanationTrap>[]
+  nativeGlossary: readonly AuthoredOccurrence<ExplanationGlossaryItem>[]
+}>) {
+  return (
+    <div className="mt-3 max-w-[70ch] space-y-3">
+      {nativeExplanationText && (
+        <p className="text-fl-muted-1 text-base leading-relaxed">
+          {nativeExplanationText}
+        </p>
+      )}
+      {nativePoints.length > 0 && (
+        <ul className="space-y-1">
+          {nativePoints.map(({ value: kp, key }) => (
+            <li key={key} className="text-fl-muted-1 text-base leading-relaxed">
+              <span className="text-fl-muted-2 mr-2">·</span>
+              {kp}
+            </li>
+          ))}
+        </ul>
+      )}
+      <NativeExplanationExamples
+        t={t}
+        targetLanguageCode={targetLanguageCode}
+        nativeExamples={nativeExamples}
+      />
+      <NativeExplanationTraps t={t} nativeTraps={nativeTraps} />
+      <NativeExplanationGlossary
+        t={t}
+        targetLanguageCode={targetLanguageCode}
+        nativeGlossary={nativeGlossary}
+      />
+    </div>
+  )
+}
+
+function NativeExplanationRequest({
+  t,
+  tCommon,
+  nativeLanguageName,
+  validatedNativeExplanation,
+  loadingNativeExplanation,
+  nativeExplanationError,
+  generateNativeExplanation,
+}: Readonly<{
+  t: Translate
+  tCommon: Translate
+  nativeLanguageName: string
+  validatedNativeExplanation: ReturnType<typeof validateExplanation>
+  loadingNativeExplanation: boolean
+  nativeExplanationError: boolean
+  generateNativeExplanation: () => void
+}>) {
+  return (
+    <div className="mt-3 text-center">
+      {validatedNativeExplanation.invalid && (
+        <p role="alert" className="text-fl-error mb-3 text-sm">
+          {t('invalidExplanation')}
+        </p>
+      )}
+      <button
+        onClick={generateNativeExplanation}
+        disabled={loadingNativeExplanation}
+        className="text-fl-hint text-fl-muted-3 hover:text-fl-fg font-mono text-sm transition-colors"
+      >
+        {nativeRequestLabel(
+          loadingNativeExplanation,
+          nativeExplanationError || validatedNativeExplanation.invalid,
+          () => tCommon('retry'),
+          () => `${t('showNativeExplanation')} ${nativeLanguageName}`
+        )}
+      </button>
+    </div>
+  )
+}
+
+function NativeExplanation({
+  t,
+  targetLanguageCode,
+  tCommon,
+  id,
+  lesson,
+  nativeLanguageName,
+  nativeExplanationOpen,
+  onToggle,
+  loadingNativeExplanation,
+  nativeExplanationError,
+  generateNativeExplanation,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  tCommon: Translate
+  id: string
+  lesson: LessonData | null
+  nativeLanguageName: string
+  nativeExplanationOpen: boolean
+  onToggle: () => void
+  loadingNativeExplanation: boolean
+  nativeExplanationError: boolean
+  generateNativeExplanation: () => void
+}>) {
+  if (!nativeLanguageName) return null
+  const validatedNativeExplanation = validateExplanation(
+    lesson?.content?.native_explanation
+  )
+  const nativeExplanation = validatedNativeExplanation.record
+  const nativeExplanationText = validatedNativeExplanation.text
+  const nativePoints = documentOccurrences(
+    ['lesson', id, 'native_explanation', 'key_points'],
+    (nativeExplanation?.key_points ?? []) as string[]
+  )
+  const nativeExamples = documentOccurrences(
+    ['lesson', id, 'native_explanation', 'examples'],
+    (nativeExplanation?.examples ?? []) as { sentence: string; note: string }[]
+  )
+  const nativeTraps = documentOccurrences(
+    ['lesson', id, 'native_explanation', 'common_traps'],
+    (nativeExplanation?.common_traps ?? []) as {
+      mistake: string
+      fix: string
+    }[]
+  )
+  const nativeGlossary = documentOccurrences(
+    ['lesson', id, 'native_explanation', 'mini_glossary'],
+    (nativeExplanation?.mini_glossary ?? []) as {
+      term: string
+      meaning: string
+      note?: string
+    }[]
+  )
+  return (
+    <div className="border-fl-border mt-4 border-t pt-4">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="text-fl-label text-fl-muted-3 hover:text-fl-fg flex w-full items-center justify-between font-mono tracking-widest uppercase transition-colors"
+        aria-expanded={nativeExplanationOpen}
+      >
+        <span>{nativeLanguageName}</span>
+        <span>{nativeExplanationOpen ? '−' : '+'}</span>
+      </button>
+      {nativeExplanationOpen &&
+        (nativeExplanation ? (
+          <NativeExplanationContent
+            t={t}
+            targetLanguageCode={targetLanguageCode}
+            nativeExplanationText={nativeExplanationText}
+            nativePoints={nativePoints}
+            nativeExamples={nativeExamples}
+            nativeTraps={nativeTraps}
+            nativeGlossary={nativeGlossary}
+          />
+        ) : (
+          <NativeExplanationRequest
+            t={t}
+            tCommon={tCommon}
+            nativeLanguageName={nativeLanguageName}
+            validatedNativeExplanation={validatedNativeExplanation}
+            loadingNativeExplanation={loadingNativeExplanation}
+            nativeExplanationError={nativeExplanationError}
+            generateNativeExplanation={generateNativeExplanation}
+          />
+        ))}
+    </div>
+  )
+}
+
+function lessonTypeLabel(lessonType: string | undefined, tPlan: Translate) {
+  if (!lessonType) return ''
+  const labels: Record<string, string> = {
+    grammar: tPlan('lessonTypes.grammar'),
+    vocabulary: tPlan('lessonTypes.vocabulary'),
+    reading: tPlan('lessonTypes.reading'),
+    writing: tPlan('lessonTypes.writing'),
+    listening: tPlan('lessonTypes.listening'),
+    review: tPlan('lessonTypes.review'),
+    level_test: tPlan('lessonTypes.level_test'),
+  }
+  return labels[lessonType] ?? lessonType
+}
+
+function LessonNativeHint({
+  t,
+  tCommon,
+  exercise,
+  nativeLanguageName,
+  isEvaluated,
+  isNativeHintOpen,
+  loadingExerciseNativeHintId,
+  exerciseNativeHintErrorId,
+  showExerciseNativeHint,
+}: Readonly<{
+  t: Translate
+  tCommon: Translate
+  exercise: ExerciseItem
+  nativeLanguageName: string
+  isEvaluated: boolean
+  isNativeHintOpen: boolean
+  loadingExerciseNativeHintId: number | null
+  exerciseNativeHintErrorId: number | null
+  showExerciseNativeHint: (id: number) => void
+}>) {
+  if (!nativeLanguageName) return null
+  if (isEvaluated && !(isNativeHintOpen && exercise.native_hint)) return null
+  return (
+    <div className="border-fl-border bg-fl-bg border px-4 py-3">
+      {isNativeHintOpen && exercise.native_hint ? (
+        <div className="space-y-2">
+          <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest">
+            {t('hint')}
+          </p>
+          <p className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed">
+            {exercise.native_hint}
+          </p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => showExerciseNativeHint(exercise.id)}
+          disabled={loadingExerciseNativeHintId === exercise.id}
+          className="text-fl-hint text-fl-muted-3 hover:text-fl-fg font-mono text-sm transition-colors disabled:opacity-50"
+        >
+          {nativeRequestLabel(
+            loadingExerciseNativeHintId === exercise.id,
+            exerciseNativeHintErrorId === exercise.id,
+            () => tCommon('retry'),
+            () => `${t('showNativeHint')} ${nativeLanguageName}`
+          )}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function LessonMultipleChoiceOption({
+  t,
+  targetLanguageCode,
+  opt,
+  exercise,
+  answer,
+  isEvaluated,
+  isReview,
+  onAnswerChange,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  opt: string
+  exercise: ExerciseItem
+  answer: string
+  isEvaluated: boolean
+  isReview: boolean
+  onAnswerChange: (answer: string) => void
+}>) {
+  const isSelected = answer === opt
+  const isCorrect = isEvaluated && opt === exercise.correct_answer
+  const isWrongSelection = isEvaluated && isSelected && !isCorrect
+  return (
+    <button
+      key={opt}
+      disabled={isEvaluated || isReview}
+      onClick={() => onAnswerChange(opt)}
+      className={`flex w-full items-center justify-between gap-3 border px-4 py-3 text-left transition-colors disabled:opacity-100 ${optionClass(
+        isCorrect,
+        isWrongSelection,
+        isSelected
+      )}`}
+    >
+      <TargetLanguageText
+        languageCode={targetLanguageCode}
+        className="min-w-0 flex-1"
+      >
+        {opt}
+      </TargetLanguageText>
+      {isCorrect && (
+        <span
+          role="img"
+          aria-label={t('correct')}
+          className="text-fl-success shrink-0"
+        >
+          <Check className="size-4" aria-hidden="true" />
+        </span>
+      )}
+      {isWrongSelection && (
+        <span
+          role="img"
+          aria-label={t('incorrect')}
+          className="text-fl-error-fg shrink-0"
+        >
+          <X className="size-4" aria-hidden="true" />
+        </span>
+      )}
+    </button>
+  )
+}
+
+function LessonMultipleChoiceInput({
+  t,
+  targetLanguageCode,
+  exercise,
+  answer,
+  isEvaluated,
+  isReview,
+  onAnswerChange,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  exercise: ExerciseItem
+  answer: string
+  isEvaluated: boolean
+  isReview: boolean
+  onAnswerChange: (answer: string) => void
+}>) {
+  return (
+    <div className="space-y-2">
+      {exercise.options!.map((opt) => (
+        <LessonMultipleChoiceOption
+          key={opt}
+          t={t}
+          targetLanguageCode={targetLanguageCode}
+          opt={opt}
+          exercise={exercise}
+          answer={answer}
+          isEvaluated={isEvaluated}
+          isReview={isReview}
+          onAnswerChange={onAnswerChange}
+        />
+      ))}
+    </div>
+  )
+}
+
+function optionClass(
+  isCorrect: boolean,
+  isWrongSelection: boolean,
+  isSelected: boolean
+) {
+  if (isCorrect) return 'text-fl-fg border-fl-success/50 bg-fl-success/5'
+  if (isWrongSelection)
+    return 'text-fl-fg border-fl-error-fg/50 bg-fl-error-fg/5'
+  if (isSelected) return 'border-fl-accent bg-fl-accent text-fl-accent-fg'
+  return 'border-fl-border text-fl-muted-1 hover:border-fl-border-2 hover:text-fl-fg'
+}
+
+function LessonPronunciationInput({
+  tCommon,
+  targetLanguageCode,
+  exercise,
+  lesson,
+  isEvaluated,
+  isReview,
+  evaluating,
+  submitAnswer,
+}: Readonly<{
+  tCommon: Translate
+  targetLanguageCode: string
+  exercise: ExerciseItem
+  lesson: LessonData | null
+  isEvaluated: boolean
+  isReview: boolean
+  evaluating: boolean
+  submitAnswer: (answer?: string) => void
+}>) {
+  return (
+    <div className="space-y-4">
+      {/* Target phrase + listen button */}
+      <div className="border-fl-border bg-fl-bg flex flex-wrap items-center gap-3 border px-4 py-4">
+        <TargetLanguageText
+          languageCode={targetLanguageCode}
+          className="text-fl-fg flex-1 font-bold"
+        >
+          {exercise.correct_answer}
+        </TargetLanguageText>
+        <AudioPlayer text={exercise.correct_answer} size="md" />
+      </div>
+      {exercise.options?.[0] && (
+        <TargetLanguageText
+          as="p"
+          languageCode={targetLanguageCode}
+          className="text-fl-muted-1"
+        >
+          {exercise.options[0]}
+        </TargetLanguageText>
+      )}
+      {!isEvaluated && !isReview && lesson && (
+        <VoiceRecorder
+          studyPlanId={lesson.study_plan_id}
+          onTranscription={(text) => submitAnswer(text)}
+          maxSeconds={8}
+          disabled={evaluating}
+        />
+      )}
+      {evaluating && (
+        <p className="text-fl-hint text-fl-muted-3 animate-pulse font-mono tracking-widest uppercase">
+          {tCommon('checking')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function answerBorderClass(
+  isAnswerCorrect: boolean,
+  isPartiallyCorrect: boolean
+) {
+  if (isAnswerCorrect) return 'border-fl-success/50'
+  if (isPartiallyCorrect) return 'border-fl-warning/50'
+  return 'border-fl-error-fg/50'
+}
+
+function answerStatusLabel(
+  t: Translate,
+  isAnswerCorrect: boolean,
+  isPartiallyCorrect: boolean
+) {
+  if (isAnswerCorrect) return t('correct')
+  if (isPartiallyCorrect) return t('corrections')
+  return t('incorrect')
+}
+
+function answerStatusClass(
+  isAnswerCorrect: boolean,
+  isPartiallyCorrect: boolean
+) {
+  if (isAnswerCorrect) return 'text-fl-success'
+  if (isPartiallyCorrect) return 'text-fl-warning'
+  return 'text-fl-error-fg'
+}
+
+function AnswerStatusIcon({
+  isAnswerCorrect,
+  isPartiallyCorrect,
+}: Readonly<{
+  isAnswerCorrect: boolean
+  isPartiallyCorrect: boolean
+}>) {
+  if (isAnswerCorrect) return <Check className="size-4" aria-hidden="true" />
+  if (isPartiallyCorrect) return <Diff className="size-4" aria-hidden="true" />
+  return <X className="size-4" aria-hidden="true" />
+}
+
+function LessonFreeWriteInput({
+  t,
+  targetLanguageCode,
+  id,
+  exercise,
+  answer,
+  isEvaluated,
+  isReview,
+  isAnswerCorrect,
+  isPartiallyCorrect,
+  showAnnotatedAnswer,
+  answerSegments,
+  onAnswerChange,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  id: string
+  exercise: ExerciseItem
+  answer: string
+  isEvaluated: boolean
+  isReview: boolean
+  isAnswerCorrect: boolean
+  isPartiallyCorrect: boolean
+  showAnnotatedAnswer: boolean
+  answerSegments: readonly AnswerSegment[] | null
+  onAnswerChange: (answer: string) => void
+}>) {
+  return (
+    <div className="relative">
+      {showAnnotatedAnswer && answerSegments ? (
+        <div
+          className={cn(
+            getTargetLanguageTextClass(targetLanguageCode),
+            'bg-fl-bg text-fl-fg min-h-[90px] w-full border px-4 py-3 pr-10 whitespace-pre-wrap',
+            answerBorderClass(isAnswerCorrect, isPartiallyCorrect)
+          )}
+        >
+          {answerSegments.map((segment) =>
+            segment.type === 'plain' ? (
+              <span
+                key={JSON.stringify([
+                  id,
+                  exercise.id,
+                  'answer',
+                  segment.start,
+                  segment.end,
+                ])}
+              >
+                {segment.text}
+              </span>
+            ) : (
+              <span
+                key={JSON.stringify([
+                  id,
+                  exercise.id,
+                  'answer',
+                  segment.start,
+                  segment.end,
+                ])}
+              >
+                <del className="text-fl-error-fg decoration-fl-error-fg/70 line-through">
+                  {segment.original}
+                </del>{' '}
+                <ins className="text-fl-success decoration-fl-success/70 font-semibold">
+                  {segment.corrected}
+                </ins>
+              </span>
+            )
+          )}
+        </div>
+      ) : (
+        <textarea
+          className={cn(
+            getTargetLanguageTextClass(targetLanguageCode),
+            'bg-fl-bg border-fl-border text-fl-fg placeholder:text-fl-muted-4 focus:border-fl-border-2 min-h-[90px] w-full resize-y border px-4 py-3 transition-colors focus:outline-none disabled:opacity-100',
+            isEvaluated && 'pr-10',
+            isEvaluated &&
+              answerBorderClass(isAnswerCorrect, isPartiallyCorrect)
+          )}
+          placeholder={t('yourAnswer')}
+          value={answer}
+          onChange={(e) => onAnswerChange(e.target.value)}
+          disabled={isEvaluated || isReview}
+        />
+      )}
+      {isEvaluated && (
+        <span
+          role="img"
+          aria-label={answerStatusLabel(t, isAnswerCorrect, isPartiallyCorrect)}
+          className={`absolute top-3 right-3 ${answerStatusClass(
+            isAnswerCorrect,
+            isPartiallyCorrect
+          )}`}
+        >
+          <AnswerStatusIcon
+            isAnswerCorrect={isAnswerCorrect}
+            isPartiallyCorrect={isPartiallyCorrect}
+          />
+        </span>
+      )}
+    </div>
+  )
+}
+
+function exerciseAnswerFeedback(id: string, exercise: ExerciseItem) {
+  const isEvaluated = exercise?.score !== null
+  const isAnswerCorrect = (exercise?.score ?? 0) >= 1
+  const correctionOccurrences = documentOccurrences(
+    ['lesson', id, 'exercise', String(exercise.id), 'corrections'],
+    exercise.corrections ?? []
+  ).filter(({ value }) => value.original && value.corrected)
+  const exerciseCorrections = correctionOccurrences.map(({ value }) => value)
+  // Amber only when the evaluator returned corrections with a partial score.
+  // The LLM-unavailable fallback (score 0.5, no corrections) stays red/✕.
+  const isPartiallyCorrect =
+    exercise?.exercise_type === 'free_write' &&
+    isEvaluated &&
+    !isAnswerCorrect &&
+    (exercise?.score ?? 0) > 0 &&
+    exerciseCorrections.length > 0
+  const answerSegments =
+    exercise?.exercise_type === 'free_write' &&
+    isEvaluated &&
+    exercise?.user_answer &&
+    exerciseCorrections.length > 0
+      ? annotateAnswer(exercise.user_answer, exerciseCorrections)
+      : null
+  const showAnnotatedAnswer = !!answerSegments?.some(
+    (segment) => segment.type === 'fix'
+  )
+  return {
+    isAnswerCorrect,
+    isPartiallyCorrect,
+    answerSegments,
+    showAnnotatedAnswer,
+  }
+}
+
+function LessonAnswerInput(
+  props: Readonly<{
+    t: Translate
+    tCommon: Translate
+    targetLanguageCode: string
+    id: string
+    exercise: ExerciseItem
+    lesson: LessonData | null
+    answer: string
+    isEvaluated: boolean
+    isReview: boolean
+    evaluating: boolean
+    onAnswerChange: (answer: string) => void
+    submitAnswer: (answer?: string) => void
+  }>
+) {
+  const { exercise } = props
+  const hasMultipleChoiceOptions =
+    exercise.exercise_type === 'multiple_choice' &&
+    Array.isArray(exercise.options) &&
+    exercise.options.length > 0
+  if (hasMultipleChoiceOptions) return <LessonMultipleChoiceInput {...props} />
+  if (exercise.exercise_type === 'pronunciation')
+    return <LessonPronunciationInput {...props} />
+  const feedback = exerciseAnswerFeedback(props.id, exercise)
+  return <LessonFreeWriteInput {...props} {...feedback} />
+}
+
+function LessonCorrections({
+  t,
+  targetLanguageCode,
+  id,
+  exercise,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  id: string
+  exercise: ExerciseItem
+}>) {
+  const correctionOccurrences = documentOccurrences(
+    ['lesson', id, 'exercise', String(exercise.id), 'corrections'],
+    exercise.corrections ?? []
+  ).filter(({ value }) => value.original && value.corrected)
+  if (!correctionOccurrences.length) return null
+  return (
+    <div className="border-fl-border border px-4 py-4">
+      <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
+        {t('corrections')}
+      </p>
+      <ul className="space-y-3">
+        {correctionOccurrences.map(({ value: correction, key }) => (
+          <li key={key}>
+            <p className={getTargetLanguageTextClass(targetLanguageCode)}>
+              <del className="text-fl-error-fg decoration-fl-error-fg/70 line-through">
+                {correction.original}
+              </del>
+              <span className="text-fl-muted-3"> → </span>
+              <ins className="text-fl-success decoration-fl-success/70 font-semibold">
+                {correction.corrected}
+              </ins>
+            </p>
+            {correction.explanation && (
+              <p className="text-fl-muted-2 mt-1 text-sm">
+                {correction.explanation}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ExerciseNativeExplanation({
+  t,
+  tCommon,
+  exercise,
+  nativeLanguageName,
+  loadingExerciseNativeExplanationId,
+  exerciseNativeExplanationErrorId,
+  generateExerciseNativeExplanation,
+}: Readonly<{
+  t: Translate
+  tCommon: Translate
+  exercise: ExerciseItem
+  nativeLanguageName: string
+  loadingExerciseNativeExplanationId: number | null
+  exerciseNativeExplanationErrorId: number | null
+  generateExerciseNativeExplanation: (id: number) => void
+}>) {
+  return (
+    <>
+      {exercise.native_explanation && nativeLanguageName && (
+        <div className="border-fl-border mt-4 border-t pt-4">
+          <p className="text-fl-label text-fl-muted-3 mb-2 font-mono tracking-widest uppercase">
+            {nativeLanguageName}
+          </p>
+          <p className="text-fl-muted-1 max-w-[70ch] text-base leading-relaxed">
+            {exercise.native_explanation}
+          </p>
+        </div>
+      )}
+      {!exercise.native_explanation && nativeLanguageName && (
+        <div className="border-fl-border mt-4 border-t pt-4 text-center">
+          <button
+            type="button"
+            onClick={() => generateExerciseNativeExplanation(exercise.id)}
+            disabled={loadingExerciseNativeExplanationId === exercise.id}
+            className="text-fl-hint text-fl-muted-3 hover:text-fl-fg font-mono text-sm transition-colors disabled:opacity-50"
+          >
+            {nativeRequestLabel(
+              loadingExerciseNativeExplanationId === exercise.id,
+              exerciseNativeExplanationErrorId === exercise.id,
+              () => tCommon('retry'),
+              () => `${t('showNativeExplanation')} ${nativeLanguageName}`
+            )}
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
+function LessonFeedbackExplanation({
+  t,
+  targetLanguageCode,
+  tCommon,
+  exercise,
+  nativeLanguageName,
+  loadingExerciseNativeExplanationId,
+  exerciseNativeExplanationErrorId,
+  generateExerciseNativeExplanation,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  tCommon: Translate
+  exercise: ExerciseItem
+  nativeLanguageName: string
+  loadingExerciseNativeExplanationId: number | null
+  exerciseNativeExplanationErrorId: number | null
+  generateExerciseNativeExplanation: (id: number) => void
+}>) {
+  if (!exercise.explanation) return null
+  return (
+    <div className="border-fl-border border px-4 py-4">
+      <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
+        {t('explanation')}
+      </p>
+      <TargetLanguageText
+        as="p"
+        languageCode={targetLanguageCode}
+        className="text-fl-muted-1 max-w-[70ch]"
+      >
+        {exercise.explanation}
+      </TargetLanguageText>
+      <ExerciseNativeExplanation
+        t={t}
+        tCommon={tCommon}
+        exercise={exercise}
+        nativeLanguageName={nativeLanguageName}
+        loadingExerciseNativeExplanationId={loadingExerciseNativeExplanationId}
+        exerciseNativeExplanationErrorId={exerciseNativeExplanationErrorId}
+        generateExerciseNativeExplanation={generateExerciseNativeExplanation}
+      />
+    </div>
+  )
+}
+
+function LessonNextAction({
+  t,
+  tCommon,
+  hasNextExercise,
+  isReview,
+  freemiumExhausted,
+  completingLesson,
+  nextExercise,
+  onBackToPlan,
+  completeLessonHandler,
+}: Readonly<{
+  t: Translate
+  tCommon: Translate
+  hasNextExercise: boolean
+  isReview: boolean
+  freemiumExhausted: boolean | null
+  completingLesson: boolean
+  nextExercise: () => void
+  onBackToPlan: () => void
+  completeLessonHandler: () => void
+}>) {
+  if (hasNextExercise) {
+    return (
+      <button
+        onClick={nextExercise}
+        className="border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2 border px-6 py-2 font-mono text-xs tracking-widest uppercase transition-colors"
+      >
+        {tCommon('next')} →
+      </button>
+    )
+  }
+  if (isReview) {
+    return (
+      <button
+        onClick={onBackToPlan}
+        className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 px-6 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors"
+      >
+        {t('backToPlan')}
+      </button>
+    )
+  }
+  if (freemiumExhausted) return <PaywallBanner feature="lessons" compact />
+  return (
+    <button
+      onClick={completeLessonHandler}
+      disabled={completingLesson}
+      className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 px-6 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {t('completeLesson')}
+    </button>
+  )
+}
+
+function LessonFeedback({
+  t,
+  targetLanguageCode,
+  tCommon,
+  id,
+  exercise,
+  nativeLanguageName,
+  loadingExerciseNativeExplanationId,
+  exerciseNativeExplanationErrorId,
+  generateExerciseNativeExplanation,
+  hasNextExercise,
+  isReview,
+  freemiumExhausted,
+  completingLesson,
+  nextExercise,
+  onBackToPlan,
+  completeLessonHandler,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  tCommon: Translate
+  id: string
+  exercise: ExerciseItem
+  nativeLanguageName: string
+  loadingExerciseNativeExplanationId: number | null
+  exerciseNativeExplanationErrorId: number | null
+  generateExerciseNativeExplanation: (id: number) => void
+  hasNextExercise: boolean
+  isReview: boolean
+  freemiumExhausted: boolean | null
+  completingLesson: boolean
+  nextExercise: () => void
+  onBackToPlan: () => void
+  completeLessonHandler: () => void
+}>) {
+  return (
+    <div className="space-y-4">
+      {exercise.feedback && (
+        <div className="border-fl-border border px-4 py-4">
+          <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
+            {t('feedback')}
+          </p>
+          <TargetLanguageText
+            as="p"
+            languageCode={targetLanguageCode}
+            className="text-fl-muted-1 max-w-[70ch]"
+          >
+            {exercise.feedback}
+          </TargetLanguageText>
+        </div>
+      )}
+      <LessonCorrections
+        t={t}
+        id={id}
+        exercise={exercise}
+        targetLanguageCode={targetLanguageCode}
+      />
+      <LessonFeedbackExplanation
+        t={t}
+        tCommon={tCommon}
+        exercise={exercise}
+        targetLanguageCode={targetLanguageCode}
+        nativeLanguageName={nativeLanguageName}
+        loadingExerciseNativeExplanationId={loadingExerciseNativeExplanationId}
+        exerciseNativeExplanationErrorId={exerciseNativeExplanationErrorId}
+        generateExerciseNativeExplanation={generateExerciseNativeExplanation}
+      />
+      <div className="flex items-center gap-4">
+        <div className="border-fl-border border px-4 py-2">
+          <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
+            {tCommon('score')}{' '}
+          </span>
+          <span className="text-fl-fg font-mono text-sm font-bold">
+            {exercise.score !== null
+              ? Math.round((exercise.score ?? 0) * 100) + '%'
+              : 'N/A'}
+          </span>
+        </div>
+        <LessonNextAction
+          t={t}
+          tCommon={tCommon}
+          hasNextExercise={hasNextExercise}
+          isReview={isReview}
+          freemiumExhausted={freemiumExhausted}
+          completingLesson={completingLesson}
+          nextExercise={nextExercise}
+          onBackToPlan={onBackToPlan}
+          completeLessonHandler={completeLessonHandler}
+        />
+      </div>
+    </div>
+  )
+}
+
+function LessonSubmitAction({
+  t,
+  tCommon,
+  tError,
+  exercise,
+  evaluating,
+  answer,
+  submitError,
+  submitAnswer,
+}: Readonly<{
+  t: Translate
+  tCommon: Translate
+  tError: Translate
+  exercise: ExerciseItem
+  evaluating: boolean
+  answer: string
+  submitError: boolean
+  submitAnswer: (answer?: string) => void
+}>) {
+  if (exercise.exercise_type === 'pronunciation') return null
+  return (
+    <>
+      <button
+        onClick={() => submitAnswer()}
+        disabled={evaluating || !answer.trim()}
+        className="bg-fl-fg text-fl-bg hover:bg-fl-fg/90 focus-visible:outline-fl-fg w-full py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-40"
+      >
+        {evaluating ? tCommon('checking') : t('submitAnswer')}
+      </button>
+      {submitError && (
+        <p className="text-fl-error font-mono text-xs">{tError('title')}</p>
+      )}
+    </>
+  )
+}
+
+function LessonVocabularyItemView({
+  targetLanguageCode,
+  item,
+}: Readonly<{
+  targetLanguageCode: string
+  item: LessonVocabularyItem
+}>) {
+  return (
+    <div className="border-fl-border border px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {item.word && (
+            <TargetLanguageText
+              as="p"
+              languageCode={targetLanguageCode}
+              className="text-fl-fg font-semibold"
+              reading={item.reading}
+            >
+              {item.word}
+            </TargetLanguageText>
+          )}
+          {item.translation && (
+            <p className="text-fl-muted-2 mt-1 text-sm">{item.translation}</p>
+          )}
+        </div>
+        {item.example && <AudioPlayer text={item.example} size="sm" />}
+      </div>
+      {item.definition && (
+        <TargetLanguageText
+          as="p"
+          languageCode={targetLanguageCode}
+          className="text-fl-muted-1"
+        >
+          {item.definition}
+        </TargetLanguageText>
+      )}
+      {item.example && (
+        <div className="border-fl-border mt-3 border-t pt-3">
+          <TargetLanguageText
+            as="p"
+            languageCode={targetLanguageCode}
+            className="text-fl-muted-2 italic"
+          >
+            {item.example}
+          </TargetLanguageText>
+          {item.example_translation && (
+            <p className="text-fl-hint text-fl-muted-3 mt-1 text-sm">
+              {item.example_translation}
+            </p>
+          )}
+        </div>
+      )}
+      {item.note && (
+        <p className="text-fl-hint text-fl-muted-3 mt-3 text-sm">{item.note}</p>
+      )}
+    </div>
+  )
+}
+
+function LessonVocabulary({
+  t,
+  targetLanguageCode,
+  id,
+  lesson,
+}: Readonly<{
+  t: Translate
+  targetLanguageCode: string
+  id: string
+  lesson: LessonData | null
+}>) {
+  const vocabItems = (lesson?.content?.vocabulary ??
+    []) as LessonVocabularyItem[]
+  if (!vocabItems.length) return null
+  return (
+    <div className="border-fl-border bg-fl-surface border p-5">
+      <p className="text-fl-label text-fl-muted-2 mb-3 font-mono tracking-widest uppercase">
+        {t('vocabulary')}
+      </p>
+      <div className="space-y-3">
+        {documentOccurrences(['lesson', id, 'vocabulary'], vocabItems).map(
+          ({ value: item, key }) => (
+            <LessonVocabularyItemView
+              key={key}
+              targetLanguageCode={targetLanguageCode}
+              item={item}
+            />
+          )
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LessonRelatedGrammar({
+  t,
+  lesson,
+  grammarTopics,
+}: Readonly<{
+  t: Translate
+  lesson: LessonData | null
+  grammarTopics: readonly GrammarTopic[]
+}>) {
+  const grammarRefs = (lesson?.content?.grammar_refs ?? []) as string[]
+  if (!grammarRefs.length) return null
+  return (
+    <div className="border-fl-border bg-fl-surface border p-5">
+      <p className="text-fl-label text-fl-muted-2 mb-3 font-mono tracking-widest uppercase">
+        {t('relatedGrammar')}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {grammarRefs.map((slug) => {
+          const topic = grammarTopics.find((t) => t.slug === slug)
+          if (!topic) return null
+          return (
+            <Link
+              key={slug}
+              href={`/grammar/${slug}`}
+              className="border-fl-border text-fl-label text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg border px-3 py-1.5 font-mono tracking-widest uppercase transition-colors"
+            >
+              ● {topic.title}
+            </Link>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 export default function LessonPage() {
@@ -501,133 +1889,23 @@ export default function LessonPage() {
 
   if (completed) {
     return (
-      <>
-        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 p-6">
-          <div className="border-fl-border bg-fl-surface w-full max-w-xl border px-6 py-10 text-center sm:px-10">
-            <p className="text-fl-label text-fl-muted-2 mb-4 flex items-center justify-center gap-2 font-mono tracking-widest uppercase">
-              <Check className="size-4 shrink-0" aria-hidden="true" />
-              {tCommon('complete')}
-            </p>
-            <p className="text-fl-fg font-mono text-xl font-bold tracking-widest">
-              {t('lessonDone')}
-            </p>
-            <p className="text-fl-muted-1 mt-3 font-mono text-sm">
-              {lesson?.title}
-            </p>
-            {exercises.length > 0 && (
-              <p className="text-fl-caption text-fl-muted-1 mt-4 font-mono">
-                {t('exerciseSummary', {
-                  completed: exercises.filter((item) => item.score != null)
-                    .length,
-                  total: exercises.length,
-                })}
-              </p>
-            )}
-            {dayComplete && (
-              <div className="border-fl-accent/30 bg-fl-accent/5 mt-6 border px-6 py-4">
-                <p className="text-fl-accent font-mono text-sm font-bold tracking-widest">
-                  {t('dayComplete')}
-                </p>
-                <p className="text-fl-muted-1 mt-1 font-mono text-xs">
-                  {t('dayCompleteMsg')}
-                </p>
-              </div>
-            )}
-            <div className="mt-8 flex flex-col items-center gap-4">
-              <Link
-                href="/plan"
-                className="bg-fl-fg text-fl-bg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-8 py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                {t('backToPlan')}
-              </Link>
-              <Link
-                href="/dashboard"
-                className="text-fl-muted-1 hover:text-fl-fg focus-visible:outline-fl-fg font-mono text-xs underline underline-offset-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                {tCommon('backToDashboard')}
-              </Link>
-            </div>
-          </div>
-        </div>
-        <ReviewPrompt
-          open={reviewPromptOpen}
-          onClose={() => setReviewPromptOpen(false)}
-          onSubmitted={() => setReviewPromptOpen(false)}
-        />
-      </>
+      <LessonCompletionView
+        t={t}
+        tCommon={tCommon}
+        lesson={lesson}
+        exercises={exercises}
+        dayComplete={dayComplete}
+        reviewPromptOpen={reviewPromptOpen}
+        onCloseReviewPrompt={() => setReviewPromptOpen(false)}
+      />
     )
   }
 
   const exercise = exercises[currentExercise]
   if (!exercise) return
   const isEvaluated = exercise?.score !== null
-  const isAnswerCorrect = (exercise?.score ?? 0) >= 1
-  const correctionOccurrences = documentOccurrences(
-    ['lesson', id, 'exercise', String(exercise.id), 'corrections'],
-    exercise.corrections ?? []
-  ).filter(({ value }) => value.original && value.corrected)
-  const exerciseCorrections = correctionOccurrences.map(({ value }) => value)
-  // Amber only when the evaluator returned corrections with a partial score.
-  // The LLM-unavailable fallback (score 0.5, no corrections) stays red/✕.
-  const isPartiallyCorrect =
-    exercise?.exercise_type === 'free_write' &&
-    isEvaluated &&
-    !isAnswerCorrect &&
-    (exercise?.score ?? 0) > 0 &&
-    exerciseCorrections.length > 0
-  const answerSegments =
-    exercise?.exercise_type === 'free_write' &&
-    isEvaluated &&
-    exercise?.user_answer &&
-    exerciseCorrections.length > 0
-      ? annotateAnswer(exercise.user_answer, exerciseCorrections)
-      : null
-  const showAnnotatedAnswer = !!answerSegments?.some((s) => s.type === 'fix')
-  const isNativeHintOpen = exercise ? openNativeHintIds.has(exercise.id) : false
-  const hasMultipleChoiceOptions =
-    exercise?.exercise_type === 'multiple_choice' &&
-    Array.isArray(exercise.options) &&
-    exercise.options.length > 0
+
   const targetLanguageCode = activeLanguage?.code ?? 'en-GB'
-  const targetExplanation = validateExplanation(lesson?.content?.explanation)
-  const validatedNativeExplanation = validateExplanation(
-    lesson?.content?.native_explanation
-  )
-  const explanation = targetExplanation.record
-  const explanationText = targetExplanation.text
-  const nativeExplanation = validatedNativeExplanation.record
-  const nativeExplanationText = validatedNativeExplanation.text
-  const explanationPoints = documentOccurrences(
-    ['lesson', id, 'explanation', 'key_points'],
-    (explanation?.key_points ?? []) as string[]
-  )
-  const explanationExamples = documentOccurrences(
-    ['lesson', id, 'explanation', 'examples'],
-    (explanation?.examples ?? []) as { sentence: string; note: string }[]
-  )
-  const nativePoints = documentOccurrences(
-    ['lesson', id, 'native_explanation', 'key_points'],
-    (nativeExplanation?.key_points ?? []) as string[]
-  )
-  const nativeExamples = documentOccurrences(
-    ['lesson', id, 'native_explanation', 'examples'],
-    (nativeExplanation?.examples ?? []) as { sentence: string; note: string }[]
-  )
-  const nativeTraps = documentOccurrences(
-    ['lesson', id, 'native_explanation', 'common_traps'],
-    (nativeExplanation?.common_traps ?? []) as {
-      mistake: string
-      fix: string
-    }[]
-  )
-  const nativeGlossary = documentOccurrences(
-    ['lesson', id, 'native_explanation', 'mini_glossary'],
-    (nativeExplanation?.mini_glossary ?? []) as {
-      term: string
-      meaning: string
-      note?: string
-    }[]
-  )
 
   return (
     <>
@@ -647,19 +1925,7 @@ export default function LessonPage() {
                 {lesson?.cefr_level}
               </span>
               <span className="text-fl-hint text-fl-muted-2 border-fl-border border px-2 py-1 font-mono tracking-widest uppercase">
-                {lesson?.lesson_type
-                  ? ((
-                      {
-                        grammar: tPlan('lessonTypes.grammar'),
-                        vocabulary: tPlan('lessonTypes.vocabulary'),
-                        reading: tPlan('lessonTypes.reading'),
-                        writing: tPlan('lessonTypes.writing'),
-                        listening: tPlan('lessonTypes.listening'),
-                        review: tPlan('lessonTypes.review'),
-                        level_test: tPlan('lessonTypes.level_test'),
-                      } as Record<string, string>
-                    )[lesson.lesson_type] ?? lesson.lesson_type)
-                  : ''}
+                {lessonTypeLabel(lesson?.lesson_type, tPlan)}
               </span>
               <button
                 onClick={() =>
@@ -676,214 +1942,27 @@ export default function LessonPage() {
             <p className="text-fl-fg font-mono text-base font-bold tracking-wide">
               {lesson?.title}
             </p>
-            {targetExplanation.invalid && (
-              <p role="alert" className="text-fl-error mt-4 text-sm">
-                {t('invalidExplanation')}
-              </p>
-            )}
-            {explanation && (
-              <div className="mt-4 max-w-[70ch] space-y-3">
-                {explanationText != null && (
-                  <TargetLanguageText
-                    as="p"
-                    languageCode={targetLanguageCode}
-                    className="text-fl-muted-1 word-selectable cursor-text select-text"
-                    onPointerUp={() =>
-                      handleTextSelection(
-                        explanationText,
-                        lesson?.cefr_level ?? 'B1'
-                      )
-                    }
-                  >
-                    {explanationText}
-                  </TargetLanguageText>
-                )}
-                {(explanation.key_points as string[])?.length > 0 && (
-                  <ul className="border-fl-border space-y-1 border-t pt-3">
-                    {explanationPoints.map(({ value: kp, key }) => (
-                      <li key={key} className="text-fl-muted-1">
-                        <span className="text-fl-muted-2 mr-2">·</span>
-                        <TargetLanguageText languageCode={targetLanguageCode}>
-                          {kp}
-                        </TargetLanguageText>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {(explanation.examples as { sentence: string; note: string }[])
-                  ?.length > 0 && (
-                  <div className="border-fl-border space-y-2 border-t pt-3">
-                    <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                      {t('examples')}
-                    </p>
-                    {explanationExamples.map(({ value: ex, key }) => (
-                      <div key={key} className="flex items-start gap-3">
-                        <span className="text-fl-muted-3 mt-0.5">·</span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <TargetLanguageText
-                              languageCode={targetLanguageCode}
-                              className="text-fl-muted-1 italic"
-                            >
-                              {ex.sentence}
-                            </TargetLanguageText>
-                            <AudioPlayer text={ex.sentence} size="sm" />
-                          </div>
-                          {ex.note && (
-                            <p className="text-fl-muted-1 mt-0.5 font-sans text-sm leading-relaxed">
-                              {ex.note}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <LessonExplanation
+              t={t}
+              id={id}
+              lesson={lesson}
+              targetLanguageCode={targetLanguageCode}
+              handleTextSelection={handleTextSelection}
+            />
             {/* Native explanation */}
-            {nativeLanguageName && (
-              <div className="border-fl-border mt-4 border-t pt-4">
-                <button
-                  type="button"
-                  onClick={() => setNativeExplanationOpen((open) => !open)}
-                  className="text-fl-label text-fl-muted-3 hover:text-fl-fg flex w-full items-center justify-between font-mono tracking-widest uppercase transition-colors"
-                  aria-expanded={nativeExplanationOpen}
-                >
-                  <span>{nativeLanguageName}</span>
-                  <span>{nativeExplanationOpen ? '−' : '+'}</span>
-                </button>
-                {nativeExplanationOpen &&
-                  (nativeExplanation ? (
-                    <div className="mt-3 max-w-[70ch] space-y-3">
-                      {nativeExplanationText && (
-                        <p className="text-fl-muted-1 text-base leading-relaxed">
-                          {nativeExplanationText}
-                        </p>
-                      )}
-                      {(nativeExplanation.key_points as string[])?.length >
-                        0 && (
-                        <ul className="space-y-1">
-                          {nativePoints.map(({ value: kp, key }) => (
-                            <li
-                              key={key}
-                              className="text-fl-muted-1 text-base leading-relaxed"
-                            >
-                              <span className="text-fl-muted-2 mr-2">·</span>
-                              {kp}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {(
-                        nativeExplanation.examples as {
-                          sentence: string
-                          note: string
-                        }[]
-                      )?.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
-                            {t('examples')}
-                          </p>
-                          {nativeExamples.map(({ value: ex, key }) => (
-                            <div key={key} className="flex items-start gap-3">
-                              <span className="text-fl-muted-3 mt-0.5 text-sm">
-                                ·
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <TargetLanguageText
-                                  languageCode={targetLanguageCode}
-                                  className="text-fl-muted-1 text-sm italic"
-                                >
-                                  {ex.sentence}
-                                </TargetLanguageText>
-                                {ex.note && (
-                                  <p className="text-fl-muted-1 mt-0.5 text-sm leading-relaxed">
-                                    {ex.note}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {(
-                        nativeExplanation.common_traps as {
-                          mistake: string
-                          fix: string
-                        }[]
-                      )?.length > 0 && (
-                        <div className="border-fl-border space-y-2 border-t pt-3">
-                          <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
-                            {t('commonTraps')}
-                          </p>
-                          {nativeTraps.map(({ value: trap, key }) => (
-                            <div key={key} className="space-y-0.5">
-                              <p className="text-fl-muted-2 text-sm">
-                                {trap.mistake}
-                              </p>
-                              <p className="text-fl-muted-1 text-sm leading-relaxed">
-                                {trap.fix}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {(
-                        nativeExplanation.mini_glossary as {
-                          term: string
-                          meaning: string
-                          note?: string
-                        }[]
-                      )?.length > 0 && (
-                        <div className="border-fl-border space-y-2 border-t pt-3">
-                          <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
-                            {t('miniGlossary')}
-                          </p>
-                          {nativeGlossary.map(({ value: item, key }) => (
-                            <div key={key}>
-                              <TargetLanguageText
-                                languageCode={targetLanguageCode}
-                                className="text-fl-muted-1 text-sm font-bold"
-                              >
-                                {item.term}
-                              </TargetLanguageText>
-                              <p className="text-fl-muted-2 text-sm">
-                                {item.meaning}
-                              </p>
-                              {item.note && (
-                                <p className="text-fl-muted-1 text-sm leading-relaxed">
-                                  {item.note}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="mt-3 text-center">
-                      {validatedNativeExplanation.invalid && (
-                        <p role="alert" className="text-fl-error mb-3 text-sm">
-                          {t('invalidExplanation')}
-                        </p>
-                      )}
-                      <button
-                        onClick={generateNativeExplanation}
-                        disabled={loadingNativeExplanation}
-                        className="text-fl-hint text-fl-muted-3 hover:text-fl-fg font-mono text-sm transition-colors"
-                      >
-                        {loadingNativeExplanation
-                          ? '...'
-                          : nativeExplanationError ||
-                              validatedNativeExplanation.invalid
-                            ? tCommon('retry')
-                            : `${t('showNativeExplanation')} ${nativeLanguageName}`}
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            )}
+            <NativeExplanation
+              t={t}
+              tCommon={tCommon}
+              id={id}
+              lesson={lesson}
+              targetLanguageCode={targetLanguageCode}
+              nativeLanguageName={nativeLanguageName}
+              nativeExplanationOpen={nativeExplanationOpen}
+              onToggle={() => setNativeExplanationOpen((open) => !open)}
+              loadingNativeExplanation={loadingNativeExplanation}
+              nativeExplanationError={nativeExplanationError}
+              generateNativeExplanation={generateNativeExplanation}
+            />
           </div>
         </div>
 
@@ -953,473 +2032,88 @@ export default function LessonPage() {
                 </p>
               )}
 
-              {nativeLanguageName &&
-                (!isEvaluated ||
-                  (isNativeHintOpen && exercise.native_hint)) && (
-                  <div className="border-fl-border bg-fl-bg border px-4 py-3">
-                    {isNativeHintOpen && exercise.native_hint ? (
-                      <div className="space-y-2">
-                        <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest">
-                          {t('hint')}
-                        </p>
-                        <p className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed">
-                          {exercise.native_hint}
-                        </p>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => showExerciseNativeHint(exercise.id)}
-                        disabled={loadingExerciseNativeHintId === exercise.id}
-                        className="text-fl-hint text-fl-muted-3 hover:text-fl-fg font-mono text-sm transition-colors disabled:opacity-50"
-                      >
-                        {loadingExerciseNativeHintId === exercise.id
-                          ? '...'
-                          : exerciseNativeHintErrorId === exercise.id
-                            ? tCommon('retry')
-                            : `${t('showNativeHint')} ${nativeLanguageName}`}
-                      </button>
-                    )}
-                  </div>
-                )}
+              <LessonNativeHint
+                t={t}
+                tCommon={tCommon}
+                exercise={exercise}
+                nativeLanguageName={nativeLanguageName}
+                isEvaluated={isEvaluated}
+                isNativeHintOpen={openNativeHintIds.has(exercise.id)}
+                loadingExerciseNativeHintId={loadingExerciseNativeHintId}
+                exerciseNativeHintErrorId={exerciseNativeHintErrorId}
+                showExerciseNativeHint={showExerciseNativeHint}
+              />
 
-              {hasMultipleChoiceOptions ? (
-                <div className="space-y-2">
-                  {exercise.options!.map((opt) => {
-                    const isSelected = answer === opt
-                    const isCorrect =
-                      isEvaluated && opt === exercise.correct_answer
-                    const isWrongSelection =
-                      isEvaluated && isSelected && !isCorrect
-                    return (
-                      <button
-                        key={opt}
-                        disabled={isEvaluated || isReview}
-                        onClick={() => setAnswer(opt)}
-                        className={`flex w-full items-center justify-between gap-3 border px-4 py-3 text-left transition-colors disabled:opacity-100 ${
-                          isCorrect
-                            ? 'text-fl-fg border-fl-success/50 bg-fl-success/5'
-                            : isWrongSelection
-                              ? 'text-fl-fg border-fl-error-fg/50 bg-fl-error-fg/5'
-                              : isSelected
-                                ? 'border-fl-accent bg-fl-accent text-fl-accent-fg'
-                                : 'border-fl-border text-fl-muted-1 hover:border-fl-border-2 hover:text-fl-fg'
-                        }`}
-                      >
-                        <TargetLanguageText
-                          languageCode={targetLanguageCode}
-                          className="min-w-0 flex-1"
-                        >
-                          {opt}
-                        </TargetLanguageText>
-                        {isCorrect && (
-                          <span
-                            role="img"
-                            aria-label={t('correct')}
-                            className="text-fl-success shrink-0"
-                          >
-                            <Check className="size-4" aria-hidden="true" />
-                          </span>
-                        )}
-                        {isWrongSelection && (
-                          <span
-                            role="img"
-                            aria-label={t('incorrect')}
-                            className="text-fl-error-fg shrink-0"
-                          >
-                            <X className="size-4" aria-hidden="true" />
-                          </span>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              ) : exercise.exercise_type === 'pronunciation' ? (
-                <div className="space-y-4">
-                  {/* Target phrase + listen button */}
-                  <div className="border-fl-border bg-fl-bg flex flex-wrap items-center gap-3 border px-4 py-4">
-                    <TargetLanguageText
-                      languageCode={targetLanguageCode}
-                      className="text-fl-fg flex-1 font-bold"
-                    >
-                      {exercise.correct_answer}
-                    </TargetLanguageText>
-                    <AudioPlayer text={exercise.correct_answer} size="md" />
-                  </div>
-                  {exercise.options?.[0] && (
-                    <TargetLanguageText
-                      as="p"
-                      languageCode={targetLanguageCode}
-                      className="text-fl-muted-1"
-                    >
-                      {exercise.options[0]}
-                    </TargetLanguageText>
-                  )}
-                  {!isEvaluated && !isReview && lesson && (
-                    <VoiceRecorder
-                      studyPlanId={lesson.study_plan_id}
-                      onTranscription={(text) => submitAnswer(text)}
-                      maxSeconds={8}
-                      disabled={evaluating}
-                    />
-                  )}
-                  {evaluating && (
-                    <p className="text-fl-hint text-fl-muted-3 animate-pulse font-mono tracking-widest uppercase">
-                      {tCommon('checking')}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="relative">
-                  {showAnnotatedAnswer && answerSegments ? (
-                    <div
-                      className={cn(
-                        getTargetLanguageTextClass(targetLanguageCode),
-                        'bg-fl-bg text-fl-fg min-h-[90px] w-full border px-4 py-3 pr-10 whitespace-pre-wrap',
-                        isAnswerCorrect
-                          ? 'border-fl-success/50'
-                          : isPartiallyCorrect
-                            ? 'border-fl-warning/50'
-                            : 'border-fl-error-fg/50'
-                      )}
-                    >
-                      {answerSegments.map((segment) =>
-                        segment.type === 'plain' ? (
-                          <span
-                            key={JSON.stringify([
-                              id,
-                              exercise.id,
-                              'answer',
-                              segment.start,
-                              segment.end,
-                            ])}
-                          >
-                            {segment.text}
-                          </span>
-                        ) : (
-                          <span
-                            key={JSON.stringify([
-                              id,
-                              exercise.id,
-                              'answer',
-                              segment.start,
-                              segment.end,
-                            ])}
-                          >
-                            <del className="text-fl-error-fg decoration-fl-error-fg/70 line-through">
-                              {segment.original}
-                            </del>{' '}
-                            <ins className="text-fl-success decoration-fl-success/70 font-semibold">
-                              {segment.corrected}
-                            </ins>
-                          </span>
-                        )
-                      )}
-                    </div>
-                  ) : (
-                    <textarea
-                      className={cn(
-                        getTargetLanguageTextClass(targetLanguageCode),
-                        'bg-fl-bg border-fl-border text-fl-fg placeholder:text-fl-muted-4 focus:border-fl-border-2 min-h-[90px] w-full resize-y border px-4 py-3 transition-colors focus:outline-none disabled:opacity-100',
-                        isEvaluated && 'pr-10',
-                        isEvaluated &&
-                          (isAnswerCorrect
-                            ? 'border-fl-success/50'
-                            : isPartiallyCorrect
-                              ? 'border-fl-warning/50'
-                              : 'border-fl-error-fg/50')
-                      )}
-                      placeholder={t('yourAnswer')}
-                      value={answer}
-                      onChange={(e) => setAnswer(e.target.value)}
-                      disabled={isEvaluated || isReview}
-                    />
-                  )}
-                  {isEvaluated && (
-                    <span
-                      role="img"
-                      aria-label={
-                        isAnswerCorrect
-                          ? t('correct')
-                          : isPartiallyCorrect
-                            ? t('corrections')
-                            : t('incorrect')
-                      }
-                      className={`absolute top-3 right-3 ${
-                        isAnswerCorrect
-                          ? 'text-fl-success'
-                          : isPartiallyCorrect
-                            ? 'text-fl-warning'
-                            : 'text-fl-error-fg'
-                      }`}
-                    >
-                      {isAnswerCorrect ? (
-                        <Check className="size-4" aria-hidden="true" />
-                      ) : isPartiallyCorrect ? (
-                        <Diff className="size-4" aria-hidden="true" />
-                      ) : (
-                        <X className="size-4" aria-hidden="true" />
-                      )}
-                    </span>
-                  )}
-                </div>
-              )}
+              <LessonAnswerInput
+                t={t}
+                tCommon={tCommon}
+                targetLanguageCode={targetLanguageCode}
+                id={id}
+                exercise={exercise}
+                lesson={lesson}
+                answer={answer}
+                isEvaluated={isEvaluated}
+                isReview={isReview}
+                evaluating={evaluating}
+                onAnswerChange={setAnswer}
+                submitAnswer={submitAnswer}
+              />
 
               {!isEvaluated && !isReview ? (
-                exercise.exercise_type !== 'pronunciation' ? (
-                  <>
-                    <button
-                      onClick={() => submitAnswer()}
-                      disabled={evaluating || !answer.trim()}
-                      className="bg-fl-fg text-fl-bg hover:bg-fl-fg/90 focus-visible:outline-fl-fg w-full py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-40"
-                    >
-                      {evaluating ? tCommon('checking') : t('submitAnswer')}
-                    </button>
-                    {submitError && (
-                      <p className="text-fl-error font-mono text-xs">
-                        {tError('title')}
-                      </p>
-                    )}
-                  </>
-                ) : null
+                <LessonSubmitAction
+                  t={t}
+                  tCommon={tCommon}
+                  tError={tError}
+                  exercise={exercise}
+                  evaluating={evaluating}
+                  answer={answer}
+                  submitError={submitError}
+                  submitAnswer={submitAnswer}
+                />
               ) : (
-                <div className="space-y-4">
-                  {exercise.feedback && (
-                    <div className="border-fl-border border px-4 py-4">
-                      <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
-                        {t('feedback')}
-                      </p>
-                      <TargetLanguageText
-                        as="p"
-                        languageCode={targetLanguageCode}
-                        className="text-fl-muted-1 max-w-[70ch]"
-                      >
-                        {exercise.feedback}
-                      </TargetLanguageText>
-                    </div>
-                  )}
-                  {exerciseCorrections.length > 0 && (
-                    <div className="border-fl-border border px-4 py-4">
-                      <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
-                        {t('corrections')}
-                      </p>
-                      <ul className="space-y-3">
-                        {correctionOccurrences.map(
-                          ({ value: correction, key }) => (
-                            <li key={key}>
-                              <p
-                                className={getTargetLanguageTextClass(
-                                  targetLanguageCode
-                                )}
-                              >
-                                <del className="text-fl-error-fg decoration-fl-error-fg/70 line-through">
-                                  {correction.original}
-                                </del>
-                                <span className="text-fl-muted-3"> → </span>
-                                <ins className="text-fl-success decoration-fl-success/70 font-semibold">
-                                  {correction.corrected}
-                                </ins>
-                              </p>
-                              {correction.explanation && (
-                                <p className="text-fl-muted-2 mt-1 text-sm">
-                                  {correction.explanation}
-                                </p>
-                              )}
-                            </li>
-                          )
-                        )}
-                      </ul>
-                    </div>
-                  )}
-                  {exercise.explanation && (
-                    <div className="border-fl-border border px-4 py-4">
-                      <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
-                        {t('explanation')}
-                      </p>
-                      <TargetLanguageText
-                        as="p"
-                        languageCode={targetLanguageCode}
-                        className="text-fl-muted-1 max-w-[70ch]"
-                      >
-                        {exercise.explanation}
-                      </TargetLanguageText>
-                      {exercise.native_explanation && nativeLanguageName && (
-                        <div className="border-fl-border mt-4 border-t pt-4">
-                          <p className="text-fl-label text-fl-muted-3 mb-2 font-mono tracking-widest uppercase">
-                            {nativeLanguageName}
-                          </p>
-                          <p className="text-fl-muted-1 max-w-[70ch] text-base leading-relaxed">
-                            {exercise.native_explanation}
-                          </p>
-                        </div>
-                      )}
-                      {!exercise.native_explanation && nativeLanguageName && (
-                        <div className="border-fl-border mt-4 border-t pt-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              generateExerciseNativeExplanation(exercise.id)
-                            }
-                            disabled={
-                              loadingExerciseNativeExplanationId === exercise.id
-                            }
-                            className="text-fl-hint text-fl-muted-3 hover:text-fl-fg font-mono text-sm transition-colors disabled:opacity-50"
-                          >
-                            {loadingExerciseNativeExplanationId === exercise.id
-                              ? '...'
-                              : exerciseNativeExplanationErrorId === exercise.id
-                                ? tCommon('retry')
-                                : `${t('showNativeExplanation')} ${nativeLanguageName}`}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-4">
-                    <div className="border-fl-border border px-4 py-2">
-                      <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
-                        {tCommon('score')}{' '}
-                      </span>
-                      <span className="text-fl-fg font-mono text-sm font-bold">
-                        {exercise.score !== null
-                          ? Math.round((exercise.score ?? 0) * 100) + '%'
-                          : 'N/A'}
-                      </span>
-                    </div>
-                    {currentExercise < exercises.length - 1 ? (
-                      <button
-                        onClick={nextExercise}
-                        className="border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2 border px-6 py-2 font-mono text-xs tracking-widest uppercase transition-colors"
-                      >
-                        {tCommon('next')} →
-                      </button>
-                    ) : isReview ? (
-                      <button
-                        onClick={() => router.push('/plan')}
-                        className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 px-6 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors"
-                      >
-                        {t('backToPlan')}
-                      </button>
-                    ) : freemiumExhausted ? (
-                      <PaywallBanner feature="lessons" compact />
-                    ) : (
-                      <button
-                        onClick={completeLessonHandler}
-                        disabled={completingLesson}
-                        className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 px-6 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {t('completeLesson')}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <LessonFeedback
+                  t={t}
+                  tCommon={tCommon}
+                  id={id}
+                  exercise={exercise}
+                  targetLanguageCode={targetLanguageCode}
+                  nativeLanguageName={nativeLanguageName}
+                  loadingExerciseNativeExplanationId={
+                    loadingExerciseNativeExplanationId
+                  }
+                  exerciseNativeExplanationErrorId={
+                    exerciseNativeExplanationErrorId
+                  }
+                  generateExerciseNativeExplanation={
+                    generateExerciseNativeExplanation
+                  }
+                  hasNextExercise={currentExercise < exercises.length - 1}
+                  isReview={isReview}
+                  freemiumExhausted={freemiumExhausted}
+                  completingLesson={completingLesson}
+                  nextExercise={nextExercise}
+                  onBackToPlan={() => router.push('/plan')}
+                  completeLessonHandler={completeLessonHandler}
+                />
               )}
             </div>
           </div>
         )}
 
         {/* Vocabulary */}
-        {(() => {
-          const vocabItems = (lesson?.content?.vocabulary ??
-            []) as LessonVocabularyItem[]
-          if (!vocabItems.length) return null
-          return (
-            <div className="border-fl-border bg-fl-surface border p-5">
-              <p className="text-fl-label text-fl-muted-2 mb-3 font-mono tracking-widest uppercase">
-                {t('vocabulary')}
-              </p>
-              <div className="space-y-3">
-                {documentOccurrences(
-                  ['lesson', id, 'vocabulary'],
-                  vocabItems
-                ).map(({ value: item, key }) => (
-                  <div key={key} className="border-fl-border border px-4 py-3">
-                    <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        {item.word && (
-                          <TargetLanguageText
-                            as="p"
-                            languageCode={targetLanguageCode}
-                            className="text-fl-fg font-semibold"
-                            reading={item.reading}
-                          >
-                            {item.word}
-                          </TargetLanguageText>
-                        )}
-                        {item.translation && (
-                          <p className="text-fl-muted-2 mt-1 text-sm">
-                            {item.translation}
-                          </p>
-                        )}
-                      </div>
-                      {item.example && (
-                        <AudioPlayer text={item.example} size="sm" />
-                      )}
-                    </div>
-                    {item.definition && (
-                      <TargetLanguageText
-                        as="p"
-                        languageCode={targetLanguageCode}
-                        className="text-fl-muted-1"
-                      >
-                        {item.definition}
-                      </TargetLanguageText>
-                    )}
-                    {item.example && (
-                      <div className="border-fl-border mt-3 border-t pt-3">
-                        <TargetLanguageText
-                          as="p"
-                          languageCode={targetLanguageCode}
-                          className="text-fl-muted-2 italic"
-                        >
-                          {item.example}
-                        </TargetLanguageText>
-                        {item.example_translation && (
-                          <p className="text-fl-hint text-fl-muted-3 mt-1 text-sm">
-                            {item.example_translation}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {item.note && (
-                      <p className="text-fl-hint text-fl-muted-3 mt-3 text-sm">
-                        {item.note}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })()}
+        <LessonVocabulary
+          t={t}
+          id={id}
+          lesson={lesson}
+          targetLanguageCode={targetLanguageCode}
+        />
 
         {/* Related Grammar */}
-        {(() => {
-          const grammarRefs = (lesson?.content?.grammar_refs ?? []) as string[]
-          if (!grammarRefs.length) return null
-          return (
-            <div className="border-fl-border bg-fl-surface border p-5">
-              <p className="text-fl-label text-fl-muted-2 mb-3 font-mono tracking-widest uppercase">
-                {t('relatedGrammar')}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {grammarRefs.map((slug) => {
-                  const topic = grammarTopics.find((t) => t.slug === slug)
-                  if (!topic) return null
-                  return (
-                    <Link
-                      key={slug}
-                      href={`/grammar/${slug}`}
-                      className="border-fl-border text-fl-label text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg border px-3 py-1.5 font-mono tracking-widest uppercase transition-colors"
-                    >
-                      ● {topic.title}
-                    </Link>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })()}
+        <LessonRelatedGrammar
+          t={t}
+          lesson={lesson}
+          grammarTopics={grammarTopics}
+        />
       </div>
 
       <ConfirmDialog

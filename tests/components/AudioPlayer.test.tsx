@@ -166,6 +166,63 @@ describe('AudioPlayer', () => {
     )
   })
 
+  it.each([null, 'cached-token'])(
+    'fetches cached audio with credentials and optional auth %s without a TTS payload',
+    async (token) => {
+      useAuthStore.setState({ accessToken: token })
+      fetchMock.mockResolvedValueOnce(makeOkResponse())
+      render(
+        <AudioPlayer
+          text="Not synthesized"
+          audioUrl="/api/audio/cached"
+          voice="nova"
+        />
+      )
+      fireEvent.click(screen.getByRole('button'))
+      await waitFor(() =>
+        expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      )
+      const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('/api/audio/cached')
+      expect(options.credentials).toBe('include')
+      expect(options.signal).toBeInstanceOf(AbortSignal)
+      expect(options.method).toBeUndefined()
+      expect(options.body).toBeUndefined()
+      expect(options.headers).toEqual(
+        token ? { Authorization: `Bearer ${token}` } : {}
+      )
+    }
+  )
+
+  it('aborts a pending TTS request at 15 seconds and recovers after 2 seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      fetchMock.mockImplementation(
+        (_url: string, options: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            options.signal?.addEventListener('abort', () =>
+              reject(new DOMException('Aborted', 'AbortError'))
+            )
+          })
+      )
+      render(<AudioPlayer text="Hello" />)
+      fireEvent.click(screen.getByRole('button'))
+      const signal = (fetchMock.mock.calls[0]![1] as RequestInit).signal!
+      await act(() => vi.advanceTimersByTimeAsync(14_999))
+      expect(signal.aborted).toBe(false)
+      expect(screen.getByText(LOADING)).toBeDefined()
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(signal.aborted).toBe(true)
+      expect(screen.getByText(ERROR)).toBeDefined()
+      await act(() => vi.advanceTimersByTimeAsync(1999))
+      expect(screen.getByText(ERROR)).toBeDefined()
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(screen.getByText(PLAY)).toBeDefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('sends a cryptographically generated X-TTS-Trace-ID header', async () => {
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
       '123e4567-e89b-12d3-a456-426614174000'

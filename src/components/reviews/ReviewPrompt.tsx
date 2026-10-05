@@ -211,6 +211,35 @@ export function ReviewPrompt({
     onClose()
   }
 
+  let content: React.ReactNode
+  if (checking) {
+    content = (
+      <div className="px-5 py-5">
+        <div className="text-fl-muted-2 flex items-center gap-2 font-mono text-xs">
+          <Loader2 className="size-4 animate-spin" /> {t('checking')}
+        </div>
+      </div>
+    )
+  } else if (statusCheckFailed) {
+    content = (
+      <div className="px-5 py-5">
+        <p className="text-fl-error-fg font-mono text-xs">{error}</p>
+      </div>
+    )
+  } else {
+    content = (
+      <ReviewForm
+        onCancel={handleCancel}
+        onSubmit={async (data) => {
+          const review = await createReview(data)
+          onSubmitted?.(review)
+          onClose()
+          return review
+        }}
+      />
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
       <div className="border-fl-border bg-fl-surface w-full max-w-md border shadow-2xl">
@@ -233,27 +262,7 @@ export function ReviewPrompt({
           </button>
         </div>
 
-        {checking ? (
-          <div className="px-5 py-5">
-            <div className="text-fl-muted-2 flex items-center gap-2 font-mono text-xs">
-              <Loader2 className="size-4 animate-spin" /> {t('checking')}
-            </div>
-          </div>
-        ) : statusCheckFailed ? (
-          <div className="px-5 py-5">
-            <p className="text-fl-error-fg font-mono text-xs">{error}</p>
-          </div>
-        ) : (
-          <ReviewForm
-            onCancel={handleCancel}
-            onSubmit={async (data) => {
-              const review = await createReview(data)
-              onSubmitted?.(review)
-              onClose()
-              return review
-            }}
-          />
-        )}
+        {content}
       </div>
     </div>
   )

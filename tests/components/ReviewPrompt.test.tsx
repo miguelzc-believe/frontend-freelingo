@@ -123,6 +123,40 @@ describe('ReviewPrompt', () => {
     )
   })
 
+  it('preserves the review form node, focus and draft while submission is pending', async () => {
+    let resolveCreate!: (review: { id: number; rating: number }) => void
+    mockCreateReview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve
+      })
+    )
+    const onClose = vi.fn()
+    const { rerender } = render(<ReviewPrompt open onClose={onClose} />)
+    await screen.findByText('Rating required')
+    const comment = screen.getByLabelText('Comment optional')
+    const rating = screen.getByLabelText('4 out of 5 stars')
+    fireEvent.click(rating)
+    fireEvent.change(comment, { target: { value: 'My draft' } })
+    comment.focus()
+    fireEvent.click(screen.getByText('Submit'))
+    await waitFor(() =>
+      expect(mockCreateReview).toHaveBeenCalledWith({
+        rating: 4,
+        comment: 'My draft',
+      })
+    )
+
+    rerender(<ReviewPrompt open onClose={onClose} />)
+
+    expect(screen.getByLabelText('Comment optional')).toBe(comment)
+    expect(comment).toHaveValue('My draft')
+    expect(comment).toHaveFocus()
+    expect(rating).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('Submit')).toBeDisabled()
+    await act(async () => resolveCreate({ id: 1, rating: 4 }))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('cancel stores dismissal and does not call backend create', async () => {
     const onClose = vi.fn()
     render(<ReviewPrompt open onClose={onClose} />)

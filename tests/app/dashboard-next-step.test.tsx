@@ -32,12 +32,13 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/components/tour/OnboardingTour', () => ({ default: () => null }))
 vi.mock('@/components/whats-new/WhatsNew', () => ({ default: () => null }))
 vi.mock('@/components/billing/SubscriptionPlanButtons', () => ({
-  default: () => null,
+  SubscriptionPlanButtons: () => <div>subscriptionPlans</div>,
 }))
 
 import DashboardPage from '@/app/(app)/dashboard/page'
 import { useConfigStore } from '@/store/config'
 import { useProgressStore } from '@/store/progress'
+import { useAuthStore } from '@/store/auth'
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -90,7 +91,9 @@ describe('dashboard end-of-plan next step', () => {
     useConfigStore.setState({
       stripeEnabled: false,
       dashboardBanner: null,
+      freemiumTrialEnabled: true,
     })
+    useAuthStore.setState({ user: null })
     useProgressStore.setState({
       streak: 0,
       xp: 0,
@@ -414,6 +417,82 @@ describe('dashboard end-of-plan next step', () => {
         .every((link) => link.getAttribute('href') === '/plan')
     ).toBe(true)
   })
+
+  it.each([
+    {
+      name: 'eligible trial',
+      status: 'none' as const,
+      trialUsed: false,
+      activeTrial: false,
+      title: 'premiumBannerTitle',
+      description: 'premiumBannerDesc',
+      cta: 'premiumBannerCta',
+    },
+    {
+      name: 'used trial',
+      status: 'none' as const,
+      trialUsed: true,
+      activeTrial: false,
+      title: 'premiumBannerTitle',
+      description: 'premiumBannerDescTrialUsed',
+      cta: 'premiumBannerCtaTrialUsed',
+    },
+    {
+      name: 'payment recovery',
+      status: 'past_due' as const,
+      trialUsed: false,
+      activeTrial: false,
+      title: 'premiumBannerPastDueTitle',
+      description: 'premiumBannerPastDueDesc',
+      cta: 'premiumBannerPastDueCta',
+    },
+    {
+      name: 'active freemium trial takes precedence over recovery',
+      status: 'past_due' as const,
+      trialUsed: false,
+      activeTrial: true,
+      title: 'freemiumTrialTitle',
+      description: 'freemiumTrialDesc',
+      cta: null,
+    },
+  ])(
+    'preserves premium banner precedence for $name',
+    async ({ status, trialUsed, activeTrial, title, description, cta }) => {
+      useConfigStore.setState({ stripeEnabled: true })
+      useAuthStore.setState({
+        user: {
+          id: 1,
+          username: 'learner',
+          displayName: 'Learner',
+          role: 'user',
+          conversation_max_duration: 30,
+          conversation_inactivity_timeout: 3,
+          subscription_status: status,
+          trial_used: trialUsed,
+          freemium_trial_ends_at: activeTrial
+            ? new Date(Date.now() + 86400000).toISOString()
+            : null,
+        },
+      })
+      mockToday(todayPayload({}))
+      render(<DashboardPage />)
+      expect(await screen.findByText(title)).toBeInTheDocument()
+      expect(screen.getByText(description)).toBeInTheDocument()
+      if (cta) expect(screen.getByText(cta)).toBeInTheDocument()
+      if (activeTrial) {
+        expect(screen.queryByText('subscriptionPlans')).not.toBeInTheDocument()
+        expect(
+          screen.queryByRole('button', { name: 'updatePayment' })
+        ).not.toBeInTheDocument()
+      } else if (status === 'past_due') {
+        expect(
+          screen.getByRole('button', { name: 'updatePayment' })
+        ).toBeEnabled()
+      } else {
+        expect(screen.getByText('subscriptionPlans')).toBeInTheDocument()
+      }
+    }
+  )
 
   it('shows an empty day after the progress request fails', async () => {
     mockApiFetch.mockImplementation((url: string) =>

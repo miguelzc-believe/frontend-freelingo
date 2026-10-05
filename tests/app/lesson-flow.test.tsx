@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import spanishMessages from '../../messages/es.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
   fetchStatus: vi.fn(),
   dismissTooltip: vi.fn(),
   handleTextSelection: vi.fn(),
+  translations: vi.fn((key: string) =>
+    key === 'invalidExplanation'
+      ? spanishMessages.lesson.invalidExplanation
+      : key
+  ),
 }))
 
 vi.mock('@/lib/navigation', () => ({
@@ -21,10 +26,7 @@ vi.mock('@/components/ui/app-link', () => ({
   ),
 }))
 vi.mock('use-intl', () => ({
-  useTranslations: () => (key: string) =>
-    key === 'invalidExplanation'
-      ? spanishMessages.lesson.invalidExplanation
-      : key,
+  useTranslations: () => mocks.translations,
   useLocale: () => 'en',
 }))
 vi.mock('@/lib/api', () => ({ apiFetch: mocks.apiFetch }))
@@ -61,7 +63,30 @@ vi.mock('@/components/billing/FreemiumQuotaBanner', () => ({
   FreemiumQuotaBanner: () => null,
 }))
 vi.mock('@/components/ui/AudioPlayer', () => ({ AudioPlayer: () => null }))
-vi.mock('@/components/ui/VoiceRecorder', () => ({ VoiceRecorder: () => null }))
+vi.mock('@/components/ui/VoiceRecorder', () => ({
+  VoiceRecorder: ({
+    studyPlanId,
+    maxSeconds,
+    disabled,
+    onTranscription,
+  }: {
+    studyPlanId: number
+    maxSeconds: number
+    disabled: boolean
+    onTranscription: (text: string) => void
+  }) => (
+    <div data-testid="voice-recorder" data-study-plan={studyPlanId}>
+      <input aria-label="recording draft" />
+      <button
+        disabled={disabled}
+        data-max-seconds={maxSeconds}
+        onClick={() => onTranscription('Recorded answer')}
+      >
+        transcribe
+      </button>
+    </div>
+  ),
+}))
 vi.mock('@/components/ui/confirm-dialog', () => ({ ConfirmDialog: () => null }))
 vi.mock('@/components/ui/WordTooltip', () => ({
   WordTooltip: () => null,
@@ -155,6 +180,7 @@ describe('LessonPage lesson loading and answer flow', () => {
     mocks.completeLesson.mockReset()
     mocks.fetchStatus.mockReset()
     mocks.dismissTooltip.mockReset()
+    mocks.translations.mockClear()
   })
 
   it.each([
@@ -926,6 +952,153 @@ describe('LessonPage lesson loading and answer flow', () => {
       await screen.findByText('Write one more sentence.')
     ).toBeInTheDocument()
     expect(screen.getByPlaceholderText('yourAnswer')).toHaveValue('')
+  })
+
+  it('keeps the pronunciation recorder mounted across parent updates and submits its transcription', async () => {
+    const payload = {
+      ...lessonPayload,
+      lesson: { ...lessonPayload.lesson, study_plan_id: 42 },
+      exercises: [
+        {
+          ...lessonPayload.exercises[0]!,
+          exercise_type: 'pronunciation',
+          question: 'Say the target phrase.',
+          options: ['Pronunciation guidance'],
+        },
+      ],
+    }
+    let resolveAnswer!: (response: Response) => void
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(payload))
+      if (url === '/api/lessons/exercises/10/answer') {
+        return new Promise<Response>((resolve) => {
+          resolveAnswer = resolve
+        })
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+    render(<LessonPage />)
+    const recorder = await screen.findByTestId('voice-recorder')
+    const draft = screen.getByRole('textbox', { name: 'recording draft' })
+    fireEvent.change(draft, { target: { value: 'In-progress recording' } })
+    expect(recorder).toHaveAttribute('data-study-plan', '42')
+    expect(screen.getByRole('button', { name: 'transcribe' })).toHaveAttribute(
+      'data-max-seconds',
+      '8'
+    )
+    expect(screen.getByText('Pronunciation guidance')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'submitAnswer' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^en/ }))
+    expect(screen.getByTestId('voice-recorder')).toBe(recorder)
+    expect(screen.getByRole('textbox', { name: 'recording draft' })).toBe(draft)
+    expect(draft).toHaveValue('In-progress recording')
+
+    fireEvent.click(screen.getByRole('button', { name: 'transcribe' }))
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      '/api/lessons/exercises/10/answer',
+      expect.objectContaining({
+        body: JSON.stringify({ answer: 'Recorded answer' }),
+      })
+    )
+    expect(screen.getByTestId('voice-recorder')).toBe(recorder)
+    expect(screen.getByRole('button', { name: 'transcribe' })).toBeDisabled()
+    expect(screen.getByText('checking')).toBeInTheDocument()
+    await act(async () => {
+      resolveAnswer(
+        jsonResponse({ score: 1, feedback: 'Pronunciation accepted' })
+      )
+    })
+    expect(
+      await screen.findByText('Pronunciation accepted')
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('voice-recorder')).toBeNull()
+  })
+
+  it('preserves native subsection order and duplicate occurrence nodes across answer updates', async () => {
+    const payload = {
+      ...lessonPayload,
+      lesson: {
+        ...lessonPayload.lesson,
+        cefr_level: 'A2',
+        content: {
+          explanation: { text: 'Target rule' },
+          native_explanation: {
+            text: 'Native rule',
+            key_points: ['Native point', 'Native point'],
+            examples: [{ sentence: 'Native example', note: 'Example note' }],
+            common_traps: [
+              { mistake: 'Common mistake', fix: 'Recommended fix' },
+            ],
+            mini_glossary: [
+              {
+                term: 'Glossary term',
+                meaning: 'Native meaning',
+                note: 'Glossary note',
+              },
+            ],
+          },
+        },
+      },
+    }
+    mockLessonLoad(jsonResponse(payload))
+    render(<LessonPage />)
+    const nativeRule = await screen.findByText('Native rule')
+    const points = screen.getAllByText('Native point')
+    const nativeSection = nativeRule.parentElement!
+    expect(nativeSection.children).toHaveLength(5)
+    expect(
+      Array.from(nativeSection.children).map((node) => node.textContent)
+    ).toEqual([
+      'Native rule',
+      '·Native point·Native point',
+      'examples·Native exampleExample note',
+      'commonTrapsCommon mistakeRecommended fix',
+      'miniGlossaryGlossary termNative meaningGlossary note',
+    ])
+    await enterAnswer('Unsubmitted answer')
+    expect(screen.getByText('Native rule')).toBe(nativeRule)
+    expect(screen.getAllByText('Native point')).toEqual(points)
+    expect(points[0]).not.toBe(points[1])
+    fireEvent.click(screen.getByRole('button', { name: /^en/ }))
+    expect(screen.queryByText('Native rule')).toBeNull()
+    expect(screen.getByPlaceholderText('yourAnswer')).toHaveValue(
+      'Unsubmitted answer'
+    )
+  })
+
+  it('translates only the selected native-request label while pending and after failure', async () => {
+    let rejectRequest!: (reason: Error) => void
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(lessonPayload))
+      if (url === '/api/lessons/1/native-explanation') {
+        return new Promise<Response>((_resolve, reject) => {
+          rejectRequest = reject
+        })
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+    render(<LessonPage />)
+    await screen.findByText('Eine Lektion')
+    expect(mocks.translations).not.toHaveBeenCalledWith('showNativeExplanation')
+    expect(mocks.translations).not.toHaveBeenCalledWith('retry')
+    fireEvent.click(screen.getByRole('button', { name: /^en/ }))
+    const request = screen.getByRole('button', {
+      name: /showNativeExplanation/,
+    })
+    mocks.translations.mockClear()
+    fireEvent.click(request)
+    expect(screen.getByRole('button', { name: '...' })).toBeDisabled()
+    expect(mocks.translations).not.toHaveBeenCalledWith('showNativeExplanation')
+    expect(mocks.translations).not.toHaveBeenCalledWith('retry')
+    mocks.translations.mockClear()
+    await act(async () => {
+      rejectRequest(new Error('native explanation unavailable'))
+    })
+    expect(await screen.findByRole('button', { name: 'retry' })).toBeEnabled()
+    expect(mocks.translations).toHaveBeenCalledWith('retry')
+    expect(mocks.translations).not.toHaveBeenCalledWith('showNativeExplanation')
   })
 
   it('renders available vocabulary details and only links known grammar topics', async () => {

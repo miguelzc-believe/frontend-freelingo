@@ -30,6 +30,44 @@ interface RecordingSession extends RecordingContext {
   abort: AbortController | null
 }
 
+const recorderPresentation: Record<
+  RecorderState,
+  {
+    symbol: string
+    labelKey: 'record' | 'stop' | 'processing' | 'error'
+    colorClass: string
+  }
+> = {
+  idle: {
+    symbol: '●',
+    labelKey: 'record',
+    colorClass:
+      'border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg',
+  },
+  recording: {
+    symbol: '■',
+    labelKey: 'stop',
+    colorClass: 'border-fl-error/60 text-fl-error-fg animate-pulse',
+  },
+  transcribing: {
+    symbol: '...',
+    labelKey: 'processing',
+    colorClass: 'border-fl-border text-fl-muted-3 animate-pulse',
+  },
+  error: {
+    symbol: '✕',
+    labelKey: 'error',
+    colorClass: 'border-fl-error/40 text-fl-error-fg',
+  },
+}
+
+function recorderColorClass(state: RecorderState, disabled: boolean): string {
+  if (state === 'idle' && disabled) {
+    return 'border-fl-border text-fl-muted-4 cursor-not-allowed opacity-40'
+  }
+  return recorderPresentation[state].colorClass
+}
+
 export function VoiceRecorder({
   studyPlanId,
   onTranscription,
@@ -257,25 +295,9 @@ export function VoiceRecorder({
     await startRecording()
   }
 
-  const label =
-    state === 'recording'
-      ? `■ ${t('stop')}`
-      : state === 'transcribing'
-        ? `... ${t('processing')}`
-        : state === 'error'
-          ? `✕ ${t('error')}`
-          : `● ${t('record')}`
-
-  const colorClass =
-    state === 'recording'
-      ? 'border-fl-error/60 text-fl-error-fg animate-pulse'
-      : state === 'transcribing'
-        ? 'border-fl-border text-fl-muted-3 animate-pulse'
-        : state === 'error'
-          ? 'border-fl-error/40 text-fl-error-fg'
-          : disabled
-            ? 'border-fl-border text-fl-muted-4 cursor-not-allowed opacity-40'
-            : 'border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg'
+  const { symbol, labelKey } = recorderPresentation[state]
+  const label = `${symbol} ${t(labelKey)}`
+  const colorClass = recorderColorClass(state, disabled)
 
   return (
     <button

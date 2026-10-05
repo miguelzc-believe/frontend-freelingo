@@ -46,6 +46,10 @@ function ComparisonCell({
   return <Minus className="text-fl-muted-4 mx-auto h-3.5 w-3.5" />
 }
 
+function getPlanHref(hasSession: boolean, registrationPath: string): string {
+  return hasSession ? '/dashboard' : registrationPath
+}
+
 function getCheckoutLabel(
   loading: boolean,
   trialUsed: boolean,
@@ -170,7 +174,7 @@ export default function PricingSection({
       badge: null,
       desc: tBilling('planFreeDesc'),
       badgeStyle: '',
-      href: hasSession ? '/dashboard' : '/register',
+      href: getPlanHref(hasSession, '/register'),
       cta: tBilling('planFreeCta'),
       isFree: true as const,
     },
@@ -183,7 +187,7 @@ export default function PricingSection({
       badge: tBilling(trialUsed ? 'trialBadgeTrialUsed' : 'trialBadge'),
       desc: null,
       badgeStyle: 'text-fl-accent border-fl-accent/30',
-      href: hasSession ? '/dashboard' : '/register?plan=monthly',
+      href: getPlanHref(hasSession, '/register?plan=monthly'),
       cta: tBilling(trialUsed ? 'ctaRegisterTrialUsed' : 'ctaRegister'),
       isFree: false as const,
       interval: 'monthly' as const,
@@ -197,7 +201,7 @@ export default function PricingSection({
       badge: tBilling('bestValue'),
       desc: null,
       badgeStyle: 'text-fl-accent border-fl-accent/30',
-      href: hasSession ? '/dashboard' : '/register?plan=yearly',
+      href: getPlanHref(hasSession, '/register?plan=yearly'),
       cta: tBilling(trialUsed ? 'ctaRegisterTrialUsed' : 'ctaRegister'),
       isFree: false as const,
       interval: 'yearly' as const,

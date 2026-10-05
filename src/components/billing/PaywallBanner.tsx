@@ -49,6 +49,15 @@ interface PaywallBannerProps {
   compact?: boolean
 }
 
+function getNoChargeLabel(
+  paymentRecovery: boolean,
+  trialEligible: boolean,
+  t: (key: string) => string
+): string {
+  if (paymentRecovery) return ''
+  return t(trialEligible ? 'paywallNoCharge' : 'paywallNoChargeTrialUsed')
+}
+
 export function PaywallBanner({
   feature = 'chat',
   compact = false,
@@ -139,11 +148,7 @@ export function PaywallBanner({
             })
       }
       updatePaymentLabel={paymentRecovery ? t('updatePayment') : ''}
-      noChargeLabel={
-        paymentRecovery
-          ? ''
-          : t(trialEligible ? 'paywallNoCharge' : 'paywallNoChargeTrialUsed')
-      }
+      noChargeLabel={getNoChargeLabel(paymentRecovery, trialEligible, t)}
       skipLabel={t('paywallSkip')}
       loading={loading}
       portalLoading={portalLoading}

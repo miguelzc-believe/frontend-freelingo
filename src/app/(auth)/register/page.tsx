@@ -33,25 +33,43 @@ function getSelectedPlan(plan: string | null): SelectedPlan | null {
   return plan === 'monthly' || plan === 'yearly' ? plan : null
 }
 
+const REGISTRATION_ERROR_KEYS: Readonly<Record<string, string>> = {
+  'Username already taken': 'usernameTaken',
+  'Email already taken': 'emailTaken',
+  'Registration is closed': 'registrationClosed',
+  'Invalid or expired invite': 'invalidInvite',
+  'Email domain not allowed': 'invalidEmail',
+}
+
+function getValidationDetailError(detail: unknown): string {
+  if (!Array.isArray(detail) || detail.length === 0) return 'error'
+  const first: unknown = detail[0]
+  if (!first || typeof first !== 'object') return 'error'
+  const { loc, msg } = first as { loc?: unknown; msg?: unknown }
+  const location = Array.isArray(loc)
+    ? loc
+        .filter((part) => typeof part === 'string' || typeof part === 'number')
+        .join('.')
+    : ''
+  const message = typeof msg === 'string' ? msg.toLowerCase() : ''
+  if (location.includes('email') || message.includes('email')) {
+    return 'invalidEmail'
+  }
+  if (location.includes('password')) return 'invalidPassword'
+  return 'error'
+}
+
 function getRegistrationError(
   detail: unknown,
   t: (key: string) => string
 ): string {
   if (typeof detail === 'string') {
-    if (detail === 'Username already taken') return t('usernameTaken')
-    if (detail === 'Email already taken') return t('emailTaken')
-    if (detail === 'Registration is closed') return t('registrationClosed')
-    if (detail === 'Invalid or expired invite') return t('invalidInvite')
-    if (detail === 'Email domain not allowed') return t('invalidEmail')
-  } else if (Array.isArray(detail) && detail.length > 0) {
-    const first = detail[0] as { loc?: string[]; msg?: string }
-    const loc = (first.loc ?? []).join('.')
-    if (loc.includes('email') || first.msg?.toLowerCase().includes('email')) {
-      return t('invalidEmail')
-    }
-    if (loc.includes('password')) return t('invalidPassword')
+    const key = Object.hasOwn(REGISTRATION_ERROR_KEYS, detail)
+      ? REGISTRATION_ERROR_KEYS[detail]
+      : undefined
+    return t(key ?? 'error')
   }
-  return t('error')
+  return t(getValidationDetailError(detail))
 }
 
 function getRegistrationValidationError(

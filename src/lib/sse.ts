@@ -12,6 +12,12 @@ function parseEvent<T>(event: string): T | null {
   }
 }
 
+function normalizeLineEndings(buffer: string, done: boolean): string {
+  const trailingCr = !done && buffer.endsWith('\r')
+  const completeBuffer = trailingCr ? buffer.slice(0, -1) : buffer
+  return completeBuffer.replace(/\r\n|\r/g, '\n') + (trailingCr ? '\r' : '')
+}
+
 export async function* readSseData<T>(
   stream: ReadableStream<Uint8Array>
 ): AsyncGenerator<T> {
@@ -25,10 +31,7 @@ export async function* readSseData<T>(
       buffer += done
         ? decoder.decode()
         : decoder.decode(value, { stream: true })
-      const trailingCr = !done && buffer.endsWith('\r')
-      const completeBuffer = trailingCr ? buffer.slice(0, -1) : buffer
-      buffer =
-        completeBuffer.replace(/\r\n|\r/g, '\n') + (trailingCr ? '\r' : '')
+      buffer = normalizeLineEndings(buffer, done)
 
       const events = buffer.split('\n\n')
       buffer = events.pop() ?? ''

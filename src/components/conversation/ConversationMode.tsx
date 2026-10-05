@@ -390,6 +390,34 @@ export default function ConversationMode({
     []
   )
 
+  function interruptAssistantPlayback(
+    speech: { rms: number; durationMs: number },
+    sinceLastAssistantAudioMs: number,
+    wasAssistantSpeaking: boolean
+  ) {
+    if (wasAssistantSpeaking) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        convLogger.info('sending interrupt at speech end', {
+          rms: speech.rms,
+          durationMs: Math.round(speech.durationMs),
+          sinceLastAssistantAudioMs: Math.round(sinceLastAssistantAudioMs),
+        })
+        wsRef.current.send(JSON.stringify({ type: 'interrupt' }))
+        setAssistantSpeaking(false)
+      }
+    }
+
+    // Barge-in: cancel in-progress TTS playback only when assistant is speaking.
+    if (assistantSpeakingRef.current && audioQueueRef.current) {
+      convLogger.info('processing barge-in speech', {
+        rms: speech.rms,
+        sinceLastAssistantAudioMs: Math.round(sinceLastAssistantAudioMs),
+      })
+      audioQueueRef.current.cancel()
+      setAssistantSpeaking(false)
+    }
+  }
+
   // MicVAD must only be created after the user grants microphone permission.
   // Keep event handlers current without rebuilding the active VAD instance.
   const vadCallbacksRef = useRef<
@@ -490,27 +518,11 @@ export default function ConversationMode({
         return
       }
 
-      if (wasAssistantSpeaking) {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          convLogger.info('sending interrupt at speech end', {
-            rms: speech.rms,
-            durationMs: Math.round(speech.durationMs),
-            sinceLastAssistantAudioMs: Math.round(sinceLastAssistantAudioMs),
-          })
-          wsRef.current.send(JSON.stringify({ type: 'interrupt' }))
-          setAssistantSpeaking(false)
-        }
-      }
-
-      // Barge-in: cancel in-progress TTS playback only when assistant is speaking.
-      if (assistantSpeakingRef.current && audioQueueRef.current) {
-        convLogger.info('processing barge-in speech', {
-          rms: speech.rms,
-          sinceLastAssistantAudioMs: Math.round(sinceLastAssistantAudioMs),
-        })
-        audioQueueRef.current.cancel()
-        setAssistantSpeaking(false)
-      }
+      interruptAssistantPlayback(
+        speech,
+        sinceLastAssistantAudioMs,
+        wasAssistantSpeaking
+      )
 
       const ws = wsRef.current
       if (ws?.readyState === WebSocket.OPEN) {
@@ -710,6 +722,51 @@ export default function ConversationMode({
         })
       }
 
+      const handleTranscript = (
+        msg: Extract<WsMessage, { type: 'transcript' }>
+      ) => {
+        if (msg.role === 'user') {
+          // STT result — always final
+          setTranscript((prev) => [
+            ...prev,
+            { id: transcriptIdRef.current++, role: 'user', text: msg.text },
+          ])
+          return
+        }
+        assistantTurnActiveRef.current = true
+        // LLM token stream
+        if (msg.final) {
+          setStreamingText(null)
+          setTranscript((prev) => [
+            ...prev,
+            {
+              id: transcriptIdRef.current++,
+              role: 'assistant',
+              text: msg.text,
+            },
+          ])
+        } else {
+          setStreamingText(msg.text)
+        }
+      }
+
+      const handleBackendStatus = (
+        msg: Extract<WsMessage, { type: 'status' }>
+      ) => {
+        setStatus('live')
+        convLogger.debug('status update', { value: msg.value })
+        if (msg.value === 'transcribing') {
+          assistantTurnActiveRef.current = true
+          setAssistantSpeaking(false)
+        } else if (msg.value === 'speaking') {
+          setAssistantSpeaking(true)
+        } else if (msg.value === 'thinking') {
+          assistantTurnActiveRef.current = true
+        } else if (msg.value === 'listening') {
+          assistantTurnActiveRef.current = false
+        }
+      }
+
       ws.onmessage = (event) => {
         if (!isCurrent()) return
         // Binary → TTS audio chunk
@@ -735,33 +792,7 @@ export default function ConversationMode({
 
           switch (msg.type) {
             case 'transcript':
-              if (msg.role === 'user') {
-                // STT result — always final
-                setTranscript((prev) => [
-                  ...prev,
-                  {
-                    id: transcriptIdRef.current++,
-                    role: 'user',
-                    text: msg.text,
-                  },
-                ])
-              } else {
-                assistantTurnActiveRef.current = true
-                // LLM token stream
-                if (msg.final) {
-                  setStreamingText(null)
-                  setTranscript((prev) => [
-                    ...prev,
-                    {
-                      id: transcriptIdRef.current++,
-                      role: 'assistant',
-                      text: msg.text,
-                    },
-                  ])
-                } else {
-                  setStreamingText(msg.text)
-                }
-              }
+              handleTranscript(msg)
               break
 
             case 'turn_complete':
@@ -783,18 +814,7 @@ export default function ConversationMode({
               break
 
             case 'status':
-              setStatus('live')
-              convLogger.debug('status update', { value: msg.value })
-              if (msg.value === 'transcribing') {
-                assistantTurnActiveRef.current = true
-                setAssistantSpeaking(false)
-              } else if (msg.value === 'speaking') {
-                setAssistantSpeaking(true)
-              } else if (msg.value === 'thinking') {
-                assistantTurnActiveRef.current = true
-              } else if (msg.value === 'listening') {
-                assistantTurnActiveRef.current = false
-              }
+              handleBackendStatus(msg)
               break
 
             case 'session_end':
@@ -887,6 +907,135 @@ export default function ConversationMode({
   )
 
   // ─── Session lifecycle ────────────────────────────────────────────────────
+  async function requestMicrophone(
+    startAttempt: number
+  ): Promise<MediaStream | null> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          autoGainControl: true,
+          noiseSuppression: true,
+        },
+      })
+      if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
+        stream.getTracks().forEach((track) => track.stop())
+        return null
+      }
+      micStreamRef.current = stream
+      return stream
+    } catch {
+      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
+        return null
+      setErrorMsg(t('errorMic'))
+      setStatus('error')
+      finalizeSession()
+      return null
+    }
+  }
+
+  async function startMicrophoneVad(
+    stream: MediaStream,
+    startAttempt: number
+  ): Promise<boolean> {
+    try {
+      const startVad = vadOperationRef.current.then(async () => {
+        if (!mountedRef.current || startAttemptRef.current !== startAttempt)
+          return
+        const vad = await MicVAD.new({
+          baseAssetPath: '/vad/',
+          onnxWASMBasePath: '/vad/',
+          model: 'v5',
+          startOnLoad: false,
+          getStream: getMicStream,
+          pauseStream: async () => {},
+          resumeStream: getMicStream,
+          redemptionMs: resolveVadRedemptionMs(
+            user?.conversation_speech_pause,
+            cefrLevel
+          ),
+          ortConfig: (ort) => {
+            // Single-threaded ONNX — no SharedArrayBuffer / COOP headers required
+            ort.env.wasm.numThreads = 1
+          },
+          onSpeechStart: () => vadCallbacksRef.current.onSpeechStart(),
+          onVADMisfire: () => vadCallbacksRef.current.onVADMisfire(),
+          onSpeechEnd: (audio) => vadCallbacksRef.current.onSpeechEnd(audio),
+        })
+        if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
+          await vad.destroy()
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+        vadInstanceRef.current = vad
+        await vad.start()
+      })
+      vadOperationRef.current = startVad.then(
+        () => undefined,
+        () => undefined
+      )
+      await startVad
+      return true
+    } catch {
+      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
+        return false
+      convLogger.error('VAD initialization failed')
+      setErrorMsg(t('errorVadInit'))
+      setStatus('error')
+      finalizeSession()
+      return false
+    }
+  }
+
+  async function warmupServices(startAttempt: number): Promise<boolean> {
+    const warmupResponsePromise = apiFetch('/api/conversation/warmup', {
+      method: 'POST',
+      ...(voiceTrialToken
+        ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trial_token: voiceTrialToken }),
+          }
+        : {}),
+    })
+    const warmupTimeout = new Promise<Response>((_, reject) => {
+      setTimeout(() => reject(new Error('warmup timeout')), 60_000)
+    })
+    let warmupResponse: Response
+    try {
+      warmupResponse = (await Promise.race([
+        warmupResponsePromise,
+        warmupTimeout,
+      ])) as Response
+    } catch {
+      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
+        return false
+      setErrorMsg(`${t('errorConnection')} [warmup request failed]`)
+      convLogger.error('warmup request failed')
+      setStatus('error')
+      finalizeSession()
+      return false
+    }
+
+    if (!warmupResponse.ok) {
+      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
+        return false
+      const warmupBody = (await warmupResponse.json().catch(() => ({}))) as {
+        detail?: string | undefined
+      }
+      setErrorMsg(
+        warmupBody.detail === 'voice_services_unavailable'
+          ? t('errorVoiceServicesUnavailable')
+          : t('errorConnection')
+      )
+      convLogger.error('warmup bad status', { status: warmupResponse.status })
+      setStatus('error')
+      finalizeSession()
+      return false
+    }
+    return true
+  }
+
   async function handleStart(topicContext?: ChatContextItem[]) {
     if (
       !accessToken ||
@@ -949,125 +1098,14 @@ export default function ConversationMode({
     setStatus('warming')
 
     // Ask for microphone access from the start action before initializing VAD.
-    let stream: MediaStream
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          autoGainControl: true,
-          noiseSuppression: true,
-        },
-      })
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
-        stream.getTracks().forEach((track) => track.stop())
-        return
-      }
-      micStreamRef.current = stream
-    } catch {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-        return
-      setErrorMsg(t('errorMic'))
-      setStatus('error')
-      finalizeSession()
-      return
-    }
+    const stream = await requestMicrophone(startAttempt)
+    if (!stream) return
 
     // VAD creation is intentionally delayed until after getUserMedia succeeds.
-    try {
-      const startVad = vadOperationRef.current.then(async () => {
-        if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-          return
-        const vad = await MicVAD.new({
-          baseAssetPath: '/vad/',
-          onnxWASMBasePath: '/vad/',
-          model: 'v5',
-          startOnLoad: false,
-          getStream: getMicStream,
-          pauseStream: async () => {},
-          resumeStream: getMicStream,
-          redemptionMs: resolveVadRedemptionMs(
-            user?.conversation_speech_pause,
-            cefrLevel
-          ),
-          ortConfig: (ort) => {
-            // Single-threaded ONNX — no SharedArrayBuffer / COOP headers required
-            ort.env.wasm.numThreads = 1
-          },
-          onSpeechStart: () => vadCallbacksRef.current.onSpeechStart(),
-          onVADMisfire: () => vadCallbacksRef.current.onVADMisfire(),
-          onSpeechEnd: (audio) => vadCallbacksRef.current.onSpeechEnd(audio),
-        })
-        if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
-          await vad.destroy()
-          stream.getTracks().forEach((track) => track.stop())
-          return
-        }
-        vadInstanceRef.current = vad
-        await vad.start()
-      })
-      vadOperationRef.current = startVad.then(
-        () => undefined,
-        () => undefined
-      )
-      await startVad
-    } catch {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-        return
-      convLogger.error('VAD initialization failed')
-      setErrorMsg(t('errorVadInit'))
-      setStatus('error')
-      finalizeSession()
-      return
-    }
+    if (!(await startMicrophoneVad(stream, startAttempt))) return
     if (!mountedRef.current || startAttemptRef.current !== startAttempt) return
 
-    const warmupResponsePromise = apiFetch('/api/conversation/warmup', {
-      method: 'POST',
-      ...(voiceTrialToken
-        ? {
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial_token: voiceTrialToken }),
-          }
-        : {}),
-    })
-    const warmupTimeout = new Promise<Response>((_, reject) => {
-      setTimeout(() => reject(new Error('warmup timeout')), 60_000)
-    })
-    let warmupResponse: Response
-    try {
-      warmupResponse = (await Promise.race([
-        warmupResponsePromise,
-        warmupTimeout,
-      ])) as Response
-    } catch {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
-        return
-      }
-      setErrorMsg(`${t('errorConnection')} [warmup request failed]`)
-      convLogger.error('warmup request failed')
-      setStatus('error')
-      finalizeSession()
-      return
-    }
-
-    if (!warmupResponse.ok) {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
-        return
-      }
-      const warmupBody = (await warmupResponse.json().catch(() => ({}))) as {
-        detail?: string | undefined
-      }
-      setErrorMsg(
-        warmupBody.detail === 'voice_services_unavailable'
-          ? t('errorVoiceServicesUnavailable')
-          : t('errorConnection')
-      )
-      convLogger.error('warmup bad status', { status: warmupResponse.status })
-      setStatus('error')
-      finalizeSession()
-      return
-    }
+    if (!(await warmupServices(startAttempt))) return
 
     if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
       return
@@ -1122,6 +1160,9 @@ export default function ConversationMode({
   /* eslint-enable react-hooks/exhaustive-deps */
 
   // ─── Render ───────────────────────────────────────────────────────────────
+  const premiumQuotaPill =
+    quota && !trialMode ? <QuotaPill quota={quota} t={t} /> : null
+
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col overflow-hidden p-4 md:p-6">
       {/* Header */}
@@ -1260,9 +1301,9 @@ export default function ConversationMode({
               limit: freemiumVoiceLimit,
             })}
           </span>
-        ) : quota && !trialMode ? (
-          <QuotaPill quota={quota} t={t} />
-        ) : null}
+        ) : (
+          premiumQuotaPill
+        )}
         <StatusIndicator
           status={status}
           userSpeaking={userSpeaking}

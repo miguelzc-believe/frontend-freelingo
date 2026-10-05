@@ -157,6 +157,119 @@ function subscriptionStatusClass(status: string) {
   }
 }
 
+function UserProfile({
+  user,
+  verifySaving,
+  onVerify,
+  t,
+  tLang,
+}: Readonly<{
+  user: AdminUser
+  verifySaving: boolean
+  onVerify: () => void
+  t: (key: string) => string
+  tLang: ReturnType<typeof useTranslations>
+}>) {
+  return (
+    <Section title={t('tabProfile')}>
+      <StatRow label="ID" value={`#${user.id}`} />
+      <StatRow label={t('fieldUsername')} value={user.username.toLowerCase()} />
+      {user.email && <StatRow label={t('fieldEmail')} value={user.email} />}
+      {user.email && (
+        <div className="border-fl-border flex flex-wrap items-center justify-between gap-3 border-b py-3">
+          <div className="flex items-center gap-2">
+            {user.is_verified ? (
+              <BadgeCheck
+                className="size-4 text-green-400"
+                aria-hidden="true"
+              />
+            ) : (
+              <MailCheck
+                className="text-fl-muted-3 size-4"
+                aria-hidden="true"
+              />
+            )}
+            <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
+              {user.is_verified ? t('emailVerified') : t('emailNotVerified')}
+            </span>
+          </div>
+          <button
+            onClick={onVerify}
+            disabled={verifySaving}
+            className="text-fl-hint hover:border-fl-fg hover:text-fl-fg border-fl-border text-fl-muted-2 inline-flex items-center gap-2 border px-2 py-1 font-mono tracking-widest uppercase transition-colors disabled:opacity-40"
+          >
+            {verifySaving && (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            )}
+            {user.is_verified ? t('unverifyEmail') : t('verifyEmail')}
+          </button>
+        </div>
+      )}
+      <StatRow
+        label={t('fieldNativeLanguage')}
+        value={tLang(user.native_language as Parameters<typeof tLang>[0])}
+      />
+      <StatRow
+        label={t('status')}
+        value={user.is_active ? t('active') : t('inactive')}
+      />
+      <StatRow
+        label={t('role')}
+        value={user.role === 'admin' ? t('roleAdmin') : t('roleUser')}
+      />
+    </Section>
+  )
+}
+
+function CurrentQuotaUsage({
+  quota,
+  t,
+}: Readonly<{
+  quota: QuotaStatus | null
+  t: (key: string) => string
+}>) {
+  return (
+    <Section title={t('quotaCurrentUsage')}>
+      {quota ? (
+        <>
+          <StatRow
+            label={t('quotaUsedSessions')}
+            value={
+              quota.sessions_unlimited
+                ? t('quotaUnlimitedLabel')
+                : `${quota.sessions_this_week} / ${quota.sessions_limit}`
+            }
+          />
+          <StatRow
+            label={t('quotaUsedMinutes')}
+            value={
+              quota.time_unlimited
+                ? t('quotaUnlimitedLabel')
+                : `${quota.minutes_today} / ${quota.minutes_limit} ${t('unitMinutes')}`
+            }
+          />
+          <StatRow
+            label={t('quotaUsedWeeklyMinutes')}
+            value={
+              quota.weekly_minutes_unlimited
+                ? t('quotaUnlimitedLabel')
+                : `${quota.minutes_this_week} / ${quota.weekly_minutes_limit} ${t('unitMinutes')}`
+            }
+          />
+        </>
+      ) : (
+        <p className="text-fl-muted-2 py-4 font-mono text-xs">
+          {t('statsNoData')}
+        </p>
+      )}
+    </Section>
+  )
+}
+
+function getExerciseSummary(exercisePct: number | null): string {
+  return exercisePct != null ? `${exercisePct}%` : '-'
+}
+
 export default function AdminUserStatsPage() {
   const locale = useLocale()
   const t = useTranslations('admin')
@@ -447,7 +560,7 @@ export default function AdminUserStatsPage() {
             />
             <SummaryCard
               label={t('statsExercises')}
-              value={exercisePct != null ? `${exercisePct}%` : '-'}
+              value={getExerciseSummary(exercisePct)}
             />
           </div>
         </div>
@@ -484,61 +597,13 @@ export default function AdminUserStatsPage() {
       </div>
 
       {activeTab === 'profile' && (
-        <Section title={t('tabProfile')}>
-          <StatRow label="ID" value={`#${user.id}`} />
-          <StatRow
-            label={t('fieldUsername')}
-            value={user.username.toLowerCase()}
-          />
-          {user.email && <StatRow label={t('fieldEmail')} value={user.email} />}
-          {user.email && (
-            <div className="border-fl-border flex flex-wrap items-center justify-between gap-3 border-b py-3">
-              <div className="flex items-center gap-2">
-                {user.is_verified ? (
-                  <BadgeCheck
-                    className="size-4 text-green-400"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <MailCheck
-                    className="text-fl-muted-3 size-4"
-                    aria-hidden="true"
-                  />
-                )}
-                <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
-                  {user.is_verified
-                    ? t('emailVerified')
-                    : t('emailNotVerified')}
-                </span>
-              </div>
-              <button
-                onClick={() => setVerifyPending(true)}
-                disabled={verifySaving}
-                className="text-fl-hint hover:border-fl-fg hover:text-fl-fg border-fl-border text-fl-muted-2 inline-flex items-center gap-2 border px-2 py-1 font-mono tracking-widest uppercase transition-colors disabled:opacity-40"
-              >
-                {verifySaving && (
-                  <Loader2
-                    className="size-3.5 animate-spin"
-                    aria-hidden="true"
-                  />
-                )}
-                {user.is_verified ? t('unverifyEmail') : t('verifyEmail')}
-              </button>
-            </div>
-          )}
-          <StatRow
-            label={t('fieldNativeLanguage')}
-            value={tLang(user.native_language as Parameters<typeof tLang>[0])}
-          />
-          <StatRow
-            label={t('status')}
-            value={user.is_active ? t('active') : t('inactive')}
-          />
-          <StatRow
-            label={t('role')}
-            value={user.role === 'admin' ? t('roleAdmin') : t('roleUser')}
-          />
-        </Section>
+        <UserProfile
+          user={user}
+          verifySaving={verifySaving}
+          onVerify={() => setVerifyPending(true)}
+          t={t}
+          tLang={tLang}
+        />
       )}
 
       {activeTab === 'languages' && (
@@ -665,40 +730,7 @@ export default function AdminUserStatsPage() {
 
       {activeTab === 'quota' && (
         <div className="grid gap-4 md:grid-cols-2">
-          <Section title={t('quotaCurrentUsage')}>
-            {quota ? (
-              <>
-                <StatRow
-                  label={t('quotaUsedSessions')}
-                  value={
-                    quota.sessions_unlimited
-                      ? t('quotaUnlimitedLabel')
-                      : `${quota.sessions_this_week} / ${quota.sessions_limit}`
-                  }
-                />
-                <StatRow
-                  label={t('quotaUsedMinutes')}
-                  value={
-                    quota.time_unlimited
-                      ? t('quotaUnlimitedLabel')
-                      : `${quota.minutes_today} / ${quota.minutes_limit} ${t('unitMinutes')}`
-                  }
-                />
-                <StatRow
-                  label={t('quotaUsedWeeklyMinutes')}
-                  value={
-                    quota.weekly_minutes_unlimited
-                      ? t('quotaUnlimitedLabel')
-                      : `${quota.minutes_this_week} / ${quota.weekly_minutes_limit} ${t('unitMinutes')}`
-                  }
-                />
-              </>
-            ) : (
-              <p className="text-fl-muted-2 py-4 font-mono text-xs">
-                {t('statsNoData')}
-              </p>
-            )}
-          </Section>
+          <CurrentQuotaUsage quota={quota} t={t} />
 
           <Section title={t('quotaConfiguredLimits')}>
             <div className="space-y-4 py-4">

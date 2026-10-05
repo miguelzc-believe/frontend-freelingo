@@ -136,6 +136,45 @@ describe('AudioWorklet recorder', () => {
     click()
     expect(media).not.toHaveBeenCalled()
   })
+  it('preserves state presentation when disabled changes during recording and processing', async () => {
+    const view = render(
+      <VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />
+    )
+    const button = screen.getByRole('button')
+    expect(button).toHaveTextContent('● record')
+    expect(button).toHaveClass('text-fl-muted-2')
+    click()
+    await settle()
+    view.rerender(
+      <VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} disabled />
+    )
+    expect(button).toBeEnabled()
+    expect(button).toHaveTextContent('■ stop')
+    expect(button).toHaveClass(
+      'border-fl-error/60',
+      'text-fl-error-fg',
+      'animate-pulse'
+    )
+    expect(button).not.toHaveClass('cursor-not-allowed')
+    pcm()
+    click()
+    expect(button).toHaveTextContent('... processing')
+    expect(button).toHaveClass('text-fl-muted-3', 'animate-pulse')
+    expect(button).not.toHaveClass('text-fl-error-fg')
+    await act(() => vi.advanceTimersByTimeAsync(3000))
+    expect(button).toHaveTextContent('✕ error')
+    expect(button).toHaveClass('border-fl-error/40', 'text-fl-error-fg')
+    expect(button).not.toHaveClass('animate-pulse')
+    await act(() => vi.advanceTimersByTimeAsync(2000))
+    expect(button).toHaveTextContent('● record')
+    expect(button).toBeDisabled()
+    expect(button).toHaveClass(
+      'text-fl-muted-4',
+      'cursor-not-allowed',
+      'opacity-40'
+    )
+  })
+
   it('waits for FIFO final samples and ACK before cleanup or upload', async () => {
     rate = 16000
     const callback = vi.fn()

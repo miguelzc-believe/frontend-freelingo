@@ -122,6 +122,28 @@ describe('ConversationPage', () => {
     expect(sessionStorage.getItem('voice_context')).toBeNull()
   })
 
+  it.each([
+    {
+      payload: [{ role: 'assistant', content: 'Continue' }],
+      messages: [{ role: 'assistant', content: 'Continue' }],
+    },
+    { payload: { messages: [] }, messages: [] },
+    { payload: { messages: 'not an array' }, messages: undefined },
+  ])(
+    'preserves legacy and packaged voice context semantics for $payload',
+    async ({ payload, messages }) => {
+      mockToday()
+      sessionStorage.setItem('voice_context', JSON.stringify(payload))
+      render(<ConversationPage />)
+      expect(await screen.findByTestId('conversation-mode')).toBeInTheDocument()
+      expect(lastProps()).toMatchObject({
+        initialContext: messages,
+        autoStart: true,
+      })
+      expect(sessionStorage.getItem('voice_context')).toBeNull()
+    }
+  )
+
   it('ignores a malformed voice context payload', async () => {
     mockToday()
     sessionStorage.setItem('voice_context', '{not json')
@@ -154,6 +176,60 @@ describe('ConversationPage', () => {
     })
     expect(sessionStorage.getItem('assessment_voice_trial')).toBeNull()
   })
+
+  it('prioritizes a trial over exhausted quota and defaults invalid optional fields', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    useAuthStore.setState({ user: freeUser })
+    useFreemiumStore.setState({
+      status: { voice_remaining_seconds: 0, voice_limit_seconds: 600 } as never,
+    })
+    mockToday()
+    sessionStorage.setItem(
+      'voice_context',
+      JSON.stringify([{ role: 'user', content: 'Old topic' }])
+    )
+    sessionStorage.setItem(
+      'assessment_voice_trial',
+      JSON.stringify({
+        token: 'trial-token',
+        durationSeconds: '240',
+        cefrLevel: 2,
+        targetLanguage: false,
+      })
+    )
+    render(<ConversationPage />)
+    expect(await screen.findByTestId('conversation-mode')).toBeInTheDocument()
+    expect(lastProps()).toMatchObject({
+      voiceTrialDurationSeconds: 300,
+      cefrLevel: 'B1',
+      targetLanguage: 'de',
+      trialMode: true,
+      autoStart: true,
+      initialContext: [
+        {
+          role: 'user',
+          content:
+            'I just completed the placement assessment. Please start a short, friendly voice conversation adapted to my level.',
+        },
+      ],
+    })
+    expect(screen.queryByText('freeLimit')).toBeNull()
+    expect(sessionStorage.getItem('voice_context')).toBeNull()
+    expect(sessionStorage.getItem('assessment_voice_trial')).toBeNull()
+  })
+
+  it.each(['null', '{bad json', '[]'])(
+    'ignores malformed trial storage %s',
+    async (raw) => {
+      mockToday()
+      sessionStorage.setItem('assessment_voice_trial', raw)
+      render(<ConversationPage />)
+      expect(await screen.findByTestId('conversation-mode')).toBeInTheDocument()
+      expect(lastProps()).toMatchObject({ autoStart: false })
+      expect(lastProps()).not.toHaveProperty('voiceTrialToken')
+      expect(sessionStorage.getItem('assessment_voice_trial')).toBeNull()
+    }
+  )
 
   it('drops a voice trial without a token and keeps the default level', async () => {
     mockToday()

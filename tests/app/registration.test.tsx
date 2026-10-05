@@ -247,6 +247,7 @@ describe('registration availability', () => {
     [{ loc: ['body', 'email'], msg: 'value is invalid' }, 'invalidEmail'],
     [{ loc: ['body', 'other'], msg: 'invalid email format' }, 'invalidEmail'],
     [{ loc: ['body', 'password'], msg: 'value is invalid' }, 'invalidPassword'],
+    [{ loc: ['body', 0, 'email'], msg: 'value is invalid' }, 'invalidEmail'],
   ])('maps structured validation detail to %s', async (detail, message) => {
     vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
     apiFetch.mockResolvedValueOnce(
@@ -260,6 +261,57 @@ describe('registration availability', () => {
     expect(
       await screen.findByText(new RegExp(`auth\\.register\\.${message}`))
     ).toBeInTheDocument()
+  })
+
+  it.each([
+    [null],
+    [{}],
+    [[]],
+    [[null]],
+    [[{ loc: 'email', msg: 42 }]],
+    [[{ loc: [{ toString: 'not callable' }], msg: null }]],
+    ['toString'],
+  ])(
+    'uses a safe fallback for malformed registration detail %j',
+    async (detail) => {
+      vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
+      apiFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail }), { status: 422 })
+      )
+      const { container } = render(<RegisterPage />)
+      await screen.findByRole('button', { name: 'auth.register.submit' })
+
+      await fillAndSubmit(container)
+
+      expect(
+        await screen.findByText(/auth\.register\.error/)
+      ).toBeInTheDocument()
+      expect(push).not.toHaveBeenCalled()
+    }
+  )
+
+  it('prefers email validation over password location and ignores later details', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
+    apiFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          detail: [
+            { loc: ['body', 'password'], msg: 'invalid EMAIL format' },
+            { loc: ['body', 'email'], msg: 'another error' },
+          ],
+        }),
+        { status: 422 }
+      )
+    )
+    const { container } = render(<RegisterPage />)
+    await screen.findByRole('button', { name: 'auth.register.submit' })
+
+    await fillAndSubmit(container)
+
+    expect(
+      await screen.findByText(/auth\.register\.invalidEmail/)
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/auth\.register\.invalidPassword/)).toBeNull()
   })
 
   it('toggles visibility of both password fields', async () => {

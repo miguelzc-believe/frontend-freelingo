@@ -36,6 +36,61 @@ interface CompletionState {
   next_level: string | null
 }
 
+type Translate = ReturnType<typeof useTranslations>
+type TodayLesson = ReturnType<
+  typeof useProgressStore.getState
+>['todayLessons'][number]
+
+function getPlanProgress(
+  hasPlan: boolean,
+  complete: boolean,
+  day: number,
+  total: number
+) {
+  let planCompletion = 0
+  if (hasPlan && total > 0) {
+    planCompletion = complete
+      ? 100
+      : Math.min(100, Math.round((day / total) * 100))
+  }
+  const daysRemaining = hasPlan && !complete ? Math.max(total - day, 0) : 0
+  return { planCompletion, daysRemaining }
+}
+
+function emptyTodayKey(hasPlan: boolean, completion: CompletionState | null) {
+  if (!hasPlan) return 'startWithAssessment'
+  if (completion?.state === 'ready') return 'levelTestReady'
+  if (completion?.state === 'taken') return 'levelTestCompleted'
+  return 'allCaughtUp'
+}
+
+function premiumTitle(
+  t: Translate,
+  active: boolean,
+  days: number,
+  recovery: boolean
+) {
+  if (active) return t('freemiumTrialTitle', { days })
+  return t(recovery ? 'premiumBannerPastDueTitle' : 'premiumBannerTitle')
+}
+
+function premiumDescription(
+  t: Translate,
+  active: boolean,
+  days: number,
+  recovery: boolean,
+  eligible: boolean
+) {
+  if (active) return t('freemiumTrialDesc', { days })
+  if (recovery) return t('premiumBannerPastDueDesc')
+  return t(eligible ? 'premiumBannerDesc' : 'premiumBannerDescTrialUsed')
+}
+
+function premiumCta(t: Translate, recovery: boolean, eligible: boolean) {
+  if (recovery) return t('premiumBannerPastDueCta')
+  return t(eligible ? 'premiumBannerCta' : 'premiumBannerCtaTrialUsed')
+}
+
 export default function DashboardPage() {
   const t = useTranslations('dashboard')
   const tAssessment = useTranslations('assessment')
@@ -232,17 +287,12 @@ export default function DashboardPage() {
   )
   const planPositionComplete =
     completion?.state === 'ready' || completion?.state === 'taken'
-  const planCompletion =
-    hasPlan && totalDays > 0
-      ? planPositionComplete
-        ? 100
-        : Math.min(100, Math.round((progressDay / totalDays) * 100))
-      : 0
-  const daysRemaining = hasPlan
-    ? planPositionComplete
-      ? 0
-      : Math.max(totalDays - progressDay, 0)
-    : 0
+  const { planCompletion, daysRemaining } = getPlanProgress(
+    hasPlan,
+    planPositionComplete,
+    progressDay,
+    totalDays
+  )
   const currentDayDisplay = planPositionComplete
     ? totalDays
     : Math.min(progressDay + 1, totalDays)
@@ -292,460 +342,84 @@ export default function DashboardPage() {
         <DashboardAnnouncement />
 
         {/* Next step */}
-        <div className="border-fl-border bg-fl-surface mb-8 border p-5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
-              {t('nextStep')}
-            </p>
-            {hasPlan && todayLessons.length > 0 && (
-              <div className="text-fl-caption font-mono">
-                <p className="text-fl-muted-1">{t('planDayGoal')}</p>
-                <p className="text-fl-fg mt-1">
-                  {t('completedToday', {
-                    completed: completedLessonCount,
-                    total: todayLessons.length,
-                  })}
-                </p>
-              </div>
-            )}
-          </div>
-          {!hasPlan ? (
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
-                  {t('startWithAssessment')}
-                </h2>
-                <p className="text-fl-muted-2 mt-2 max-w-xl font-mono text-sm">
-                  {t('assessmentCreatesPlan')}
-                </p>
-              </div>
-              <Link href="/assessment">
-                <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
-                  {t('takeAssessmentArrow')}
-                </button>
-              </Link>
-            </div>
-          ) : completion?.state === 'taken' ? (
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
-                  {t('levelTestCompleted')}
-                </h2>
-                <p className="text-fl-muted-2 mt-2 font-mono text-sm">
-                  {t('levelTestScoreLine', {
-                    score:
-                      completion.score != null
-                        ? `${Math.round(completion.score * 100)}%`
-                        : '—',
-                  })}
-                </p>
-              </div>
-              {completion.next_level != null ? (
-                <Link href="/assessment">
-                  <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
-                    {tAssessment('retake')}
-                  </button>
-                </Link>
-              ) : (
-                <Link href="/plan">
-                  <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
-                    {t('goToMyPlan')}
-                  </button>
-                </Link>
-              )}
-            </div>
-          ) : completion?.state === 'ready' ? (
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
-                  {t('levelTestReady')}
-                </h2>
-                <p className="text-fl-muted-2 mt-2 max-w-xl font-mono text-sm">
-                  {t('levelTestReadyDesc')}
-                </p>
-              </div>
-              {planId != null && (
-                <Link href={`/assessment/level-test?plan=${planId}`}>
-                  <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
-                    {tPlan('beginLevelTest')}
-                  </button>
-                </Link>
-              )}
-            </div>
-          ) : nextLesson ? (
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-fl-hint text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
-                  {t('lessonReady')}
-                </p>
-                <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
-                  {nextLesson.title}
-                </h2>
-                <p className="text-fl-muted-2 mt-2 font-mono text-sm">
-                  {tPlan(`lessonTypes.${nextLesson.lessonType}`)} ·{' '}
-                  {nextLesson.estimatedMinutes}min
-                </p>
-              </div>
-              <Link href={`/lesson/${nextLesson.id}`}>
-                <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
-                  {t('startLesson')}
-                </button>
-              </Link>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
-                  {t('allCaughtUp')}
-                </h2>
-                <p className="text-fl-muted-2 mt-2 font-mono text-sm">
-                  {pendingCount > 0
-                    ? t('pendingStillAvailable', { count: pendingCount })
-                    : t('noPendingToday')}
-                </p>
-              </div>
-              <Link href="/plan">
-                <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
-                  {t('goToMyPlan')}
-                </button>
-              </Link>
-            </div>
-          )}
-        </div>
+        <DashboardNextStep
+          t={t}
+          tAssessment={tAssessment}
+          tPlan={tPlan}
+          hasPlan={hasPlan}
+          todayLessons={todayLessons}
+          completedLessonCount={completedLessonCount}
+          completion={completion}
+          planId={planId}
+          nextLesson={nextLesson}
+          pendingCount={pendingCount}
+        />
 
         {/* Stats row */}
-        <div className="bg-fl-border mb-8 grid grid-cols-2 gap-px sm:grid-cols-4">
-          {[
-            { label: t('streak'), value: `${streak}d`, accent: streak > 0 },
-            { label: t('xp'), value: xp, accent: false },
-            {
-              label: t('lessonsCompleted'),
-              value: totalLessons,
-              accent: false,
-            },
-            {
-              label: t('accuracy'),
-              value:
-                totalExercises > 0 ? `${Math.round(accuracy * 100)}%` : '—',
-              accent: false,
-              detail:
-                totalExercises > 0
-                  ? t('exerciseStats', {
-                      correct: exercisesCorrect,
-                      total: totalExercises,
-                    })
-                  : t('noExercisesYet'),
-            },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-fl-surface px-5 py-5">
-              <p className="text-fl-caption text-fl-muted-1 mb-2 font-mono tracking-widest uppercase">
-                {stat.label}
-              </p>
-              <p
-                className={`font-mono text-3xl font-bold tracking-tight ${stat.accent ? 'text-fl-accent' : 'text-fl-fg'}`}
-              >
-                {stat.value}
-              </p>
-              {'detail' in stat && stat.detail && (
-                <p className="text-fl-caption text-fl-muted-1 mt-2 font-mono">
-                  {stat.detail}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
+        <DashboardStats
+          t={t}
+          streak={streak}
+          xp={xp}
+          totalLessons={totalLessons}
+          totalExercises={totalExercises}
+          accuracy={accuracy}
+          exercisesCorrect={exercisesCorrect}
+        />
 
         <div className="bg-fl-border mb-8 grid gap-px sm:grid-cols-2">
           {/* Plan progress */}
-          <div className="bg-fl-surface p-5">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-fl-label text-fl-muted-2">●</span>
-                <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
-                  {t('planProgress')}
-                </span>
-              </div>
-              {hasPlan && totalDays > 0 && (
-                <span className="text-fl-caption text-fl-muted-1 shrink-0 font-mono tracking-widest">
-                  {planCompletion}%
-                </span>
-              )}
-            </div>
-            {hasPlan && totalDays > 0 ? (
-              <>
-                <div className="bg-fl-border mb-4 h-1 w-full">
-                  <div
-                    className="bg-fl-accent h-full transition-[width] duration-300 motion-reduce:transition-none"
-                    style={{ width: `${planCompletion}%` }}
-                  />
-                </div>
-                <div className="bg-fl-border grid grid-cols-2 gap-px">
-                  <div className="bg-fl-bg p-3">
-                    <p className="text-fl-hint text-fl-muted-2 mb-1 font-mono tracking-widest uppercase">
-                      {t('currentDay')}
-                    </p>
-                    <p className="text-fl-fg font-mono text-lg font-bold">
-                      {currentDayDisplay} / {totalDays}
-                    </p>
-                  </div>
-                  <div className="bg-fl-bg p-3">
-                    <p className="text-fl-hint text-fl-muted-2 mb-1 font-mono tracking-widest uppercase">
-                      {t('daysRemaining')}
-                    </p>
-                    <p className="text-fl-fg font-mono text-lg font-bold">
-                      {daysRemaining}
-                    </p>
-                  </div>
-                </div>
-                {vocabularyTotal > 0 && (
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-fl-hint text-fl-muted-2 font-mono tracking-widest uppercase">
-                        {t('vocabularyProgress', {
-                          level: vocabularyLevel ?? cefrLevel ?? '',
-                        })}
-                      </p>
-                      <p className="text-fl-label text-fl-muted-2 font-mono">
-                        {vocabularyProgressPct}%
-                      </p>
-                    </div>
-                    <p className="text-fl-caption text-fl-muted-1 mt-2 font-mono">
-                      {t('vocabularyWords', {
-                        mastered: vocabularyMastered,
-                        total: vocabularyTotal,
-                      })}
-                    </p>
-                    <div className="bg-fl-border mt-2 h-1 w-full">
-                      <div
-                        className="bg-fl-accent h-full transition-[width] duration-300 motion-reduce:transition-none"
-                        style={{ width: `${vocabularyProgressPct}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-fl-muted-2 font-mono text-xs">
-                {t('startWithAssessment')}
-              </p>
-            )}
-          </div>
+          <DashboardPlanProgress
+            t={t}
+            hasPlan={hasPlan}
+            totalDays={totalDays}
+            planCompletion={planCompletion}
+            currentDayDisplay={currentDayDisplay}
+            daysRemaining={daysRemaining}
+            vocabularyTotal={vocabularyTotal}
+            vocabularyLevel={vocabularyLevel}
+            cefrLevel={cefrLevel}
+            vocabularyProgressPct={vocabularyProgressPct}
+            vocabularyMastered={vocabularyMastered}
+          />
 
           {/* Today's lessons */}
-          <div className="bg-fl-surface p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-fl-label text-fl-muted-2">●</span>
-                <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
-                  {t('today')}
-                </span>
-              </div>
-            </div>
-
-            {todayLessons.length > 0 ? (
-              <div className="space-y-2">
-                {todayLessons.map((lesson) => {
-                  const isDone =
-                    (lesson.id && completedToday.includes(lesson.id)) ||
-                    lesson.isCompleted
-                  const isNext = nextLesson?.id === lesson.id
-
-                  return (
-                    <div
-                      key={JSON.stringify([
-                        activeLanguage?.code,
-                        planId,
-                        lesson.week,
-                        lesson.day,
-                        lesson.title,
-                      ])}
-                      className={`border px-4 py-3 ${
-                        isNext
-                          ? 'border-fl-accent/60 bg-fl-accent/5'
-                          : 'border-fl-border'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-fl-fg font-mono text-xs">
-                            {lesson.title}
-                          </p>
-                          <p className="text-fl-label text-fl-muted-2 mt-0.5 font-mono tracking-wider uppercase">
-                            {tPlan(`lessonTypes.${lesson.lessonType}`)} ·{' '}
-                            {lesson.estimatedMinutes}min
-                          </p>
-                        </div>
-                        {isDone ? (
-                          <span className="text-fl-label text-fl-muted-2 inline-flex items-center gap-1.5 font-mono tracking-widest uppercase">
-                            <Check
-                              className="size-4 shrink-0"
-                              aria-hidden="true"
-                            />
-                            {t('lessonDone')}
-                          </span>
-                        ) : lesson.id ? (
-                          <Link href={`/lesson/${lesson.id}`}>
-                            <button
-                              className={`text-fl-caption focus-visible:outline-fl-fg px-3 py-1 font-mono tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                                isNext
-                                  ? 'text-fl-bg bg-fl-fg hover:bg-fl-fg/90 font-bold'
-                                  : 'text-fl-fg border-fl-border hover:border-fl-border-2 border'
-                              }`}
-                            >
-                              {t('startLesson')}
-                            </button>
-                          </Link>
-                        ) : null}
-                      </div>
-                    </div>
-                  )
-                })}
-                <div className="pt-1">
-                  <button
-                    onClick={skipDay}
-                    disabled={skipping}
-                    className="text-fl-hint text-fl-muted-3 hover:text-fl-muted-1 font-mono tracking-widest uppercase transition-colors disabled:opacity-40"
-                  >
-                    {skipping ? '...' : t('skipDay')}
-                  </button>
-                  {skipError && (
-                    <p className="text-fl-error mt-1 font-mono text-xs">
-                      {tError('title')}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-fl-muted-2 font-mono text-xs">
-                  {hasPlan
-                    ? completion?.state === 'ready'
-                      ? t('levelTestReady')
-                      : completion?.state === 'taken'
-                        ? t('levelTestCompleted')
-                        : t('allCaughtUp')
-                    : t('startWithAssessment')}
-                </p>
-                {!hasPlan && (
-                  <Link href="/assessment">
-                    <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
-                      {t('takeAssessmentArrow')}
-                    </button>
-                  </Link>
-                )}
-              </div>
-            )}
-          </div>
+          <DashboardTodayLessons
+            t={t}
+            tPlan={tPlan}
+            tError={tError}
+            todayLessons={todayLessons}
+            completedToday={completedToday}
+            nextLesson={nextLesson}
+            activeLanguage={activeLanguage}
+            planId={planId}
+            skipDay={skipDay}
+            skipping={skipping}
+            skipError={skipError}
+            hasPlan={hasPlan}
+            completion={completion}
+          />
 
           {/* Recent performance */}
-          <div className="bg-fl-surface p-5 sm:col-span-2">
-            <div className="mb-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-fl-label text-fl-muted-2">●</span>
-                <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
-                  {t('recentPerformance')}
-                </span>
-              </div>
-              <p className="text-fl-muted-3 font-mono text-xs">
-                {t('recentPerformanceDescription')}
-              </p>
-            </div>
-            {skillEntries.length > 0 ? (
-              <div className="space-y-3">
-                {skillEntries.map(({ skill, value }) => (
-                  <div key={skill}>
-                    <div className="mb-1 flex justify-between">
-                      <span className="text-fl-label text-fl-muted-1 font-mono tracking-widest uppercase">
-                        {tPlan(`lessonTypes.${skill}`)}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                          {getPerformanceLabel(value)}
-                        </span>
-                        <span className="text-fl-label text-fl-muted-2 font-mono">
-                          {Math.round(value * 100)}%
-                        </span>
-                      </div>
-                    </div>
-                    <div className="bg-fl-border h-1 w-full">
-                      <div
-                        className="bg-fl-accent h-full transition-[width] duration-300 motion-reduce:transition-none"
-                        style={{ width: `${value * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-fl-muted-2 font-mono text-xs">
-                {t('noSkills')}
-              </p>
-            )}
-          </div>
+          <DashboardPerformance
+            t={t}
+            tPlan={tPlan}
+            skillEntries={skillEntries}
+            getPerformanceLabel={getPerformanceLabel}
+          />
         </div>
 
         {showPremiumBanner && (
-          <div className="border-fl-border bg-fl-surface mb-6 border p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex gap-3">
-                <span className="text-fl-accent font-mono text-sm leading-none">
-                  ★
-                </span>
-                <div>
-                  <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
-                    {freemiumTrialActive
-                      ? t('freemiumTrialTitle', { days: freemiumTrialDaysLeft })
-                      : t(
-                          paymentRecovery
-                            ? 'premiumBannerPastDueTitle'
-                            : 'premiumBannerTitle'
-                        )}
-                  </p>
-                  <p className="text-fl-muted-2 font-mono text-xs leading-relaxed">
-                    {freemiumTrialActive
-                      ? t('freemiumTrialDesc', { days: freemiumTrialDaysLeft })
-                      : paymentRecovery
-                        ? t('premiumBannerPastDueDesc')
-                        : t(
-                            trialEligible
-                              ? 'premiumBannerDesc'
-                              : 'premiumBannerDescTrialUsed'
-                          )}
-                  </p>
-                </div>
-              </div>
-              {!freemiumTrialActive && (
-                <span className="text-fl-label text-fl-accent border-fl-accent/30 border px-3 py-1.5 font-mono tracking-widest whitespace-nowrap uppercase">
-                  {paymentRecovery
-                    ? t('premiumBannerPastDueCta')
-                    : t(
-                        trialEligible
-                          ? 'premiumBannerCta'
-                          : 'premiumBannerCtaTrialUsed'
-                      )}
-                </span>
-              )}
-            </div>
-            {!freemiumTrialActive &&
-              (paymentRecovery ? (
-                <div className="border-fl-border mt-4 border-t pt-4">
-                  <button
-                    onClick={handleManageSubscription}
-                    disabled={portalLoading}
-                    className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full px-4 py-2.5 font-mono text-sm font-bold tracking-widest uppercase transition-colors disabled:opacity-50 sm:w-auto"
-                  >
-                    {portalLoading ? '...' : tBilling('updatePayment')}
-                  </button>
-                  {portalError && (
-                    <p className="text-fl-hint mt-3 font-mono text-red-500">
-                      {portalError}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <SubscriptionPlanButtons className="border-fl-border mt-4 border-t pt-4" />
-              ))}
-          </div>
+          <DashboardPremiumBanner
+            t={t}
+            tBilling={tBilling}
+            freemiumTrialActive={freemiumTrialActive}
+            freemiumTrialDaysLeft={freemiumTrialDaysLeft}
+            paymentRecovery={paymentRecovery}
+            trialEligible={trialEligible}
+            portalLoading={portalLoading}
+            portalError={portalError}
+            handleManageSubscription={handleManageSubscription}
+          />
         )}
 
         {/* Quick actions */}
@@ -782,5 +456,637 @@ export default function DashboardPage() {
         </div>
       </div>
     </>
+  )
+}
+
+function DashboardNextStep({
+  t,
+  tAssessment,
+  tPlan,
+  hasPlan,
+  todayLessons,
+  completedLessonCount,
+  completion,
+  planId,
+  nextLesson,
+  pendingCount,
+}: Readonly<{
+  t: Translate
+  tAssessment: Translate
+  tPlan: Translate
+  hasPlan: boolean
+  todayLessons: TodayLesson[]
+  completedLessonCount: number
+  completion: CompletionState | null
+  planId: number | null
+  nextLesson: TodayLesson | undefined
+  pendingCount: number
+}>) {
+  return (
+    <div className="border-fl-border bg-fl-surface mb-8 border p-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
+          {t('nextStep')}
+        </p>
+        {hasPlan && todayLessons.length > 0 && (
+          <div className="text-fl-caption font-mono">
+            <p className="text-fl-muted-1">{t('planDayGoal')}</p>
+            <p className="text-fl-fg mt-1">
+              {t('completedToday', {
+                completed: completedLessonCount,
+                total: todayLessons.length,
+              })}
+            </p>
+          </div>
+        )}
+      </div>
+      <DashboardNextAction
+        t={t}
+        tAssessment={tAssessment}
+        tPlan={tPlan}
+        hasPlan={hasPlan}
+        completion={completion}
+        planId={planId}
+        nextLesson={nextLesson}
+        pendingCount={pendingCount}
+      />
+    </div>
+  )
+}
+
+function DashboardStats({
+  t,
+  streak,
+  xp,
+  totalLessons,
+  totalExercises,
+  accuracy,
+  exercisesCorrect,
+}: Readonly<{
+  t: Translate
+  streak: number
+  xp: number
+  totalLessons: number
+  totalExercises: number
+  accuracy: number
+  exercisesCorrect: number
+}>) {
+  return (
+    <div className="bg-fl-border mb-8 grid grid-cols-2 gap-px sm:grid-cols-4">
+      {[
+        { label: t('streak'), value: `${streak}d`, accent: streak > 0 },
+        { label: t('xp'), value: xp, accent: false },
+        {
+          label: t('lessonsCompleted'),
+          value: totalLessons,
+          accent: false,
+        },
+        {
+          label: t('accuracy'),
+          value: totalExercises > 0 ? `${Math.round(accuracy * 100)}%` : '—',
+          accent: false,
+          detail:
+            totalExercises > 0
+              ? t('exerciseStats', {
+                  correct: exercisesCorrect,
+                  total: totalExercises,
+                })
+              : t('noExercisesYet'),
+        },
+      ].map((stat) => (
+        <div key={stat.label} className="bg-fl-surface px-5 py-5">
+          <p className="text-fl-caption text-fl-muted-1 mb-2 font-mono tracking-widest uppercase">
+            {stat.label}
+          </p>
+          <p
+            className={`font-mono text-3xl font-bold tracking-tight ${stat.accent ? 'text-fl-accent' : 'text-fl-fg'}`}
+          >
+            {stat.value}
+          </p>
+          {'detail' in stat && stat.detail && (
+            <p className="text-fl-caption text-fl-muted-1 mt-2 font-mono">
+              {stat.detail}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DashboardPlanProgress({
+  t,
+  hasPlan,
+  totalDays,
+  planCompletion,
+  currentDayDisplay,
+  daysRemaining,
+  vocabularyTotal,
+  vocabularyLevel,
+  cefrLevel,
+  vocabularyProgressPct,
+  vocabularyMastered,
+}: Readonly<{
+  t: Translate
+  hasPlan: boolean
+  totalDays: number
+  planCompletion: number
+  currentDayDisplay: number
+  daysRemaining: number
+  vocabularyTotal: number
+  vocabularyLevel: string | null
+  cefrLevel: string | null
+  vocabularyProgressPct: number
+  vocabularyMastered: number
+}>) {
+  return (
+    <div className="bg-fl-surface p-5">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-fl-label text-fl-muted-2">●</span>
+          <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
+            {t('planProgress')}
+          </span>
+        </div>
+        {hasPlan && totalDays > 0 && (
+          <span className="text-fl-caption text-fl-muted-1 shrink-0 font-mono tracking-widest">
+            {planCompletion}%
+          </span>
+        )}
+      </div>
+      {hasPlan && totalDays > 0 ? (
+        <>
+          <div className="bg-fl-border mb-4 h-1 w-full">
+            <div
+              className="bg-fl-accent h-full transition-[width] duration-300 motion-reduce:transition-none"
+              style={{ width: `${planCompletion}%` }}
+            />
+          </div>
+          <div className="bg-fl-border grid grid-cols-2 gap-px">
+            <div className="bg-fl-bg p-3">
+              <p className="text-fl-hint text-fl-muted-2 mb-1 font-mono tracking-widest uppercase">
+                {t('currentDay')}
+              </p>
+              <p className="text-fl-fg font-mono text-lg font-bold">
+                {currentDayDisplay} / {totalDays}
+              </p>
+            </div>
+            <div className="bg-fl-bg p-3">
+              <p className="text-fl-hint text-fl-muted-2 mb-1 font-mono tracking-widest uppercase">
+                {t('daysRemaining')}
+              </p>
+              <p className="text-fl-fg font-mono text-lg font-bold">
+                {daysRemaining}
+              </p>
+            </div>
+          </div>
+          {vocabularyTotal > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-fl-hint text-fl-muted-2 font-mono tracking-widest uppercase">
+                  {t('vocabularyProgress', {
+                    level: vocabularyLevel ?? cefrLevel ?? '',
+                  })}
+                </p>
+                <p className="text-fl-label text-fl-muted-2 font-mono">
+                  {vocabularyProgressPct}%
+                </p>
+              </div>
+              <p className="text-fl-caption text-fl-muted-1 mt-2 font-mono">
+                {t('vocabularyWords', {
+                  mastered: vocabularyMastered,
+                  total: vocabularyTotal,
+                })}
+              </p>
+              <div className="bg-fl-border mt-2 h-1 w-full">
+                <div
+                  className="bg-fl-accent h-full transition-[width] duration-300 motion-reduce:transition-none"
+                  style={{ width: `${vocabularyProgressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="text-fl-muted-2 font-mono text-xs">
+          {t('startWithAssessment')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function DashboardTodayLessons({
+  t,
+  tPlan,
+  tError,
+  todayLessons,
+  completedToday,
+  nextLesson,
+  activeLanguage,
+  planId,
+  skipDay,
+  skipping,
+  skipError,
+  hasPlan,
+  completion,
+}: Readonly<{
+  t: Translate
+  tPlan: Translate
+  tError: Translate
+  todayLessons: TodayLesson[]
+  completedToday: number[]
+  nextLesson: TodayLesson | undefined
+  activeLanguage: ReturnType<typeof useLanguageStore.getState>['activeLanguage']
+  planId: number | null
+  skipDay: () => Promise<void>
+  skipping: boolean
+  skipError: boolean
+  hasPlan: boolean
+  completion: CompletionState | null
+}>) {
+  return (
+    <div className="bg-fl-surface p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-fl-label text-fl-muted-2">●</span>
+          <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
+            {t('today')}
+          </span>
+        </div>
+      </div>
+
+      {todayLessons.length > 0 ? (
+        <div className="space-y-2">
+          {todayLessons.map((lesson) => {
+            const isDone =
+              (lesson.id && completedToday.includes(lesson.id)) ||
+              lesson.isCompleted
+            const isNext = nextLesson?.id === lesson.id
+
+            return (
+              <div
+                key={JSON.stringify([
+                  activeLanguage?.code,
+                  planId,
+                  lesson.week,
+                  lesson.day,
+                  lesson.title,
+                ])}
+                className={`border px-4 py-3 ${
+                  isNext
+                    ? 'border-fl-accent/60 bg-fl-accent/5'
+                    : 'border-fl-border'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-fl-fg font-mono text-xs">
+                      {lesson.title}
+                    </p>
+                    <p className="text-fl-label text-fl-muted-2 mt-0.5 font-mono tracking-wider uppercase">
+                      {tPlan(`lessonTypes.${lesson.lessonType}`)} ·{' '}
+                      {lesson.estimatedMinutes}min
+                    </p>
+                  </div>
+                  <TodayLessonAction
+                    t={t}
+                    lesson={lesson}
+                    isDone={!!isDone}
+                    isNext={isNext}
+                  />
+                </div>
+              </div>
+            )
+          })}
+          <div className="pt-1">
+            <button
+              onClick={skipDay}
+              disabled={skipping}
+              className="text-fl-hint text-fl-muted-3 hover:text-fl-muted-1 font-mono tracking-widest uppercase transition-colors disabled:opacity-40"
+            >
+              {skipping ? '...' : t('skipDay')}
+            </button>
+            {skipError && (
+              <p className="text-fl-error mt-1 font-mono text-xs">
+                {tError('title')}
+              </p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-fl-muted-2 font-mono text-xs">
+            {t(emptyTodayKey(hasPlan, completion))}
+          </p>
+          {!hasPlan && (
+            <Link href="/assessment">
+              <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
+                {t('takeAssessmentArrow')}
+              </button>
+            </Link>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DashboardPerformance({
+  t,
+  tPlan,
+  skillEntries,
+  getPerformanceLabel,
+}: Readonly<{
+  t: Translate
+  tPlan: Translate
+  skillEntries: { skill: string; value: number }[]
+  getPerformanceLabel: (value: number) => string
+}>) {
+  return (
+    <div className="bg-fl-surface p-5 sm:col-span-2">
+      <div className="mb-4">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-fl-label text-fl-muted-2">●</span>
+          <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
+            {t('recentPerformance')}
+          </span>
+        </div>
+        <p className="text-fl-muted-3 font-mono text-xs">
+          {t('recentPerformanceDescription')}
+        </p>
+      </div>
+      {skillEntries.length > 0 ? (
+        <div className="space-y-3">
+          {skillEntries.map(({ skill, value }) => (
+            <div key={skill}>
+              <div className="mb-1 flex justify-between">
+                <span className="text-fl-label text-fl-muted-1 font-mono tracking-widest uppercase">
+                  {tPlan(`lessonTypes.${skill}`)}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
+                    {getPerformanceLabel(value)}
+                  </span>
+                  <span className="text-fl-label text-fl-muted-2 font-mono">
+                    {Math.round(value * 100)}%
+                  </span>
+                </div>
+              </div>
+              <div className="bg-fl-border h-1 w-full">
+                <div
+                  className="bg-fl-accent h-full transition-[width] duration-300 motion-reduce:transition-none"
+                  style={{ width: `${value * 100}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-fl-muted-2 font-mono text-xs">{t('noSkills')}</p>
+      )}
+    </div>
+  )
+}
+
+function DashboardPremiumBanner({
+  t,
+  tBilling,
+  freemiumTrialActive,
+  freemiumTrialDaysLeft,
+  paymentRecovery,
+  trialEligible,
+  portalLoading,
+  portalError,
+  handleManageSubscription,
+}: Readonly<{
+  t: Translate
+  tBilling: Translate
+  freemiumTrialActive: boolean
+  freemiumTrialDaysLeft: number
+  paymentRecovery: boolean
+  trialEligible: boolean
+  portalLoading: boolean
+  portalError: string | null
+  handleManageSubscription: () => Promise<void>
+}>) {
+  return (
+    <div className="border-fl-border bg-fl-surface mb-6 border p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex gap-3">
+          <span className="text-fl-accent font-mono text-sm leading-none">
+            ★
+          </span>
+          <div>
+            <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
+              {premiumTitle(
+                t,
+                freemiumTrialActive,
+                freemiumTrialDaysLeft,
+                paymentRecovery
+              )}
+            </p>
+            <p className="text-fl-muted-2 font-mono text-xs leading-relaxed">
+              {premiumDescription(
+                t,
+                freemiumTrialActive,
+                freemiumTrialDaysLeft,
+                paymentRecovery,
+                trialEligible
+              )}
+            </p>
+          </div>
+        </div>
+        {!freemiumTrialActive && (
+          <span className="text-fl-label text-fl-accent border-fl-accent/30 border px-3 py-1.5 font-mono tracking-widest whitespace-nowrap uppercase">
+            {premiumCta(t, paymentRecovery, trialEligible)}
+          </span>
+        )}
+      </div>
+      {!freemiumTrialActive &&
+        (paymentRecovery ? (
+          <div className="border-fl-border mt-4 border-t pt-4">
+            <button
+              onClick={handleManageSubscription}
+              disabled={portalLoading}
+              className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full px-4 py-2.5 font-mono text-sm font-bold tracking-widest uppercase transition-colors disabled:opacity-50 sm:w-auto"
+            >
+              {portalLoading ? '...' : tBilling('updatePayment')}
+            </button>
+            {portalError && (
+              <p className="text-fl-hint mt-3 font-mono text-red-500">
+                {portalError}
+              </p>
+            )}
+          </div>
+        ) : (
+          <SubscriptionPlanButtons className="border-fl-border mt-4 border-t pt-4" />
+        ))}
+    </div>
+  )
+}
+
+function DashboardNextAction({
+  t,
+  tAssessment,
+  tPlan,
+  hasPlan,
+  completion,
+  planId,
+  nextLesson,
+  pendingCount,
+}: Readonly<{
+  t: Translate
+  tAssessment: Translate
+  tPlan: Translate
+  hasPlan: boolean
+  completion: CompletionState | null
+  planId: number | null
+  nextLesson: TodayLesson | undefined
+  pendingCount: number
+}>) {
+  if (!hasPlan)
+    return (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
+            {t('startWithAssessment')}
+          </h2>
+          <p className="text-fl-muted-2 mt-2 max-w-xl font-mono text-sm">
+            {t('assessmentCreatesPlan')}
+          </p>
+        </div>
+        <Link href="/assessment">
+          <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
+            {t('takeAssessmentArrow')}
+          </button>
+        </Link>
+      </div>
+    )
+  if (completion?.state === 'taken')
+    return (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
+            {t('levelTestCompleted')}
+          </h2>
+          <p className="text-fl-muted-2 mt-2 font-mono text-sm">
+            {t('levelTestScoreLine', {
+              score:
+                completion.score != null
+                  ? `${Math.round(completion.score * 100)}%`
+                  : '—',
+            })}
+          </p>
+        </div>
+        {completion.next_level != null ? (
+          <Link href="/assessment">
+            <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
+              {tAssessment('retake')}
+            </button>
+          </Link>
+        ) : (
+          <Link href="/plan">
+            <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
+              {t('goToMyPlan')}
+            </button>
+          </Link>
+        )}
+      </div>
+    )
+  if (completion?.state === 'ready')
+    return (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
+            {t('levelTestReady')}
+          </h2>
+          <p className="text-fl-muted-2 mt-2 max-w-xl font-mono text-sm">
+            {t('levelTestReadyDesc')}
+          </p>
+        </div>
+        {planId != null && (
+          <Link href={`/assessment/level-test?plan=${planId}`}>
+            <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
+              {tPlan('beginLevelTest')}
+            </button>
+          </Link>
+        )}
+      </div>
+    )
+  if (nextLesson)
+    return (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-fl-hint text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
+            {t('lessonReady')}
+          </p>
+          <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
+            {nextLesson.title}
+          </h2>
+          <p className="text-fl-muted-2 mt-2 font-mono text-sm">
+            {tPlan(`lessonTypes.${nextLesson.lessonType}`)} ·{' '}
+            {nextLesson.estimatedMinutes}min
+          </p>
+        </div>
+        <Link href={`/lesson/${nextLesson.id}`}>
+          <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
+            {t('startLesson')}
+          </button>
+        </Link>
+      </div>
+    )
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h2 className="text-fl-fg font-mono text-xl font-bold tracking-tight">
+          {t('allCaughtUp')}
+        </h2>
+        <p className="text-fl-muted-2 mt-2 font-mono text-sm">
+          {pendingCount > 0
+            ? t('pendingStillAvailable', { count: pendingCount })
+            : t('noPendingToday')}
+        </p>
+      </div>
+      <Link href="/plan">
+        <button className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 focus-visible:outline-fl-fg px-4 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2">
+          {t('goToMyPlan')}
+        </button>
+      </Link>
+    </div>
+  )
+}
+
+function TodayLessonAction({
+  t,
+  lesson,
+  isDone,
+  isNext,
+}: Readonly<{
+  t: Translate
+  lesson: TodayLesson
+  isDone: boolean
+  isNext: boolean
+}>) {
+  if (isDone)
+    return (
+      <span className="text-fl-label text-fl-muted-2 inline-flex items-center gap-1.5 font-mono tracking-widest uppercase">
+        <Check className="size-4 shrink-0" aria-hidden="true" />
+        {t('lessonDone')}
+      </span>
+    )
+  if (!lesson.id) return null
+  return (
+    <Link href={`/lesson/${lesson.id}`}>
+      <button
+        className={`text-fl-caption focus-visible:outline-fl-fg px-3 py-1 font-mono tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
+          isNext
+            ? 'text-fl-bg bg-fl-fg hover:bg-fl-fg/90 font-bold'
+            : 'text-fl-fg border-fl-border hover:border-fl-border-2 border'
+        }`}
+      >
+        {t('startLesson')}
+      </button>
+    </Link>
   )
 }

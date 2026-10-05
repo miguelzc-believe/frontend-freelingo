@@ -83,6 +83,34 @@ function adjustLevel(current: CEFRLevel, direction: 'up' | 'down'): CEFRLevel {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+function ExistingPlanVoiceTrial({
+  trialLoading,
+  onRequest,
+  t,
+}: Readonly<{
+  trialLoading: boolean
+  onRequest: () => void
+  t: ReturnType<typeof useTranslations>
+}>) {
+  return (
+    <div className="border-fl-border bg-fl-surface-2 space-y-3 border px-4 py-5">
+      <p className="text-fl-fg font-mono text-sm font-bold">
+        {t('voiceTrialTitle')}
+      </p>
+      <p className="text-fl-muted-1 font-mono text-xs leading-relaxed">
+        {t('voiceTrialDesc', { minutes: 5 })}
+      </p>
+      <button
+        onClick={onRequest}
+        disabled={trialLoading}
+        className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors disabled:opacity-50"
+      >
+        {trialLoading ? '...' : `${t('voiceTrialStart')} →`}
+      </button>
+    </div>
+  )
+}
+
 export default function AssessmentPage() {
   const t = useTranslations('assessment')
   const tCommon = useTranslations('common')
@@ -391,21 +419,11 @@ export default function AssessmentPage() {
               {t('alreadyHasPlan')}
             </p>
             {canOfferVoiceTrial && (
-              <div className="border-fl-border bg-fl-surface-2 space-y-3 border px-4 py-5">
-                <p className="text-fl-fg font-mono text-sm font-bold">
-                  {t('voiceTrialTitle')}
-                </p>
-                <p className="text-fl-muted-1 font-mono text-xs leading-relaxed">
-                  {t('voiceTrialDesc', { minutes: 5 })}
-                </p>
-                <button
-                  onClick={requestVoiceTrial}
-                  disabled={trialLoading}
-                  className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors disabled:opacity-50"
-                >
-                  {trialLoading ? '...' : `${t('voiceTrialStart')} →`}
-                </button>
-              </div>
+              <ExistingPlanVoiceTrial
+                trialLoading={trialLoading}
+                onRequest={requestVoiceTrial}
+                t={t}
+              />
             )}
             {error && (
               <div className="border-fl-error/40 text-fl-error-fg border px-4 py-3 font-mono text-xs">

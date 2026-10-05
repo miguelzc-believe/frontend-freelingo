@@ -70,7 +70,7 @@ Targets: S8980 6, S2925 3, S1607 1, S5976 1.
   remain. Native original methods are forwarded; disconnect overload preserved
   through a Proxy apply trap.
 - Worker baseline/post: `pnpm vitest run tests/components/AudioPlayer.test.tsx
-  tests/components/ProfileSection.test.tsx` — 2 files / 87 tests passed both.
+tests/components/ProfileSection.test.tsx` — 2 files / 87 tests passed both.
 - Worker `pnpm exec playwright test tests/e2e/voice-recorder.spec.ts` — final
   8/8 passed, no skips. Initial new cancellation selector had incorrect case;
   corrected against observed UI, no production bug inferred.
@@ -88,11 +88,68 @@ Targets: S8980 6, S2925 3, S1607 1, S5976 1.
 
 ## Step 3 — Readability and cognitive complexity (73 findings)
 
-Pending: S3358 50 and S3776 23 in 23 files. Internal file-disjoint batches may
-run concurrently, but all belong in one step-3 commit. Preserve hooks/state
-lifetimes, lazy translation, stable authored/entity identity, same-origin auth,
-per-language state, audio cancellation and SSE terminal semantics. Extracted
-functions must not simply inherit the original excessive complexity.
+Implemented as file-disjoint batches consolidated into one commit. Sonar-mirror
+checker `/tmp/opencode/sonar-maintainability-check/check.mjs` — total 0
+(73 → 0 in owned files). Individual page checks also total 0, matching
+the 73 Sonar baseline exactly. Checker rules mirror the Sonar definitions;
+server closure remains scan-dependent.
 
-Final acceptance requires fresh local coverage/quality checks, relevant browser
-regressions, and Sonar analysis/query. Unverified server closure is never zero.
+### Dashboard slice (13 findings)
+
+- `src/app/(app)/dashboard/page.tsx`: verified total 0.
+- Extracted `getPlanProgress`, `emptyTodayKey`, `premiumTitle/Description/Cta`,
+  `DashboardNextStep`, `DashboardStats`, `DashboardPlanProgress`,
+  `DashboardTodayLessons`, `DashboardPerformance`, `DashboardPremiumBanner`,
+  `DashboardNextAction`, `TodayLessonAction`.
+- Tests: `tests/app/dashboard-next-step.test.tsx` 10 → 14, including premium
+  banner precedence (eligible trial, used trial, payment recovery, active
+  freemium trial) and the existing lesson-slot plus plan-progress assertions.
+  `pnpm vitest run tests/app/dashboard-next-step.test.tsx` — 14/14 passed.
+  Scoped page check total 0; `pnpm typecheck` and `pnpm lint` passed;
+  scoped formatting and `git diff --check` passed.
+
+### Lesson / free-write slice (16 findings)
+
+- `src/app/(app)/lesson/[id]/page.tsx`, `src/lib/free-write-corrections.ts`,
+  `tests/app/lesson-flow.test.tsx`.
+- Lesson extracted stateless module-scope sections plus readonly prop boundaries.
+  Hooks, states, effects and handlers remain in `LessonPage`; no render-defined
+  components.
+- `src/lib/free-write-corrections.ts` now separates candidate generation,
+  allocation passes and segment reconstruction without changing priorities,
+  wholeness ordering, placement tracking or ranges.
+- LessonPage complexity 101 → 9; individual helper maxima lesson 13,
+  corrections 14 (≤ 15). All 14 nested conditionals eliminated.
+- Tests: baseline 63/63, final 66/66 for the four requested files; lesson-flow
+  36/36 standalone.
+- Rollback boundary for both slices is their owned files plus their directly
+  related tests; unrelated Sonar categories unchanged.
+
+### Chat / SSE slice (8 findings)
+
+- `src/app/(app)/chat/page.tsx`, `src/lib/sse.ts`.
+- Chat extracts stateless presentation helpers plus `getChatErrorMessage`,
+  `consumeChatResponse`, `retryConversations` and stream handlers. Single
+  assistant record per send, reset before the first token, independent if-checks
+  (never else-if), same terminal-marker and voice-handoff semantics.
+  SSE separates `normalizeLineEndings` with trailing-CR retention and final-event
+  validation, preserving decoder/buffer ownership and releaseLock.
+- Tests: `tests/app/chat-memory-stream.test.tsx` `tests/lib/chat-messages.test.ts`
+  `tests/lib/sse.test.ts` — 3 files / 28 passed.
+- Scoped checks: formatting, lint and `pnpm typecheck` passed; page check total 0.
+
+### Conversation, onboarding, commerce, admin, reading/listening
+
+Tracked in pending maintenance sequencing; implementation spans
+`src/app/(app)/admin/*`, `src/app/(app)/conversation/*`,
+`src/components/billing/*`, `src/components/conversation/*`,
+`src/components/reviews/*`, `src/components/settings/*`,
+`src/components/ui/*` and the auth/onboarding/learning pages.
+The pending local manifest maps sources and file-ownership slices but does
+not commit batches separately.
+
+### Pending validation for step 3
+
+Full quality: `pnpm quality:local`, migrated-route browser regressions, and a
+final authenticated Sonar scan/query. No Sonar closure or merge is claimed
+until the independent query returns zero unresolved MAINTAINABILITY issues.

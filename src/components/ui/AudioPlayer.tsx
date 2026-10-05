@@ -17,6 +17,56 @@ interface AudioPlayerProps {
 
 type PlayerState = 'idle' | 'loading' | 'playing' | 'error'
 
+const playerPresentation: Record<
+  PlayerState,
+  { label: string; colorClass: string }
+> = {
+  idle: {
+    label: '▶',
+    colorClass:
+      'border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg',
+  },
+  loading: {
+    label: '...',
+    colorClass: 'border-fl-border text-fl-muted-3 animate-pulse',
+  },
+  playing: { label: '■', colorClass: 'border-fl-border-2 text-fl-fg' },
+  error: { label: '✕', colorClass: 'border-fl-error/40 text-fl-error-fg' },
+}
+
+function audioRequestOptions({
+  audioUrl,
+  accessToken,
+  text,
+  voice,
+  traceId,
+  signal,
+}: {
+  audioUrl: string | undefined
+  accessToken: string | null
+  text: string
+  voice: string | undefined
+  traceId: string
+  signal: AbortSignal
+}): RequestInit {
+  const authHeaders = accessToken
+    ? { Authorization: `Bearer ${accessToken}` }
+    : {}
+  if (audioUrl) {
+    return { headers: authHeaders, credentials: 'include', signal }
+  }
+  return {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-TTS-Trace-ID': traceId,
+      ...authHeaders,
+    },
+    body: JSON.stringify({ text, voice }),
+    signal,
+  }
+}
+
 export function AudioPlayer({
   text,
   voice,
@@ -61,28 +111,14 @@ export function AudioPlayer({
       const fetchStart = performance.now()
       const res = await fetch(
         audioUrl ?? '/api/tts',
-        audioUrl
-          ? {
-              headers: {
-                ...(accessToken
-                  ? { Authorization: `Bearer ${accessToken}` }
-                  : {}),
-              },
-              credentials: 'include' as RequestCredentials,
-              signal: controller.signal,
-            }
-          : {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-TTS-Trace-ID': traceId,
-                ...(accessToken
-                  ? { Authorization: `Bearer ${accessToken}` }
-                  : {}),
-              },
-              body: JSON.stringify({ text, voice: resolvedVoice }),
-              signal: controller.signal,
-            }
+        audioRequestOptions({
+          audioUrl,
+          accessToken,
+          text,
+          voice: resolvedVoice,
+          traceId,
+          signal: controller.signal,
+        })
       )
       clearTimeout(timeoutId)
       const fetchMs = performance.now() - fetchStart
@@ -154,23 +190,7 @@ export function AudioPlayer({
   const sizeClass =
     size === 'sm' ? 'px-2 py-1 text-fl-hint' : 'px-3 py-2 text-xs'
 
-  const label =
-    state === 'loading'
-      ? '...'
-      : state === 'playing'
-        ? '■'
-        : state === 'error'
-          ? '✕'
-          : '▶'
-
-  const colorClass =
-    state === 'playing'
-      ? 'border-fl-border-2 text-fl-fg'
-      : state === 'loading'
-        ? 'border-fl-border text-fl-muted-3 animate-pulse'
-        : state === 'error'
-          ? 'border-fl-error/40 text-fl-error-fg'
-          : 'border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg'
+  const { label, colorClass } = playerPresentation[state]
 
   return (
     <button

@@ -114,6 +114,99 @@ function deactivateTitle(
   return isActive ? t('deactivate') : t('activate')
 }
 
+function UserActionConfirmations({
+  activePending,
+  deletePending,
+  onToggleActive,
+  onCancelActive,
+  onDelete,
+  onCancelDelete,
+  t,
+}: Readonly<{
+  activePending: AdminUserItem | null
+  deletePending: AdminUserItem | null
+  onToggleActive: () => void
+  onCancelActive: () => void
+  onDelete: () => void
+  onCancelDelete: () => void
+  t: (key: string) => string
+}>) {
+  return (
+    <>
+      <ConfirmDialog
+        open={activePending !== null}
+        title={
+          activePending?.is_active ? t('deactivateUser') : t('activateUser')
+        }
+        message={
+          activePending?.is_active
+            ? t('deactivateUserMessage')
+            : t('activateUserMessage')
+        }
+        confirmLabel={
+          activePending?.is_active ? t('deactivate') : t('activate')
+        }
+        danger={activePending?.is_active}
+        onConfirm={onToggleActive}
+        onCancel={onCancelActive}
+      />
+
+      <ConfirmDialog
+        open={deletePending !== null}
+        title={t('deleteUser')}
+        message={t('deleteUserMessage')}
+        confirmLabel={t('deleteConfirm')}
+        danger
+        onConfirm={onDelete}
+        onCancel={onCancelDelete}
+      />
+    </>
+  )
+}
+
+function UserTableHead({
+  stripeEnabled,
+  t,
+}: Readonly<{
+  stripeEnabled: boolean
+  t: (key: string) => string
+}>) {
+  return (
+    <thead>
+      <tr className="border-fl-border border-b">
+        <th
+          className={`text-fl-label text-fl-muted-4 px-5 py-3 text-left font-mono tracking-widest uppercase ${stripeEnabled ? 'w-[25%]' : 'w-[30%]'}`}
+        >
+          {t('userColumn')}
+        </th>
+        <th
+          className={`text-fl-label text-fl-muted-4 px-5 py-3 text-left font-mono tracking-widest uppercase ${stripeEnabled ? 'w-[25%]' : 'w-[30%]'}`}
+        >
+          {t('fieldEmail')}
+        </th>
+        <th
+          className={`text-fl-label text-fl-muted-4 px-5 py-3 text-left font-mono tracking-widest uppercase ${stripeEnabled ? 'w-[12.5%]' : 'w-[15%]'}`}
+        >
+          {t('role')}
+        </th>
+        <th
+          className={`text-fl-label text-fl-muted-4 px-5 py-3 text-left font-mono tracking-widest uppercase ${stripeEnabled ? 'w-[12.5%]' : 'w-[15%]'}`}
+        >
+          {t('status')}
+        </th>
+        {stripeEnabled && (
+          <th className="text-fl-label text-fl-muted-4 w-[15%] px-5 py-3 text-left font-mono tracking-widest uppercase">
+            {t('fieldSubscription')}
+          </th>
+        )}
+        <th className="text-fl-label text-fl-muted-4 w-[10%] px-5 py-3 text-right font-mono tracking-widest uppercase">
+          {t('actions')}
+        </th>
+      </tr>
+    </thead>
+  )
+}
+
 export default function AdminUsersPage() {
   const t = useTranslations('admin')
   const tCommon = useTranslations('common')
@@ -674,38 +767,7 @@ export default function AdminUsersPage() {
           <>
             <div className="hidden lg:block">
               <table className="w-full table-fixed border-collapse">
-                <thead>
-                  <tr className="border-fl-border border-b">
-                    <th
-                      className={`text-fl-label text-fl-muted-4 px-5 py-3 text-left font-mono tracking-widest uppercase ${stripeEnabled ? 'w-[25%]' : 'w-[30%]'}`}
-                    >
-                      {t('userColumn')}
-                    </th>
-                    <th
-                      className={`text-fl-label text-fl-muted-4 px-5 py-3 text-left font-mono tracking-widest uppercase ${stripeEnabled ? 'w-[25%]' : 'w-[30%]'}`}
-                    >
-                      {t('fieldEmail')}
-                    </th>
-                    <th
-                      className={`text-fl-label text-fl-muted-4 px-5 py-3 text-left font-mono tracking-widest uppercase ${stripeEnabled ? 'w-[12.5%]' : 'w-[15%]'}`}
-                    >
-                      {t('role')}
-                    </th>
-                    <th
-                      className={`text-fl-label text-fl-muted-4 px-5 py-3 text-left font-mono tracking-widest uppercase ${stripeEnabled ? 'w-[12.5%]' : 'w-[15%]'}`}
-                    >
-                      {t('status')}
-                    </th>
-                    {stripeEnabled && (
-                      <th className="text-fl-label text-fl-muted-4 w-[15%] px-5 py-3 text-left font-mono tracking-widest uppercase">
-                        {t('fieldSubscription')}
-                      </th>
-                    )}
-                    <th className="text-fl-label text-fl-muted-4 w-[10%] px-5 py-3 text-right font-mono tracking-widest uppercase">
-                      {t('actions')}
-                    </th>
-                  </tr>
-                </thead>
+                <UserTableHead stripeEnabled={stripeEnabled} t={t} />
                 <tbody>
                   {users.map((u) => (
                     <tr
@@ -1117,32 +1179,14 @@ export default function AdminUsersPage() {
         </>
       )}
 
-      <ConfirmDialog
-        open={activePending !== null}
-        title={
-          activePending?.is_active ? t('deactivateUser') : t('activateUser')
-        }
-        message={
-          activePending?.is_active
-            ? t('deactivateUserMessage')
-            : t('activateUserMessage')
-        }
-        confirmLabel={
-          activePending?.is_active ? t('deactivate') : t('activate')
-        }
-        danger={activePending?.is_active}
-        onConfirm={() => activePending && toggleActive(activePending)}
-        onCancel={() => setActivePending(null)}
-      />
-
-      <ConfirmDialog
-        open={deletePending !== null}
-        title={t('deleteUser')}
-        message={t('deleteUserMessage')}
-        confirmLabel={t('deleteConfirm')}
-        danger
-        onConfirm={() => deletePending && deleteUser(deletePending)}
-        onCancel={() => setDeletePending(null)}
+      <UserActionConfirmations
+        activePending={activePending}
+        deletePending={deletePending}
+        onToggleActive={() => activePending && toggleActive(activePending)}
+        onCancelActive={() => setActivePending(null)}
+        onDelete={() => deletePending && deleteUser(deletePending)}
+        onCancelDelete={() => setDeletePending(null)}
+        t={t}
       />
     </div>
   )

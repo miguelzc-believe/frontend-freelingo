@@ -35,6 +35,59 @@ function ConversationMode(
   )
 }
 
+interface VoiceTrial {
+  token: string
+  durationSeconds: number
+  cefrLevel?: string | undefined
+  targetLanguage?: string | undefined
+}
+
+function parseVoiceContext(
+  raw: string
+): { messages?: ChatContextItem[] } | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (typeof parsed === 'object' && parsed !== null && 'messages' in parsed) {
+      return Array.isArray(parsed.messages)
+        ? { messages: parsed.messages as ChatContextItem[] }
+        : {}
+    }
+    if (Array.isArray(parsed)) return { messages: parsed as ChatContextItem[] }
+  } catch {
+    // malformed — ignore
+  }
+  return null
+}
+
+function parseVoiceTrial(raw: string): VoiceTrial | null {
+  try {
+    const parsed = JSON.parse(raw) as {
+      token?: unknown
+      durationSeconds?: unknown
+      cefrLevel?: unknown
+      targetLanguage?: unknown
+    }
+    if (typeof parsed.token !== 'string' || parsed.token.length === 0)
+      return null
+    return {
+      token: parsed.token,
+      durationSeconds:
+        typeof parsed.durationSeconds === 'number'
+          ? parsed.durationSeconds
+          : 300,
+      cefrLevel:
+        typeof parsed.cefrLevel === 'string' ? parsed.cefrLevel : undefined,
+      targetLanguage:
+        typeof parsed.targetLanguage === 'string'
+          ? parsed.targetLanguage
+          : undefined,
+    }
+  } catch {
+    // malformed — ignore
+    return null
+  }
+}
+
 export default function ConversationPage() {
   const activeLanguage = useLanguageStore((s) => s.activeLanguage)
   const stripeEnabled = useConfigStore((s) => s.stripeEnabled)
@@ -67,12 +120,7 @@ export default function ConversationPage() {
   const [autoStart, setAutoStart] = useState(false)
   const [cefrLevel, setCefrLevel] = useState<string | null>(null)
   const [planReady, setPlanReady] = useState(false)
-  const [voiceTrial, setVoiceTrial] = useState<{
-    token: string
-    durationSeconds: number
-    cefrLevel?: string | undefined
-    targetLanguage?: string | undefined
-  } | null>(null)
+  const [voiceTrial, setVoiceTrial] = useState<VoiceTrial | null>(null)
 
   useEffect(() => {
     if (stripeEnabled && !isSubscribed(user, stripeEnabled)) {
@@ -84,63 +132,26 @@ export default function ConversationPage() {
     const raw = sessionStorage.getItem('voice_context')
     if (raw) {
       sessionStorage.removeItem('voice_context')
-      try {
-        const parsed = JSON.parse(raw) as unknown
-        if (
-          typeof parsed === 'object' &&
-          parsed !== null &&
-          'messages' in (parsed as Record<string, unknown>)
-        ) {
-          const pkg = parsed as { messages: unknown }
-          if (Array.isArray(pkg.messages)) {
-            setInitialContext(pkg.messages as ChatContextItem[])
-          }
-          setAutoStart(true)
-        } else if (Array.isArray(parsed)) {
-          setInitialContext(parsed as ChatContextItem[])
-          setAutoStart(true)
-        }
-      } catch {
-        // malformed — ignore
+      const context = parseVoiceContext(raw)
+      if (context) {
+        if (context.messages) setInitialContext(context.messages)
+        setAutoStart(true)
       }
     }
     const trialRaw = sessionStorage.getItem('assessment_voice_trial')
     if (trialRaw) {
       sessionStorage.removeItem('assessment_voice_trial')
-      try {
-        const parsed = JSON.parse(trialRaw) as {
-          token?: unknown
-          durationSeconds?: unknown
-          cefrLevel?: unknown
-          targetLanguage?: unknown
-        }
-        if (typeof parsed.token === 'string' && parsed.token.length > 0) {
-          setVoiceTrial({
-            token: parsed.token,
-            durationSeconds:
-              typeof parsed.durationSeconds === 'number'
-                ? parsed.durationSeconds
-                : 300,
-            cefrLevel:
-              typeof parsed.cefrLevel === 'string'
-                ? parsed.cefrLevel
-                : undefined,
-            targetLanguage:
-              typeof parsed.targetLanguage === 'string'
-                ? parsed.targetLanguage
-                : undefined,
-          })
-          setInitialContext([
-            {
-              role: 'user',
-              content:
-                'I just completed the placement assessment. Please start a short, friendly voice conversation adapted to my level.',
-            },
-          ])
-          setAutoStart(true)
-        }
-      } catch {
-        // malformed — ignore
+      const trial = parseVoiceTrial(trialRaw)
+      if (trial) {
+        setVoiceTrial(trial)
+        setInitialContext([
+          {
+            role: 'user',
+            content:
+              'I just completed the placement assessment. Please start a short, friendly voice conversation adapted to my level.',
+          },
+        ])
+        setAutoStart(true)
       }
     }
     setPlanReady(false)
@@ -157,37 +168,41 @@ export default function ConversationPage() {
 
   if (!planReady) return null
 
-  return (
-    <MaintenanceGate>
-      {voiceTrial ? (
-        <ConversationMode
-          initialContext={initialContext}
-          autoStart={autoStart}
-          cefrLevel={voiceTrial.cefrLevel ?? cefrLevel}
-          targetLanguage={voiceTrial.targetLanguage ?? activeLanguage?.code}
-          voiceTrialToken={voiceTrial.token}
-          voiceTrialDurationSeconds={voiceTrial.durationSeconds}
-          trialMode
-        />
-      ) : freemiumExhausted ? (
-        <>
-          <FreemiumQuotaBanner feature="voice" className="mb-4" />
-          <PaywallBanner feature="voice" compact />
-        </>
-      ) : (
-        <ConversationMode
-          initialContext={initialContext}
-          autoStart={autoStart}
-          cefrLevel={cefrLevel}
-          targetLanguage={activeLanguage?.code}
-          freemiumVoiceRemaining={
-            showFreemiumVoicePill ? freemiumVoiceRemaining : undefined
-          }
-          freemiumVoiceLimit={
-            showFreemiumVoicePill ? freemiumVoiceLimit : undefined
-          }
-        />
-      )}
-    </MaintenanceGate>
-  )
+  let content
+  if (voiceTrial) {
+    content = (
+      <ConversationMode
+        initialContext={initialContext}
+        autoStart={autoStart}
+        cefrLevel={voiceTrial.cefrLevel ?? cefrLevel}
+        targetLanguage={voiceTrial.targetLanguage ?? activeLanguage?.code}
+        voiceTrialToken={voiceTrial.token}
+        voiceTrialDurationSeconds={voiceTrial.durationSeconds}
+        trialMode
+      />
+    )
+  } else if (freemiumExhausted) {
+    content = (
+      <>
+        <FreemiumQuotaBanner feature="voice" className="mb-4" />
+        <PaywallBanner feature="voice" compact />
+      </>
+    )
+  } else {
+    content = (
+      <ConversationMode
+        initialContext={initialContext}
+        autoStart={autoStart}
+        cefrLevel={cefrLevel}
+        targetLanguage={activeLanguage?.code}
+        freemiumVoiceRemaining={
+          showFreemiumVoicePill ? freemiumVoiceRemaining : undefined
+        }
+        freemiumVoiceLimit={
+          showFreemiumVoicePill ? freemiumVoiceLimit : undefined
+        }
+      />
+    )
+  }
+  return <MaintenanceGate>{content}</MaintenanceGate>
 }

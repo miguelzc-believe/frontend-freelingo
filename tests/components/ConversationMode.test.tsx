@@ -228,6 +228,29 @@ describe('ConversationMode session lifecycle', () => {
     expect(MockWebSocket.instances).toHaveLength(0)
   })
 
+  it('constructs AudioContext synchronously in the start action before pending resume', async () => {
+    let finishResume!: () => void
+    const resume = new Promise<void>((resolve) => {
+      finishResume = resolve
+    })
+    const construct = vi.fn(function () {
+      return {
+        state: 'suspended',
+        resume: () => resume,
+        close: mocks.closeAudio,
+      }
+    })
+    vi.stubGlobal('AudioContext', construct)
+    render(<ConversationMode />)
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    expect(construct).toHaveBeenCalledOnce()
+    expect(mocks.getUserMedia).not.toHaveBeenCalled()
+    expect(mocks.create).not.toHaveBeenCalled()
+    await act(async () => finishResume())
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
+    expect(mocks.getUserMedia).toHaveBeenCalledOnce()
+  })
+
   it('continues starting after a suspended audio context cannot resume', async () => {
     vi.stubGlobal(
       'AudioContext',
@@ -679,6 +702,28 @@ describe('ConversationMode session lifecycle', () => {
     expect(mocks.destroy).toHaveBeenCalledTimes(1)
     expect(mic.stop).toHaveBeenCalledTimes(1)
     expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
+  })
+
+  it('authenticates with the latest token when warmup completes after refresh', async () => {
+    let finishWarmup!: (response: { ok: boolean }) => void
+    mocks.apiFetch.mockImplementation((url: string) =>
+      url === '/api/conversation/warmup'
+        ? new Promise((resolve) => {
+            finishWarmup = resolve
+          })
+        : Promise.resolve({ ok: true, json: async () => null })
+    )
+    render(<ConversationMode />)
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    await waitFor(() => expect(finishWarmup).toBeDefined())
+    act(() => useAuthStore.setState({ accessToken: 'refreshed-token' }))
+    await act(async () => finishWarmup({ ok: true }))
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
+    const ws = MockWebSocket.instances[0]!
+    act(() => ws.onopen?.())
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'auth', token: 'refreshed-token' })
+    )
   })
 
   it('does not connect if unmounted while warmup is pending', async () => {

@@ -241,6 +241,24 @@ describe('createAudioQueue', () => {
     expect(idle).toHaveBeenCalledTimes(1)
   })
 
+  it('drops decoded audio from a cancelled generation without scheduling it', async () => {
+    const { ctx, queue, sources, decoded } = setup()
+    let finishDecode!: (buffer: AudioBuffer) => void
+    ctx.decodeAudioData.mockReturnValueOnce(
+      new Promise<AudioBuffer>((resolve) => {
+        finishDecode = resolve
+      })
+    )
+    const pending = queue.enqueue(new ArrayBuffer(8))
+    await vi.waitFor(() => expect(ctx.decodeAudioData).toHaveBeenCalledOnce())
+    queue.cancel()
+    finishDecode(decoded)
+    await pending
+    expect(sources).toHaveLength(0)
+    await queue.enqueue(new ArrayBuffer(4))
+    expect(sources[0]?.start).toHaveBeenCalledWith(10.005)
+  })
+
   it.each(['closed', 'resume', 'create', 'start'])(
     'handles %s context failures without rejecting',
     async (failure) => {

@@ -57,6 +57,63 @@ export function ReviewSection({ title }: { title?: string } = {}) {
     }
   }
 
+  let content: React.ReactNode
+  if (loading) {
+    content = (
+      <div className="text-fl-muted-2 flex items-center gap-2 py-5 font-mono text-xs">
+        <Loader2 className="size-4 animate-spin" /> {tReview('checking')}
+      </div>
+    )
+  } else if (error) {
+    content = <p className="text-fl-error-fg py-5 font-mono text-xs">{error}</p>
+  } else {
+    content = (
+      <div className="-mx-5">
+        <ReviewForm
+          initialReview={review}
+          submitLabel={review ? t('reviewUpdate') : tReview('submit')}
+          onSubmit={async (data) => {
+            const savedReview = review
+              ? await updateMyReview(data)
+              : await createReview(data)
+            setReview(savedReview)
+            setSaved(true)
+            setDeleted(false)
+            window.setTimeout(() => setSaved(false), 2500)
+            return savedReview
+          }}
+        />
+        {review && (
+          <div className="px-5 pb-5">
+            <button
+              type="button"
+              onClick={() => setDeleteConfirm(true)}
+              disabled={deleting}
+              className="border-fl-error/30 text-fl-error-fg text-fl-label hover:bg-fl-error/10 flex w-full items-center justify-center gap-2 border py-3 font-mono font-bold tracking-widest uppercase transition-colors disabled:opacity-60"
+            >
+              {deleting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              {t('reviewDelete')}
+            </button>
+          </div>
+        )}
+        {saved && (
+          <p className="text-fl-accent px-5 pb-5 font-mono text-xs">
+            {t('reviewSaved')}
+          </p>
+        )}
+        {deleted && (
+          <p className="text-fl-accent px-5 pb-5 font-mono text-xs">
+            {t('reviewDeleted')}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="border-fl-border bg-fl-surface border p-6">
@@ -76,57 +133,7 @@ export function ReviewSection({ title }: { title?: string } = {}) {
           </p>
         )}
 
-        {loading ? (
-          <div className="text-fl-muted-2 flex items-center gap-2 py-5 font-mono text-xs">
-            <Loader2 className="size-4 animate-spin" /> {tReview('checking')}
-          </div>
-        ) : error ? (
-          <p className="text-fl-error-fg py-5 font-mono text-xs">{error}</p>
-        ) : (
-          <div className="-mx-5">
-            <ReviewForm
-              initialReview={review}
-              submitLabel={review ? t('reviewUpdate') : tReview('submit')}
-              onSubmit={async (data) => {
-                const savedReview = review
-                  ? await updateMyReview(data)
-                  : await createReview(data)
-                setReview(savedReview)
-                setSaved(true)
-                setDeleted(false)
-                window.setTimeout(() => setSaved(false), 2500)
-                return savedReview
-              }}
-            />
-            {review && (
-              <div className="px-5 pb-5">
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirm(true)}
-                  disabled={deleting}
-                  className="border-fl-error/30 text-fl-error-fg text-fl-label hover:bg-fl-error/10 flex w-full items-center justify-center gap-2 border py-3 font-mono font-bold tracking-widest uppercase transition-colors disabled:opacity-60"
-                >
-                  {deleting ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-3.5" />
-                  )}
-                  {t('reviewDelete')}
-                </button>
-              </div>
-            )}
-            {saved && (
-              <p className="text-fl-accent px-5 pb-5 font-mono text-xs">
-                {t('reviewSaved')}
-              </p>
-            )}
-            {deleted && (
-              <p className="text-fl-accent px-5 pb-5 font-mono text-xs">
-                {t('reviewDeleted')}
-              </p>
-            )}
-          </div>
-        )}
+        {content}
       </div>
 
       <ConfirmDialog

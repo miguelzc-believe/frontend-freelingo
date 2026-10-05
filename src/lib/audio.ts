@@ -149,7 +149,14 @@ export function createAudioQueue(
     }
 
     if (generationToken !== generation) return
+    scheduleDecodedAudio(decoded, generationToken, chunkId)
+  }
 
+  function scheduleDecodedAudio(
+    decoded: AudioBuffer,
+    generationToken: number,
+    chunkId: number
+  ): void {
     let source: AudioBufferSourceNode
     try {
       source = ctx.createBufferSource()

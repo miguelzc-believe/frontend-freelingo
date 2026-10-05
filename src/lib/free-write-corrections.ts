@@ -79,17 +79,16 @@ function findOccurrences(answer: string, original: string): Occurrence[] {
   return [...occurrences.values()]
 }
 
-// Locates each correction's `original` fragment in the submitted answer and
-// splits the answer into plain/fix segments. Each correction is assigned one
-// non-overlapping occurrence: repeated identical fragments consume successive
-// occurrences. Whole-word matches beat subwords, then exact/as-is matches beat
-// fallbacks; ties follow answer order, preferring longer same-start fragments.
-// Corrections whose fragment cannot be placed yield no segment — they are
-// still shown in the corrections list below the answer.
-export function annotateAnswer(
+interface AllocatedMatch {
+  start: number
+  end: number
+  corrected: string
+}
+
+function correctionCandidates(
   answer: string,
-  corrections: FreeWriteCorrection[]
-): AnswerSegment[] {
+  corrections: readonly FreeWriteCorrection[]
+): Candidate[] {
   const candidates: Candidate[] = corrections.flatMap((correction, index) =>
     correction.original && correction.corrected
       ? findOccurrences(answer, correction.original).map((occurrence) => ({
@@ -106,27 +105,49 @@ export function annotateAnswer(
       a.correction - b.correction
   )
 
-  const matches: Array<{ start: number; end: number; corrected: string }> = []
-  const placed = new Set<number>()
+  return candidates
+}
+
+function allocateCandidatePass(
+  candidates: readonly Candidate[],
+  corrections: readonly FreeWriteCorrection[],
+  wholeWordOnly: boolean,
+  allocation: Readonly<{ matches: AllocatedMatch[]; placed: Set<number> }>
+) {
+  const { matches, placed } = allocation
   const overlaps = (start: number, end: number) =>
     matches.some((match) => start < match.end && end > match.start)
-  for (const wholeWordOnly of [true, false]) {
-    for (const candidate of candidates) {
-      if (placed.has(candidate.correction)) continue
-      if (wholeWordOnly && !candidate.wholeWord) continue
-      if (overlaps(candidate.start, candidate.end)) continue
-      const correction = corrections[candidate.correction]
-      if (!correction) continue
-      placed.add(candidate.correction)
-      matches.push({
-        start: candidate.start,
-        end: candidate.end,
-        corrected: correction.corrected,
-      })
-    }
+  for (const candidate of candidates) {
+    if (placed.has(candidate.correction)) continue
+    if (wholeWordOnly && !candidate.wholeWord) continue
+    if (overlaps(candidate.start, candidate.end)) continue
+    const correction = corrections[candidate.correction]
+    if (!correction) continue
+    placed.add(candidate.correction)
+    matches.push({
+      start: candidate.start,
+      end: candidate.end,
+      corrected: correction.corrected,
+    })
   }
-  matches.sort((a, b) => a.start - b.start)
+}
 
+function allocateMatches(
+  candidates: readonly Candidate[],
+  corrections: readonly FreeWriteCorrection[]
+): AllocatedMatch[] {
+  const matches: AllocatedMatch[] = []
+  const allocation = { matches, placed: new Set<number>() }
+  for (const wholeWordOnly of [true, false]) {
+    allocateCandidatePass(candidates, corrections, wholeWordOnly, allocation)
+  }
+  return matches.sort((a, b) => a.start - b.start)
+}
+
+function reconstructSegments(
+  answer: string,
+  matches: readonly AllocatedMatch[]
+): AnswerSegment[] {
   const segments: AnswerSegment[] = []
   let cursor = 0
   for (const match of matches) {
@@ -156,4 +177,19 @@ export function annotateAnswer(
     })
   }
   return segments
+}
+
+// Locates each correction's `original` fragment in the submitted answer and
+// splits the answer into plain/fix segments. Each correction is assigned one
+// non-overlapping occurrence: repeated identical fragments consume successive
+// occurrences. Whole-word matches beat subwords, then exact/as-is matches beat
+// fallbacks; ties follow answer order, preferring longer same-start fragments.
+// Corrections whose fragment cannot be placed yield no segment — they are
+// still shown in the corrections list below the answer.
+export function annotateAnswer(
+  answer: string,
+  corrections: FreeWriteCorrection[]
+): AnswerSegment[] {
+  const candidates = correctionCandidates(answer, corrections)
+  return reconstructSegments(answer, allocateMatches(candidates, corrections))
 }
