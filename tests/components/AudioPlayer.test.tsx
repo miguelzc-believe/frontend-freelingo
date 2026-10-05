@@ -390,11 +390,13 @@ describe('AudioPlayer', () => {
 
     render(<AudioPlayer text="Hello" />)
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
-    })
+    const initialAudio = currentAudioMock
+    fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(initialAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
 
@@ -410,14 +412,26 @@ describe('AudioPlayer', () => {
 
   it('shows error on non-ok HTTP response then recovers after 2s', async () => {
     vi.useFakeTimers()
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 })
+    let resolveRequest!: (response: { ok: boolean; status: number }) => void
+    const ttsRequest = new Promise<{ ok: boolean; status: number }>(
+      (resolve) => {
+        resolveRequest = resolve
+      }
+    )
+    fetchMock.mockReturnValueOnce(ttsRequest)
 
     render(<AudioPlayer text="Hello" />)
+    const requestStartedAt = Date.now()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText(LOADING)).toBeDefined()
 
+    // The click has its own RTL act; only asynchronous request settlement needs one.
     await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
+      resolveRequest({ ok: false, status: 500 })
+      await ttsRequest
     })
 
+    expect(Date.now()).toBe(requestStartedAt)
     expect(screen.getByText(ERROR)).toBeDefined()
     const c = screen.getByRole('button').className.split(/\s+/).filter(Boolean)
     expect(c).toContain('text-fl-error-fg')
@@ -432,14 +446,23 @@ describe('AudioPlayer', () => {
 
   it('shows error on network failure then recovers after 2s', async () => {
     vi.useFakeTimers()
-    fetchMock.mockRejectedValueOnce(new Error('Network error'))
+    let rejectRequest!: (error: Error) => void
+    const ttsRequest = new Promise<Response>((_resolve, reject) => {
+      rejectRequest = reject
+    })
+    fetchMock.mockReturnValueOnce(ttsRequest)
 
     render(<AudioPlayer text="Hello" />)
+    const requestStartedAt = Date.now()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText(LOADING)).toBeDefined()
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
+      rejectRequest(new Error('Network error'))
+      await Promise.allSettled([ttsRequest])
     })
 
+    expect(Date.now()).toBe(requestStartedAt)
     expect(screen.getByText(ERROR)).toBeDefined()
     const c = screen.getByRole('button').className.split(/\s+/).filter(Boolean)
     expect(c).toContain('text-fl-error-fg')
@@ -460,11 +483,13 @@ describe('AudioPlayer', () => {
 
     render(<AudioPlayer text="Hello" />)
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
-    })
+    const initialAudio = currentAudioMock
+    fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => {
+      expect(currentAudioMock).not.toBe(initialAudio)
+      expect(currentAudioMock!.onended).toEqual(expect.any(Function))
+      expect(currentAudioMock!.onerror).toEqual(expect.any(Function))
       expect(screen.getByText(PAUSE)).toBeDefined()
     })
 
@@ -523,14 +548,23 @@ describe('AudioPlayer', () => {
 
   it('unmounts without throwing while in error state', async () => {
     vi.useFakeTimers()
-    fetchMock.mockRejectedValueOnce(new Error('fail'))
+    let rejectRequest!: (error: Error) => void
+    const ttsRequest = new Promise<Response>((_resolve, reject) => {
+      rejectRequest = reject
+    })
+    fetchMock.mockReturnValueOnce(ttsRequest)
 
     const { unmount } = render(<AudioPlayer text="Hello" />)
+    const requestStartedAt = Date.now()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText(LOADING)).toBeDefined()
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button'))
+      rejectRequest(new Error('fail'))
+      await Promise.allSettled([ttsRequest])
     })
 
+    expect(Date.now()).toBe(requestStartedAt)
     expect(screen.getByText(ERROR)).toBeDefined()
     expect(() => unmount()).not.toThrow()
 
@@ -663,15 +697,23 @@ describe('AudioPlayer', () => {
 
   it('can re-play after error recovery', async () => {
     vi.useFakeTimers()
-
-    fetchMock.mockRejectedValueOnce(new Error('fail'))
+    let rejectRequest!: (error: Error) => void
+    const ttsRequest = new Promise<Response>((_resolve, reject) => {
+      rejectRequest = reject
+    })
+    fetchMock.mockReturnValueOnce(ttsRequest)
 
     render(<AudioPlayer text="Hello" />)
     const btn = screen.getByRole('button')
+    const requestStartedAt = Date.now()
+    fireEvent.click(btn)
+    expect(screen.getByText(LOADING)).toBeDefined()
 
     await act(async () => {
-      fireEvent.click(btn)
+      rejectRequest(new Error('fail'))
+      await Promise.allSettled([ttsRequest])
     })
+    expect(Date.now()).toBe(requestStartedAt)
     expect(screen.getByText(ERROR)).toBeDefined()
 
     act(() => {

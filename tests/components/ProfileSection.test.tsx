@@ -115,9 +115,13 @@ describe('ProfileSection', () => {
 
   // ── Rendering ────────────────────────────────────────────────
 
-  it('renders section title', () => {
+  it.each([
+    { name: 'renders section title', text: 'sectionProfile' },
+    { name: 'renders ui locale hint', text: 'uiLocaleHint' },
+    { name: 'renders avatar change button', text: 'avatarChange' },
+  ])('$name', ({ text }) => {
     render(<ProfileSection />)
-    expect(screen.getByText('sectionProfile')).toBeDefined()
+    expect(screen.getByText(text)).toBeDefined()
   })
 
   it.each<{ name: string; label: string; expectedValue: string }>([
@@ -238,11 +242,6 @@ describe('ProfileSection', () => {
     render(<ProfileSection />)
     expect(screen.getByPlaceholderText('bioPlaceholder')).toBeDefined()
     expect(screen.getByText('bioHint')).toBeDefined()
-  })
-
-  it('renders ui locale hint', () => {
-    render(<ProfileSection />)
-    expect(screen.getByText('uiLocaleHint')).toBeDefined()
   })
 
   it('renders password fields', () => {
@@ -918,11 +917,6 @@ describe('ProfileSection', () => {
   })
 
   // ── Avatar upload buttons ───────────────────────────────────
-
-  it('renders avatar change button', () => {
-    render(<ProfileSection />)
-    expect(screen.getByText('avatarChange')).toBeDefined()
-  })
 
   it('renders avatar uploading button text while uploading', () => {
     useAuthStore.setState({

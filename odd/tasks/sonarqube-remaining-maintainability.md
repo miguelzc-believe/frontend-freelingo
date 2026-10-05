@@ -52,8 +52,39 @@ New coverage 88.7 and duplication density 0.34199 pass the server conditions.
 
 ## Step 2 — Test quality (11 findings)
 
-Pending: S8980 6, S2925 3, S1607 1, S5976 1. Preserve asynchronous completion
-barriers, timer boundaries and native audio assertions; no count-only weakening.
+Implementation complete and independently verified before the step-2 commit.
+Targets: S8980 6, S2925 3, S1607 1, S5976 1.
+
+- AudioPlayer removes only the six event-call act wrappers. Successful playback
+  waits for a new Audio object with onended/onerror installed. Failure tests use
+  named deferred requests and meaningful async settlement acts; loading and
+  unchanged Date.now prove no fake timer advancement during settlement. Native
+  callback and timer acts remain intact.
+- ProfileSection parameterizes the three rendering cases with their existing
+  names/assertions/setup, preserving test count.
+- Voice-recorder E2E now runs both Chromium profiles instead of skipping mobile
+  emulation. Native-node observation counts non-silent PCM without saving it or
+  replacing production onmessage. Fixed waits become positive capture/release,
+  stopped-ACK and next-card/idle barriers. Existing WAV format, plan snapshot,
+  real automatic-duration, exactly-once delivery and cancellation assertions
+  remain. Native original methods are forwarded; disconnect overload preserved
+  through a Proxy apply trap.
+- Worker baseline/post: `pnpm vitest run tests/components/AudioPlayer.test.tsx
+  tests/components/ProfileSection.test.tsx` — 2 files / 87 tests passed both.
+- Worker `pnpm exec playwright test tests/e2e/voice-recorder.spec.ts` — final
+  8/8 passed, no skips. Initial new cancellation selector had incorrect case;
+  corrected against observed UI, no production bug inferred.
+- Parent independently inspected all three diffs; final typecheck/lint passed.
+  Worker scoped formatting and whitespace checks passed. Independent verifier
+  ses_ef59f03ccffeIvVAlCHMHmLU1k passed 2 files / 87 tests, scoped formatting
+  and whitespace checks, and inspected every change with no blocker. Browser
+  8/8 is worker-executed evidence, not an independent replay.
+- Browser acceptance is fixture-backed desktop/mobile-emulated Chromium with
+  generated microphone and native AudioWorklet, not physical-device, live STT,
+  Safari/Firefox or deployment. Existing build warnings and nonfatal aborted
+  request ECONNRESET messages do not constitute failed assertions.
+- Rollback boundary: the three test-only files; no production behavior changes.
+- Sonar closure of the eleven issues remains pending a scan.
 
 ## Step 3 — Readability and cognitive complexity (73 findings)
 

@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 
 // Use Chromium's generated microphone, not committed or recorded user audio.
-// The production webServer/CSP and authentication are owned by the existing config.
+// Desktop and mobile-emulated Chromium both use the native capture pipeline.
+// This is not physical-device acceptance. The existing config owns webServer/CSP/auth.
 test.use({
   permissions: ['microphone'],
   launchOptions: {
@@ -11,11 +12,7 @@ test.use({
     ],
   },
 })
-test.beforeEach(async ({ page }, info) => {
-  test.skip(
-    info.project.name !== 'desktop',
-    'Native capture acceptance is desktop Chromium'
-  )
+test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('fl_tour_done', '1')
     localStorage.setItem('fl_whats_new_seen_v1.9.25', '1')
@@ -24,6 +21,11 @@ test.beforeEach(async ({ page }, info) => {
       violations: [] as string[],
       contextsClosed: 0,
       tracksStopped: 0,
+      pcmMessages: 0,
+      nonSilentPcmMessages: 0,
+      stopAcknowledgements: 0,
+      portsClosed: 0,
+      nodesDisconnected: 0,
     }
     const diagnostics = {
       secureContext: window.isSecureContext,
@@ -118,20 +120,70 @@ test.beforeEach(async ({ page }, info) => {
         }
       }
     }
+    if (typeof AudioWorkletNode !== 'undefined') {
+      const NativeAudioWorkletNode = AudioWorkletNode
+      window.AudioWorkletNode = new Proxy(NativeAudioWorkletNode, {
+        construct(target, args, newTarget) {
+          const node = Reflect.construct(
+            target,
+            args,
+            newTarget
+          ) as AudioWorkletNode
+          if (args[1] === 'voice-recorder') {
+            // Observe this native port once, without replacing onmessage, starting
+            // the port early, storing PCM or changing any production message.
+            node.port.addEventListener(
+              'message',
+              ({
+                data,
+              }: MessageEvent<{
+                type?: string
+                samples?: unknown
+              }>) => {
+                if (
+                  data.type === 'samples' &&
+                  data.samples instanceof Float32Array
+                ) {
+                  observations.pcmMessages++
+                  if (data.samples.some((sample) => sample !== 0)) {
+                    observations.nonSilentPcmMessages++
+                  }
+                } else if (data.type === 'stopped') {
+                  observations.stopAcknowledgements++
+                }
+              }
+            )
+            const closePort = node.port.close
+            node.port.close = function () {
+              closePort.call(this)
+              observations.portsClosed++
+            }
+            node.disconnect = new Proxy(node.disconnect, {
+              apply(target, thisArg, args) {
+                const result: unknown = Reflect.apply(target, thisArg, args)
+                observations.nodesDisconnected++
+                return result
+              },
+            })
+          }
+          return node
+        },
+      })
+    }
     document.addEventListener('securitypolicyviolation', (event) => {
       observations.violations.push(
         `${event.violatedDirective}: ${event.blockedURI}`
       )
     })
     const close = AudioContext.prototype.close
-    AudioContext.prototype.close = function () {
-      observations.contextsClosed++
-      return close.call(this)
+    AudioContext.prototype.close = async function () {
+      await close.call(this)
+      if (this.state === 'closed') observations.contextsClosed++
     }
     const stop = MediaStreamTrack.prototype.stop
     MediaStreamTrack.prototype.stop = function () {
-      observations.tracksStopped++
       stop.call(this)
+      if (this.readyState === 'ended') observations.tracksStopped++
     }
   })
 })
@@ -139,7 +191,6 @@ test.beforeEach(async ({ page }, info) => {
 // afterEach has its own hook budget, so an initialization timeout still leaves
 // diagnostics attached. No request bodies, device identifiers or PCM are saved.
 test.afterEach(async ({ page }, info) => {
-  if (info.project.name !== 'desktop') return
   let diagnostics: unknown
   try {
     diagnostics = await page.evaluate(() => {
@@ -186,8 +237,19 @@ async function fixture(page: Page) {
               interval: 0,
               repetitions: 0,
             },
+            {
+              id: 702,
+              study_plan_id: 42,
+              word: 'goodbye',
+              definition: 'A farewell',
+              example_sentence: '',
+              translation: '',
+              ease_factor: 2.5,
+              interval: 0,
+              repetitions: 0,
+            },
           ],
-          total: 1,
+          total: 2,
         },
       })
     }
@@ -248,10 +310,44 @@ async function observations(page: Page) {
             violations: string[]
             contextsClosed: number
             tracksStopped: number
+            pcmMessages: number
+            nonSilentPcmMessages: number
+            stopAcknowledgements: number
+            portsClosed: number
+            nodesDisconnected: number
           }
         }
       ).recorderObservations!
   )
+}
+
+async function expectNativeCaptureActive(page: Page) {
+  // Count only real worklet messages. Non-silent PCM proves generated microphone
+  // input has reached the page, rather than assuming enough wall time elapsed.
+  await expect
+    .poll(async () => (await observations(page)).nonSilentPcmMessages)
+    .toBeGreaterThan(0)
+}
+
+async function expectNativeCaptureReleased(page: Page) {
+  // These are completed native operations, not just calls to cleanup methods.
+  // This positive barrier cannot pass before a capture has been released.
+  await expect
+    .poll(async () => {
+      const observed = await observations(page)
+      return {
+        contextsClosed: observed.contextsClosed,
+        tracksEnded: observed.tracksStopped >= 1,
+        portsClosed: observed.portsClosed,
+        nodesDisconnected: observed.nodesDisconnected,
+      }
+    })
+    .toEqual({
+      contextsClosed: 1,
+      tracksEnded: true,
+      portsClosed: 1,
+      nodesDisconnected: 1,
+    })
 }
 
 const workletPath = '/audio/voice-recorder.worklet.js'
@@ -333,9 +429,8 @@ for (const mode of ['manual', 'automatic'] as const) {
       .getByRole('button', { name: 'Start recording', exact: true })
       .click()
     await expectNativeModuleLoaded(page)
+    await expectNativeCaptureActive(page)
     if (mode === 'manual') {
-      // Native rendering must run long enough to collect generated PCM.
-      await page.waitForTimeout(500)
       expect(data.uploads).toHaveLength(0)
       await page
         .getByRole('button', { name: 'Stop recording', exact: true })
@@ -355,15 +450,19 @@ for (const mode of ['manual', 'automatic'] as const) {
     expect(data.uploads).toHaveLength(1)
     assertWav(data.uploads[0]!)
     expect(data.reviews).toEqual([{ quality: 5 }])
-    await expect
-      .poll(async () => (await observations(page)).contextsClosed)
-      .toBe(1)
-    expect((await observations(page)).tracksStopped).toBeGreaterThanOrEqual(1)
+    await expectNativeCaptureReleased(page)
+    expect((await observations(page)).stopAcknowledgements).toBe(1)
+    // Advancing to the next card and returning to enabled idle recording proves
+    // the transcription/review callback settled after native capture shut down.
+    await expect(page.getByText('A farewell', { exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Start recording', exact: true })
+    ).toBeEnabled()
+    expect(data.uploads).toHaveLength(1)
+    expect(data.reviews).toEqual([{ quality: 5 }])
     expect((await observations(page)).violations).toEqual([])
     expect(errors).toEqual([])
     expect(data.unexpected).toEqual([])
-    await page.waitForTimeout(500)
-    expect(data.reviews).toHaveLength(1)
   })
 }
 
@@ -375,12 +474,18 @@ test('cancelling speaking mode releases native capture without STT', async ({
     .getByRole('button', { name: 'Start recording', exact: true })
     .click()
   await expectNativeModuleLoaded(page)
-  await page.waitForTimeout(300)
+  await expectNativeCaptureActive(page)
   await page.getByRole('button', { name: 'Standard', exact: true }).click()
-  await expect
-    .poll(async () => (await observations(page)).contextsClosed)
-    .toBe(1)
-  expect((await observations(page)).tracksStopped).toBeGreaterThanOrEqual(1)
+  await expectNativeCaptureReleased(page)
+  expect((await observations(page)).stopAcknowledgements).toBe(0)
+  await expect(
+    page.getByRole('button', { name: 'tap to reveal', exact: true })
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Start recording', exact: true })
+  ).toHaveCount(0)
+  expect(data.uploads).toHaveLength(0)
+  expect(data.reviews).toHaveLength(0)
   await page.goto('/dashboard')
   expect(data.uploads).toHaveLength(0)
   expect(data.reviews).toHaveLength(0)
