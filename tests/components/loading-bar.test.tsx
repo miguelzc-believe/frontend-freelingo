@@ -37,6 +37,8 @@ describe('LoadingBar', () => {
     expect(
       screen.getByRole('progressbar', { name: 'loading' })
     ).toBeInTheDocument()
+    expect(screen.getByRole('progressbar').tagName).toBe('PROGRESS')
+    expect(screen.getByRole('progressbar')).not.toHaveAttribute('value')
   })
 
   it('keeps a bar visible for the minimum duration before completing', () => {
@@ -55,10 +57,16 @@ describe('LoadingBar', () => {
 
     act(() => vi.advanceTimersByTime(1))
     const progress = screen.getByRole('progressbar')
-    const indicator = progress.querySelector('.animate-loading-bar-complete')
-    if (!indicator) throw new Error('Completion animation did not start')
-    expect(indicator).toHaveClass('animate-loading-bar-complete')
+    expect(progress).toHaveClass('animate-loading-bar-complete')
     expect(loadingState.finishComplete).not.toHaveBeenCalled()
+    act(() => vi.advanceTimersByTime(399))
+    expect(screen.getByRole('progressbar')).toBeInTheDocument()
+    expect(loadingState.finishComplete).not.toHaveBeenCalled()
+    act(() => vi.advanceTimersByTime(1))
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(loadingState.finishComplete).toHaveBeenCalledTimes(1)
+    act(() => vi.advanceTimersByTime(1000))
+    expect(loadingState.finishComplete).toHaveBeenCalledTimes(1)
   })
 
   it('cancels the completion timer when another request starts', () => {
@@ -76,8 +84,27 @@ describe('LoadingBar', () => {
     act(() => vi.advanceTimersByTime(1000))
 
     const progress = screen.getByRole('progressbar')
-    expect(progress.querySelector('.animate-loading-bar')).toBeInTheDocument()
-    expect(progress.querySelector('.animate-loading-bar-complete')).toBeNull()
+    expect(progress).toHaveClass('animate-loading-bar')
+    expect(progress).not.toHaveClass('animate-loading-bar-complete')
+    expect(loadingState.finishComplete).not.toHaveBeenCalled()
+  })
+
+  it('cancels the completing phase when a new request starts', () => {
+    const { rerender } = render(<LoadingBar />)
+    loadingState.count = 1
+    rerender(<LoadingBar />)
+    loadingState.count = 0
+    loadingState.complete = true
+    rerender(<LoadingBar />)
+    act(() => vi.advanceTimersByTime(600))
+    expect(screen.getByRole('progressbar')).toHaveClass(
+      'animate-loading-bar-complete'
+    )
+    loadingState.count = 1
+    loadingState.complete = false
+    rerender(<LoadingBar />)
+    act(() => vi.advanceTimersByTime(400))
+    expect(screen.getByRole('progressbar')).toHaveClass('animate-loading-bar')
     expect(loadingState.finishComplete).not.toHaveBeenCalled()
   })
 

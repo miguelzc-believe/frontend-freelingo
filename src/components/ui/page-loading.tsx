@@ -13,7 +13,7 @@ interface PageLoadingProps {
   minHeight?: string
   /** Render as full-screen centered block. Set false for inline usage. */
   fullScreen?: boolean
-  /** Extra classes for the outer container / span. */
+  /** Extra classes for the outer container / output. */
   className?: string
 }
 
@@ -39,30 +39,30 @@ export function PageLoading({
 
   if (!fullScreen) {
     return (
-      <span
+      <output
         className={`text-fl-muted-2 animate-pulse font-mono text-xs tracking-widest uppercase ${className}`}
-        role="status"
         aria-busy="true"
         aria-label={text}
       >
         {showDot && '● '}
         {text}
-      </span>
+      </output>
     )
   }
 
   return (
     <div
       className={`flex ${minHeight} items-center justify-center ${className}`}
-      role="status"
-      aria-busy="true"
-      aria-label={text}
     >
       <div className="flex flex-col items-center gap-3 px-4">
-        <span className="text-fl-muted-2 animate-pulse font-mono text-xs tracking-widest uppercase">
+        <output
+          className="text-fl-muted-2 animate-pulse font-mono text-xs tracking-widest uppercase"
+          aria-busy="true"
+          aria-label={text}
+        >
           {showDot && '● '}
           {text}
-        </span>
+        </output>
         {subtext && (
           <p className="text-fl-muted-4 max-w-xs text-center font-mono text-xs">
             {subtext}

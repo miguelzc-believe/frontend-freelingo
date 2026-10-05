@@ -40,30 +40,26 @@ export function LoadingBar() {
     }
   }, [count, complete, phase])
 
+  useEffect(() => {
+    if (phase !== 'completing') return
+    const timer = setTimeout(() => {
+      setPhase('hidden')
+      finishComplete()
+    }, COMPLETE_DURATION_MS)
+    return () => clearTimeout(timer)
+  }, [phase, finishComplete])
+
   if (phase === 'hidden') return null
 
   return (
-    <div
-      className="fixed top-0 right-0 left-0 z-[300] h-px overflow-hidden"
-      role="progressbar"
-      aria-label={tCommon('loading')}
-    >
-      <div
-        className={`bg-fl-fg h-full ${
+    <>
+      <progress
+        className={`loading-progress fixed top-0 right-0 left-0 z-[300] h-px overflow-hidden ${
           phase === 'completing'
             ? 'animate-loading-bar-complete'
             : 'animate-loading-bar'
         }`}
-        style={{ width: '100%' }}
-        onAnimationEnd={(e) => {
-          if (
-            phase === 'completing' &&
-            e.nativeEvent.animationName === 'loading-bar-complete'
-          ) {
-            setPhase('hidden')
-            finishComplete()
-          }
-        }}
+        aria-label={tCommon('loading')}
       />
       <style>{`
         @keyframes loading-bar {
@@ -75,13 +71,34 @@ export function LoadingBar() {
           0%   { transform: translateX(0%); opacity: 1; }
           100% { transform: translateX(0%); opacity: 0; }
         }
-        .animate-loading-bar {
-          animation: loading-bar 1.4s ease-in-out infinite;
+        .loading-progress {
+          appearance: none;
+          -webkit-appearance: none;
+          width: 100%;
+          border: 0;
+          padding: 0;
+          background: transparent;
+          color: var(--fl-fg);
         }
-        .animate-loading-bar-complete {
-          animation: loading-bar-complete ${COMPLETE_DURATION_MS}ms ease-out forwards;
-        }
+        .loading-progress::progress-bar { background: transparent; }
+        .loading-progress::-webkit-progress-bar { background: transparent; }
+        .loading-progress::progress-value { background: var(--fl-fg); width: 100%; }
+        .loading-progress::-webkit-progress-value { background: var(--fl-fg); width: 100%; }
+        .loading-progress::-moz-progress-bar { background: var(--fl-fg); width: 100%; }
+        /* Indeterminate WebKit progress has no value box: animate its track. */
+        .loading-progress:indeterminate::-webkit-progress-bar { background: var(--fl-fg); }
+        .loading-progress:indeterminate::progress-bar { background: var(--fl-fg); }
+        .animate-loading-bar::progress-bar,
+        .animate-loading-bar::progress-value { animation: loading-bar 1.4s ease-in-out infinite; }
+        .animate-loading-bar::-webkit-progress-bar { animation: loading-bar 1.4s ease-in-out infinite; }
+        .animate-loading-bar::-webkit-progress-value { animation: loading-bar 1.4s ease-in-out infinite; }
+        .animate-loading-bar::-moz-progress-bar { animation: loading-bar 1.4s ease-in-out infinite; }
+        .animate-loading-bar-complete::progress-bar,
+        .animate-loading-bar-complete::progress-value { animation: loading-bar-complete ${COMPLETE_DURATION_MS}ms ease-out forwards; }
+        .animate-loading-bar-complete::-webkit-progress-bar { animation: loading-bar-complete ${COMPLETE_DURATION_MS}ms ease-out forwards; }
+        .animate-loading-bar-complete::-webkit-progress-value { animation: loading-bar-complete ${COMPLETE_DURATION_MS}ms ease-out forwards; }
+        .animate-loading-bar-complete::-moz-progress-bar { animation: loading-bar-complete ${COMPLETE_DURATION_MS}ms ease-out forwards; }
       `}</style>
-    </div>
+    </>
   )
 }

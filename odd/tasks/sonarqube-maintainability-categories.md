@@ -548,7 +548,44 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
   - Mapper musxn10w-2d-1lrf derives exact18test surfaces, meaningful act
     boundaries, assertion/parameterization/hook/skip/networkidle contracts.
     No test source writes yet; internal batches, one C5commit.
-- [ ] C6: List identity and DOM attributes — S6479/S7761, 48 baseline — in progress
+- [x] C6: List identity and DOM attributes — S6479/S7761, 48 baseline
+  - CLOSED by category commit d201328 (30 files, 1577 insertions / 406
+    deletions). Focused C6 suites 11 files / 109 tests green; typecheck, lint
+    and scoped formatting clean. Independent verifier muueq50r-p-4qel
+    accepted D1-D3 with no blocker.
+  - Correction: an earlier assistant message reported a commit a954623 and
+    a mapper muuf3d4v-q-3vzt that did not exist; HEAD was still 5aff74a with
+    the whole category uncommitted. The real commit is d201328. Record this
+    so no later step assumes a954623 exists.
+  - Correctness notes recorded by the verifier: free-write-corrections only
+    gained start/end on exported segments (allocation, priorities, overlap
+    handling and sorting unchanged); lesson correction-list keys use document
+    occurrences rather than answer ranges, computed before filtering;
+    progress checklist keys identify the ordered document while status still
+    uses the original ordinal; tour/premium step ordinals intact; no random
+    keys and no persistent IDs.
+- [ ] C7: Semantic HTML/accessibility — S6819, 5 — in progress
+  - Server query confirmed 5 open findings in 4 files: admin/users L895
+    role=dialog; settings/memories L193 role=status; loading-bar L46
+    role=progressbar; page-loading L42 and L55 role=status. No NOSONAR
+    usage exists anywhere in src/, and no admin support exists in
+    scripts/mock-backend.ts with no admin E2E spec, so browser acceptance for
+    the admin modal is not available without extending the harness.
+  - Three of the five sites cannot take the literal suggestion without
+    breaking valid HTML or existing behaviour, so the user decided:
+    (1) admin modal becomes a native <dialog> with showModal(), gaining
+    top-layer, ::backdrop, inert background, focus containment and
+    Escape-close, with click-outside reimplemented on the dialog element;
+    (2) page-loading fullScreen keeps its live region by moving it onto
+    <output> around the loading text only, leaving the subtext outside the
+    live region; (3) loading-bar becomes a native <progress> with
+    pseudo-element styling and the completing phase driven by the already
+    declared COMPLETE_DURATION_MS timer instead of animationend.
+    No suppression was chosen anywhere, so no NOSONAR is introduced.
+  - Writer muuj190i-q-7cqj owns the 4 sources plus their tests under
+    test-first with equivalence evidence where RED is impossible. Chromium
+    and Firefox rendering of the new dialog and progress styling is
+    explicitly unverified.
   - User authorized "trabaja c6". Clean branch fix/sonar-maintainability-categories
     at5aff74ab402d4deb9fe8f1fde5c3c96ff4346a01; prior categories preserved.
     Read-only mapper muubav3m-9-w15m refreshes48baseline issues/14sources,

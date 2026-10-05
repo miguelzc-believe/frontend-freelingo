@@ -98,6 +98,18 @@ async function openCreateUserForm(username = 'New User') {
 
 describe('AdminUsersPage', () => {
   beforeEach(() => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: vi.fn(function (this: HTMLDialogElement) {
+        this.setAttribute('open', '')
+      }),
+    })
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+      configurable: true,
+      value: vi.fn(function (this: HTMLDialogElement) {
+        this.removeAttribute('open')
+      }),
+    })
     mockApiFetch.mockReset().mockImplementation(async () => listResponse())
     for (const key of Array.from(mockSearchParams.keys())) {
       mockSearchParams.delete(key)
@@ -347,20 +359,28 @@ describe('AdminUsersPage', () => {
     expect(screen.getByText('noUsers')).toBeInTheDocument()
   })
 
-  it('uses a native sibling backdrop without wrapping the form in an interactive control', async () => {
+  it('opens a native modal and closes on backdrop-target clicks', async () => {
     const dialog = await openCreateUserForm()
-    const backdrop = screen.getByRole('button', { name: 'close' })
-
-    expect(backdrop.tagName).toBe('BUTTON')
-    expect(backdrop).toHaveAttribute('type', 'button')
-    expect(backdrop).toHaveAttribute('tabindex', '-1')
-    expect(backdrop.parentElement).toBe(dialog.parentElement)
-    expect(backdrop).not.toContainElement(dialog)
+    expect(dialog.tagName).toBe('DIALOG')
+    expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledTimes(1)
+    expect(dialog).toHaveAttribute('open')
+    expect(dialog).toHaveClass(
+      'border-fl-border',
+      'bg-fl-surface',
+      'max-h-[calc(100vh-2rem)]',
+      'w-full',
+      'max-w-md',
+      'overflow-y-auto',
+      'border',
+      'shadow-2xl',
+      'p-0',
+      'm-auto',
+      'inset-0'
+    )
+    expect(dialog).toHaveStyle({ width: 'calc(100% - 2rem)' })
+    expect(screen.queryByRole('button', { name: 'close' })).toBeNull()
     expect(dialog.closest('button, [role="button"]')).toBeNull()
-    expect(dialog.parentElement).not.toHaveAttribute('role')
-
-    fireEvent.click(backdrop)
-
+    fireEvent.click(dialog)
     expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
   })
 
@@ -369,7 +389,7 @@ describe('AdminUsersPage', () => {
     const field = within(dialog).getByLabelText('fieldUsername')
     const role = within(dialog).getByLabelText('fieldRole')
 
-    fireEvent.click(dialog)
+    fireEvent.click(within(dialog).getByText('createUserSheetDesc'))
     fireEvent.click(field)
     fireEvent.change(field, { target: { value: 'Changed User' } })
     fireEvent.click(role)
@@ -380,18 +400,32 @@ describe('AdminUsersPage', () => {
     expect(role).toHaveValue('admin')
   })
 
-  it('closes on Escape bubbling from a form field and can reopen', async () => {
+  it('closes on native cancel and can reopen', async () => {
     await openCreateUserForm()
     const field = screen.getByLabelText('fieldEmail')
     field.focus()
 
-    fireEvent.keyDown(field, { key: 'Escape' })
+    fireEvent(
+      screen.getByRole('dialog'),
+      new Event('cancel', { cancelable: true })
+    )
 
     expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'createUserBtn' }))
     expect(
       screen.getByRole('dialog', { name: 'createUser' })
     ).toBeInTheDocument()
+  })
+
+  it('syncs native close and safely unmounts an open dialog', async () => {
+    const view = await renderLoadedPage()
+    fireEvent.click(screen.getByRole('button', { name: 'createUserBtn' }))
+    const dialog = screen.getByRole('dialog') as HTMLDialogElement
+    dialog.close()
+    fireEvent(dialog, new Event('close'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'createUserBtn' }))
+    expect(() => view.unmount()).not.toThrow()
   })
 
   it.each(['backdrop', 'header', 'cancel', 'Escape'])(
@@ -420,13 +454,9 @@ describe('AdminUsersPage', () => {
       expect(cancelButtons[0]).toBeEnabled()
       expect(cancelButtons[1]).toBeEnabled()
       if (action === 'Escape') {
-        fireEvent.keyDown(screen.getByLabelText('fieldEmail'), {
-          key: 'Escape',
-        })
+        fireEvent(dialog, new Event('cancel', { cancelable: true }))
       } else if (action === 'backdrop') {
-        const backdrop = screen.getByRole('button', { name: 'close' })
-        expect(backdrop).toBeEnabled()
-        fireEvent.click(backdrop)
+        fireEvent.click(dialog)
       } else {
         fireEvent.click(cancelButtons[action === 'header' ? 0 : 1]!)
       }

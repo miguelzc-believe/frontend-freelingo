@@ -190,12 +190,12 @@ export default function SettingsMemoriesPage() {
 
         <div aria-live="polite" className="min-h-5">
           {message && (
-            <p
-              role={message.type === 'error' ? 'alert' : 'status'}
-              className={`mb-4 font-mono text-xs ${message.type === 'error' ? 'text-fl-error-fg' : 'text-fl-success'}`}
+            <output
+              role={message.type === 'error' ? 'alert' : undefined}
+              className={`mb-4 block font-mono text-xs ${message.type === 'error' ? 'text-fl-error-fg' : 'text-fl-success'}`}
             >
               {message.text}
-            </p>
+            </output>
           )}
         </div>
 

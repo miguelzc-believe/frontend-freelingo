@@ -80,6 +80,10 @@ describe('memory settings page', () => {
       expect(mocks.createMemory).toHaveBeenCalledWith('Prefers examples')
     )
     expect(await screen.findByText('Prefers examples')).toBeInTheDocument()
+    const status = screen.getByRole('status')
+    expect(status.tagName).toBe('OUTPUT')
+    expect(status).not.toHaveAttribute('role')
+    expect(status).toHaveTextContent('memoryAddSuccess')
   })
 
   it('keeps a memory visible when deletion fails', async () => {
@@ -91,6 +95,8 @@ describe('memory settings page', () => {
       })
     )
     expect(await screen.findByText('memoryDeleteError')).toBeInTheDocument()
+    expect(screen.getByRole('alert').tagName).toBe('OUTPUT')
+    expect(screen.getByRole('alert')).toHaveTextContent('memoryDeleteError')
     expect(screen.getByText('Likes hiking')).toBeInTheDocument()
   })
 

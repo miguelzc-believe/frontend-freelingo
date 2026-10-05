@@ -125,6 +125,7 @@ export default function AdminUsersPage() {
   })
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const createDialogRef = useRef<HTMLDialogElement>(null)
   const [inviteUrl, setInviteUrl] = useState('')
   const [inviteCopied, setInviteCopied] = useState(false)
   const [form, setForm] = useState({
@@ -154,14 +155,16 @@ export default function AdminUsersPage() {
     }
   }, [])
 
+  const createDialogMounted = showCreate && !(loading && users.length === 0)
+
   useEffect(() => {
-    if (!showCreate) return
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setShowCreate(false)
+    const dialog = createDialogRef.current
+    if (!createDialogMounted || !dialog?.isConnected) return
+    if (!dialog.open) dialog.showModal()
+    return () => {
+      if (dialog.isConnected && dialog.open) dialog.close()
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [showCreate])
+  }, [createDialogMounted])
 
   const visibleTargetLanguages = useMemo(() => {
     if (availableLanguageCodes.length === 0) return SUPPORTED_TARGET_LANGUAGES
@@ -884,18 +887,26 @@ export default function AdminUsersPage() {
       />
 
       {showCreate && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label={tCommon('close')}
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={() => setShowCreate(false)}
-          />
-          <div
-            className="border-fl-border bg-fl-surface relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto border shadow-2xl"
-            role="dialog"
-            aria-modal="true"
+        <>
+          <style>{`
+            #admin-create-user-dialog::backdrop {
+              background: rgb(0 0 0 / 70%);
+              backdrop-filter: blur(8px);
+            }
+          `}</style>
+          <dialog
+            id="admin-create-user-dialog"
+            ref={createDialogRef}
+            className="border-fl-border bg-fl-surface fixed inset-0 m-auto max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto border p-0 text-inherit shadow-2xl"
+            style={{ width: 'calc(100% - 2rem)' }}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setShowCreate(false)
+            }}
+            onCancel={(event) => {
+              event.preventDefault()
+              setShowCreate(false)
+            }}
+            onClose={() => setShowCreate(false)}
             aria-labelledby="admin-create-user-title"
             aria-describedby="admin-create-user-description"
           >
@@ -1075,8 +1086,8 @@ export default function AdminUsersPage() {
                 {t('submitCreate')}
               </button>
             </div>
-          </div>
-        </div>
+          </dialog>
+        </>
       )}
 
       <ConfirmDialog
