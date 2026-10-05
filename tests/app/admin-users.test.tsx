@@ -359,7 +359,7 @@ describe('AdminUsersPage', () => {
     expect(screen.getByText('noUsers')).toBeInTheDocument()
   })
 
-  it('opens a native modal and closes on backdrop-target clicks', async () => {
+  it('opens a native modal with browser-owned light dismissal', async () => {
     const dialog = await openCreateUserForm()
     expect(dialog.tagName).toBe('DIALOG')
     expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledTimes(1)
@@ -380,8 +380,36 @@ describe('AdminUsersPage', () => {
     expect(dialog).toHaveStyle({ width: 'calc(100% - 2rem)' })
     expect(screen.queryByRole('button', { name: 'close' })).toBeNull()
     expect(dialog.closest('button, [role="button"]')).toBeNull()
-    fireEvent.click(dialog)
+    expect(dialog).toHaveAttribute('closedby', 'any')
+    // jsdom has no native light-dismiss algorithm; browser coverage clicks outside.
+    fireEvent(dialog, new Event('cancel', { cancelable: true }))
     expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
+  })
+
+  it('fallback distinguishes panel padding from an outside click and removes its listener', async () => {
+    const view = await renderLoadedPage()
+    fireEvent.click(screen.getByRole('button', { name: 'createUserBtn' }))
+    const dialog = screen.getByRole('dialog')
+    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({
+      x: 20,
+      y: 20,
+      left: 20,
+      top: 20,
+      right: 200,
+      bottom: 200,
+      width: 180,
+      height: 180,
+      toJSON: () => ({}),
+    })
+    fireEvent.click(dialog, { clientX: 30, clientY: 30 })
+    expect(dialog).toBeInTheDocument()
+    fireEvent.click(dialog, { clientX: 2, clientY: 2 })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const closes = vi.mocked(HTMLDialogElement.prototype.close).mock.calls
+      .length
+    fireEvent.click(dialog, { clientX: 2, clientY: 2 })
+    expect(HTMLDialogElement.prototype.close).toHaveBeenCalledTimes(closes)
+    view.unmount()
   })
 
   it('keeps the dialog open for panel, field and select interactions', async () => {
@@ -456,7 +484,8 @@ describe('AdminUsersPage', () => {
       if (action === 'Escape') {
         fireEvent(dialog, new Event('cancel', { cancelable: true }))
       } else if (action === 'backdrop') {
-        fireEvent.click(dialog)
+        expect(dialog).toHaveAttribute('closedby', 'any')
+        fireEvent(dialog, new Event('cancel', { cancelable: true }))
       } else {
         fireEvent.click(cancelButtons[action === 'header' ? 0 : 1]!)
       }

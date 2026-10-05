@@ -4,6 +4,7 @@ import { useTranslations } from 'use-intl'
 import { useAuthStore } from '@/store/auth'
 
 interface FAQItem {
+  id: string
   q: string
   a: React.ReactNode
 }
@@ -39,12 +40,12 @@ export default function FAQPage() {
   )
 
   const workflowSteps = [
-    t('workflowStep1'),
-    t('workflowStep2'),
-    t('workflowStep3'),
-    t('workflowStep4'),
-    t('workflowStep5'),
-    t('workflowStep6'),
+    'workflowStep1',
+    'workflowStep2',
+    'workflowStep3',
+    'workflowStep4',
+    'workflowStep5',
+    'workflowStep6',
   ]
 
   const providers: [string, string][] = [
@@ -56,35 +57,69 @@ export default function FAQPage() {
 
   const faqs: FAQItem[] = (() => {
     const items: FAQItem[] = [
-      { q: t('q_start'), a: t.rich('a_start', { strong }) },
-      { q: t('q_language'), a: t('a_language') },
+      { id: 'q_start', q: t('q_start'), a: t.rich('a_start', { strong }) },
+      { id: 'q_language', q: t('q_language'), a: t('a_language') },
       {
+        id: 'q_workflow',
         q: t('q_workflow'),
         a: (
           <ol className="list-none space-y-1">
             {workflowSteps.map((step, i) => (
-              <li key={i} className="flex items-start gap-3">
+              <li key={step} className="flex items-start gap-3">
                 <span className="text-fl-label text-fl-muted-4 mt-0.5 shrink-0 font-mono">
                   {i + 1}.
                 </span>
-                <span>{step}</span>
+                <span>{t(step)}</span>
               </li>
             ))}
           </ol>
         ),
       },
-      { q: t('q_assessment'), a: t('a_assessment') },
-      { q: t('q_studyPlan'), a: t.rich('a_studyPlan', { strong }) },
-      { q: t('q_resources'), a: t.rich('a_resources', { strong }) },
-      { q: t('q_flashcards'), a: t.rich('a_flashcards', { strong }) },
-      { q: t('q_vocabulary'), a: t.rich('a_vocabulary', { strong }) },
-      { q: t('q_tutor'), a: t('a_tutor') },
-      { q: t('q_voice'), a: t.rich('a_voice', { strong }) },
-      { q: t('q_listening'), a: t.rich('a_listening', { strong }) },
-      { q: t('q_reading'), a: t.rich('a_reading', { strong }) },
-      { q: t('q_feedback'), a: t.rich('a_feedback', { feedbackLink }) },
-      { q: t('q_password'), a: t.rich('a_password', { settingsLink }) },
+      { id: 'q_assessment', q: t('q_assessment'), a: t('a_assessment') },
       {
+        id: 'q_studyPlan',
+        q: t('q_studyPlan'),
+        a: t.rich('a_studyPlan', { strong }),
+      },
+      {
+        id: 'q_resources',
+        q: t('q_resources'),
+        a: t.rich('a_resources', { strong }),
+      },
+      {
+        id: 'q_flashcards',
+        q: t('q_flashcards'),
+        a: t.rich('a_flashcards', { strong }),
+      },
+      {
+        id: 'q_vocabulary',
+        q: t('q_vocabulary'),
+        a: t.rich('a_vocabulary', { strong }),
+      },
+      { id: 'q_tutor', q: t('q_tutor'), a: t('a_tutor') },
+      { id: 'q_voice', q: t('q_voice'), a: t.rich('a_voice', { strong }) },
+      {
+        id: 'q_listening',
+        q: t('q_listening'),
+        a: t.rich('a_listening', { strong }),
+      },
+      {
+        id: 'q_reading',
+        q: t('q_reading'),
+        a: t.rich('a_reading', { strong }),
+      },
+      {
+        id: 'q_feedback',
+        q: t('q_feedback'),
+        a: t.rich('a_feedback', { feedbackLink }),
+      },
+      {
+        id: 'q_password',
+        q: t('q_password'),
+        a: t.rich('a_password', { settingsLink }),
+      },
+      {
+        id: 'q_uiLanguage',
         q: t('q_uiLanguage'),
         a: t.rich('a_uiLanguage', { settingsLink, strong }),
       },
@@ -93,6 +128,7 @@ export default function FAQPage() {
     if (isAdmin) {
       items.push(
         {
+          id: 'q_providers',
           q: t('q_providers'),
           a: (
             <>
@@ -108,7 +144,11 @@ export default function FAQPage() {
             </>
           ),
         },
-        { q: t('q_invite'), a: t.rich('a_invite', { adminLink, code }) }
+        {
+          id: 'q_invite',
+          q: t('q_invite'),
+          a: t.rich('a_invite', { adminLink, code }),
+        }
       )
     }
 
@@ -131,7 +171,7 @@ export default function FAQPage() {
       <div className="border-fl-border border">
         {faqs.map((item, i) => (
           <div
-            key={i}
+            key={item.id}
             className={i < faqs.length - 1 ? 'border-fl-border border-b' : ''}
           >
             <button
