@@ -20,10 +20,12 @@ import { MemorySavedToast } from '@/components/memory/MemorySavedToast'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { readSseData } from '@/lib/sse'
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-}
+import {
+  createMessage,
+  mergeMessage,
+  type Message,
+  type MessageContent,
+} from '@/lib/chat-messages'
 
 interface Conversation {
   id: number
@@ -183,7 +185,9 @@ export default function ChatPage() {
       const res = await apiFetch(`/api/chat/conversations/${id}/messages`)
       if (res.ok) {
         const data = await res.json()
-        setMessages(data.messages || [])
+        const history: MessageContent[] = data.messages || []
+        const records = history.map(createMessage)
+        setMessages(records)
       }
     } catch {
       /* ignore */
@@ -206,6 +210,7 @@ export default function ChatPage() {
     const context = messages
       .filter((m) => m.content.trim().length > 0)
       .slice(-20)
+      .map(({ role, content }) => ({ role, content }))
     // Only pass the message context — no conversation_id.
     // The voice session will create its own new conversation record so the
     // original text chat stays clean and the two appear as separate entries
@@ -242,7 +247,8 @@ export default function ChatPage() {
     const text = input.trim()
     setInput('')
     setError('')
-    setMessages((prev) => [...prev, { role: 'user', content: text }])
+    const userMessage = createMessage({ role: 'user', content: text })
+    setMessages((prev) => mergeMessage(prev, userMessage))
     setSending(true)
 
     try {
@@ -269,7 +275,8 @@ export default function ChatPage() {
 
       let assistantContent = ''
       let streamCompleted = false
-      setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
+      const assistantMessage = createMessage({ role: 'assistant', content: '' })
+      setMessages((prev) => mergeMessage(prev, assistantMessage))
 
       if (!res.body) throw new Error(t('errorMessage'))
       for await (const data of readSseData<ChatSseEvent>(res.body)) {
@@ -280,22 +287,16 @@ export default function ChatPage() {
         if (data.response_reset) {
           dismissTooltip()
           assistantContent = ''
-          setMessages((prev) => {
-            const copy = [...prev]
-            copy[copy.length - 1] = { role: 'assistant', content: '' }
-            return copy
-          })
+          const resetMessage = { ...assistantMessage, content: '' }
+          setMessages((prev) => mergeMessage(prev, resetMessage))
         }
         if (data.token) {
           assistantContent += data.token
-          setMessages((prev) => {
-            const copy = [...prev]
-            copy[copy.length - 1] = {
-              role: 'assistant',
-              content: assistantContent,
-            }
-            return copy
-          })
+          const tokenMessage = {
+            ...assistantMessage,
+            content: assistantContent,
+          }
+          setMessages((prev) => mergeMessage(prev, tokenMessage))
         }
         if (data.error) {
           streamCompleted = true
@@ -491,7 +492,7 @@ export default function ChatPage() {
             ) : (
               messages.map((msg, i) => (
                 <div
-                  key={i}
+                  key={msg.id}
                   className={`flex items-end gap-2 ${msg.role === 'user' ? 'ml-auto max-w-[75%] flex-row-reverse' : 'flex-row'}`}
                 >
                   {/* Avatar */}

@@ -544,7 +544,7 @@ export default function DashboardPage() {
 
             {todayLessons.length > 0 ? (
               <div className="space-y-2">
-                {todayLessons.map((lesson, i) => {
+                {todayLessons.map((lesson) => {
                   const isDone =
                     (lesson.id && completedToday.includes(lesson.id)) ||
                     lesson.isCompleted
@@ -552,7 +552,13 @@ export default function DashboardPage() {
 
                   return (
                     <div
-                      key={i}
+                      key={JSON.stringify([
+                        activeLanguage?.code,
+                        planId,
+                        lesson.week,
+                        lesson.day,
+                        lesson.title,
+                      ])}
                       className={`border px-4 py-3 ${
                         isNext
                           ? 'border-fl-accent/60 bg-fl-accent/5'

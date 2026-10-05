@@ -98,6 +98,45 @@ describe('WhatsNew', () => {
     expectDismissed()
   })
 
+  it('preserves unchanged entry nodes when an earlier numeric entry is inserted', () => {
+    const view = renderWhatsNew()
+    const earlier = screen.getByText('Earlier update')
+    const later = screen.getByText('Later update')
+    const earlierRow = earlier.parentElement?.parentElement
+    const laterRow = later.parentElement?.parentElement
+
+    view.rerender(
+      <IntlProvider
+        locale="en-GB"
+        messages={{
+          ...messages,
+          whatsNew: {
+            ...messages.whatsNew,
+            entry1: { label: 'First update', desc: 'Inserted improvement' },
+          },
+        }}
+      >
+        <WhatsNew />
+      </IntlProvider>
+    )
+
+    expect(
+      screen
+        .getAllByText(/^(First|Earlier|Later) update$/)
+        .map((label) => label.textContent)
+    ).toEqual(['First update', 'Earlier update', 'Later update'])
+    expect(screen.getByText('Earlier update')).toBe(earlier)
+    expect(screen.getByText('Later update')).toBe(later)
+    expect(
+      screen.getByText('Earlier update').parentElement?.parentElement
+    ).toBe(earlierRow)
+    expect(screen.getByText('Later update').parentElement?.parentElement).toBe(
+      laterRow
+    )
+    expect(screen.getByText('new features').tagName).toBe('STRONG')
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+  })
+
   it('stays dismissed after remounting a seen version', () => {
     const view = renderWhatsNew()
     fireEvent.click(screen.getByRole('button', { name: 'Got it →' }))

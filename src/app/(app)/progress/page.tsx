@@ -12,6 +12,7 @@ import {
   type CEFRLevel,
 } from '@/data/curriculum'
 import type { VocabularySet } from '@/data/types'
+import { documentOccurrences } from '@/lib/document-occurrences'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -121,7 +122,15 @@ function UnitCompetencyBlock({
 
       {/* Competency list */}
       <ul className="space-y-2 px-5 py-3">
-        {unit.competency_checklist.map((text, idx) => {
+        {documentOccurrences(
+          [
+            'unit',
+            unit.id,
+            'ordered-checklist',
+            JSON.stringify(unit.competency_checklist),
+          ],
+          unit.competency_checklist
+        ).map(({ value: text, key }, idx) => {
           const status = getCompetencyStatus(
             idx,
             masteredCount,
@@ -129,7 +138,7 @@ function UnitCompetencyBlock({
             score
           )
           return (
-            <li key={idx} className="flex items-start gap-3">
+            <li key={key} className="flex items-start gap-3">
               <span className="mt-0.5 shrink-0 text-base leading-none">
                 {STATUS_ICON[status]}
               </span>

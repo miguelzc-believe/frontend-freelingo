@@ -183,6 +183,42 @@ describe('ProgressPage', () => {
     expect(screen.queryByText('Travel')).not.toBeInTheDocument()
   })
 
+  it('keeps duplicate checklist occurrences and their ordinal statuses across vocabulary visibility changes', async () => {
+    useLanguageStore.setState({
+      activeLanguage: { code: 'es', name: 'Español' } as never,
+    })
+    vi.mocked(getCurriculumUnits).mockResolvedValue([
+      { ...unit, competency_checklist: ['Repeated', 'Repeated', 'Repeated'] },
+    ] as never)
+    mockPageData({
+      competencies: [
+        { unit_id: 'unit-1', score: 0.5, mastered_count: 1, total_count: 2 },
+      ],
+    })
+    render(<ProgressPage />)
+    const rows = (await screen.findAllByText('Repeated')).map((node) =>
+      node.closest('li')
+    )
+    expect(new Set(rows).size).toBe(3)
+    expect(rows.map((row) => row?.textContent)).toEqual([
+      '✅Repeated',
+      '🔄Repeated50%',
+      '⬜Repeated',
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'allLevels' }))
+    expect(screen.getByText('Travel')).toBeInTheDocument()
+    screen
+      .getAllByText('Repeated')
+      .forEach((node, ordinal) =>
+        expect(node.closest('li')).toBe(rows[ordinal])
+      )
+    expect(rows.map((row) => row?.textContent)).toEqual([
+      '✅Repeated',
+      '🔄Repeated50%',
+      '⬜Repeated',
+    ])
+  })
+
   it('offers the plan link when curriculum units have no competency records', async () => {
     mockPageData({ competencies: [] })
     render(<ProgressPage />)

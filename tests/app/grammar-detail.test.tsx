@@ -113,6 +113,43 @@ beforeEach(() => {
 })
 
 describe('GrammarDetailPage', () => {
+  it('keeps duplicate authored nodes distinct when an unrelated section changes', async () => {
+    const repeated = {
+      ...topic,
+      explanation:
+        '| **same** `same` **same** | **same** `same` **same** |\n\n| **same** `same` **same** | **same** `same` **same** |',
+      rules: ['Repeated rule', 'Repeated rule'],
+      examples: [{ text: 'Repeated example' }, { text: 'Repeated example' }],
+    }
+    const view = setup({ topics: [repeated, relatedTopic] })
+    mockGetNativeHelp.mockResolvedValue({
+      ...nativeHelp,
+      key_points: ['Repeated point', 'Repeated point'],
+      examples: [nativeHelp.examples[0], nativeHelp.examples[0]],
+      common_traps: [nativeHelp.common_traps[0], nativeHelp.common_traps[0]],
+      mini_glossary: [nativeHelp.mini_glossary[0], nativeHelp.mini_glossary[0]],
+    })
+    await screen.findAllByText('Repeated point')
+    const cells = screen.getAllByRole('cell')
+    const words = [...document.querySelectorAll('strong')]
+    const points = screen.getAllByText('Repeated point')
+    expect(cells).toHaveLength(4)
+    expect(words).toHaveLength(8)
+    expect(new Set(words).size).toBe(8)
+    expect(points).toHaveLength(2)
+    expect(screen.getAllByText('Ich lerne.')).toHaveLength(2)
+    expect(screen.getAllByText('Wrong form')).toHaveLength(2)
+    expect(screen.getAllByText('Verb')).toHaveLength(2)
+    view.rerender(<GrammarDetailPage params={{ slug: topic.slug }} />)
+    expect(screen.getAllByRole('cell')).toEqual(cells)
+    expect([...document.querySelectorAll('strong')]).toEqual(words)
+    expect(screen.getAllByText('Repeated point')).toEqual(points)
+    fireEvent.click(screen.getByRole('button', { name: /nativeHelpTitle/ }))
+    expect(screen.getAllByRole('cell')).toEqual(cells)
+    expect(screen.getAllByText('Repeated rule')).toHaveLength(2)
+    expect(screen.getAllByText('Repeated example')).toHaveLength(2)
+  })
+
   it('loads the topic for the selected target language', async () => {
     mockGetTopics.mockResolvedValue([topic, relatedTopic])
     useLanguageStore.setState({ activeLanguage: german })
@@ -227,6 +264,10 @@ describe('GrammarDetailPage', () => {
       name: /nativeHelpTitle/,
     })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    // Let the topic-reset effect settle before toggling the newly loaded topic.
+    await waitFor(() =>
+      expect(screen.queryByText('page-loading')).not.toBeInTheDocument()
+    )
     fireEvent.click(toggle)
     expect(await screen.findByText('Native summary')).toBeInTheDocument()
     expect(toggle).toHaveAttribute('aria-expanded', 'true')

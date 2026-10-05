@@ -98,24 +98,28 @@ export default function PricingSection({
   const limitedRows = ['l1', 'l2', 'l3', 'l4', 'l5']
   const tableRows = [
     ...freeRows.map((k) => ({
+      key: `freeFeature.${k}`,
       label: tBilling(`freeFeature.${k}`),
       free: true as boolean | 'limited',
       monthly: true,
       yearly: true,
     })),
     ...limitedRows.map((k) => ({
+      key: `freeFeature.${k}`,
       label: tBilling(`freeFeature.${k}`),
       free: 'limited' as const,
       monthly: true,
       yearly: true,
     })),
     {
+      key: 'planFeature.feature1',
       label: tBilling('planFeature.feature1'),
       free: false as boolean | 'limited',
       monthly: true,
       yearly: true,
     },
     {
+      key: 'planFeature.feature2',
       label: tBilling('planFeature.feature2'),
       free: false,
       monthly: false,
@@ -301,7 +305,7 @@ export default function PricingSection({
           <tbody>
             {tableRows.map((row, i) => (
               <tr
-                key={i}
+                key={row.key}
                 className={
                   i < tableRows.length - 1 ? 'border-fl-border border-b' : ''
                 }

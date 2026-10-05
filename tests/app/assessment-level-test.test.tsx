@@ -101,6 +101,69 @@ describe('LevelTestPage', () => {
     expect(mockPush).toHaveBeenCalledWith('/plan')
   })
 
+  it('scopes duplicate option rows to the question while selecting by text', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/assessment/level-test/questions/')) {
+        return jsonResponse({
+          plan_id: 42,
+          cefr_level: 'A2',
+          questions: questions.map((question) => ({
+            ...question,
+            options: ['same', 'other', 'same'],
+            correct: 'same',
+          })),
+        })
+      }
+      return jsonResponse({
+        score: 1,
+        recommendation: 'advance',
+        next_level: 'B1',
+      })
+    })
+    render(<LevelTestPage />)
+    await confirmStart()
+    const first = await screen.findByRole('button', { name: /^A\.\s*same$/ })
+    const second = screen.getByRole('button', { name: /^C\.\s*same$/ })
+    expect(first).not.toBe(second)
+    expect(screen.getAllByRole('button', { name: /same/ })).toHaveLength(2)
+    fireEvent.click(second)
+    // Text-based selection deliberately marks both occurrences, not just the clicked row.
+    expect(first).toHaveClass('border-fl-fg')
+    expect(second).toHaveClass('border-fl-fg')
+    fireEvent.click(screen.getByRole('button', { name: 'levelTest.confirm' }))
+    expect(first).toHaveClass('border-green-500')
+    expect(second).toHaveClass('border-green-500')
+    expect(first).toBeDisabled()
+    expect(second).toBeDisabled()
+    fireEvent.click(
+      screen.getByRole('button', { name: /levelTest\.nextQuestion/ })
+    )
+    const nextFirst = await screen.findByRole('button', {
+      name: /^A\.\s*same$/,
+    })
+    expect(nextFirst).not.toBe(first)
+    expect(screen.getByRole('button', { name: /^C\.\s*same$/ })).not.toBe(
+      second
+    )
+    expect(nextFirst).not.toHaveClass('border-fl-fg')
+    fireEvent.click(nextFirst)
+    fireEvent.click(screen.getByRole('button', { name: 'levelTest.confirm' }))
+    fireEvent.click(screen.getByRole('button', { name: /levelTest\.submit/ }))
+    expect(await screen.findByText('100%')).toBeInTheDocument()
+    const submitCall = mockApiFetch.mock.calls.find(
+      ([url]) => url === '/api/assessment/level-test/submit'
+    )
+    expect(JSON.parse((submitCall?.[1] as { body: string }).body)).toEqual({
+      plan_id: 42,
+      answers: questions.map((question) => ({
+        question_id: question.id,
+        skill: question.skill,
+        difficulty: question.difficulty,
+        correct: true,
+      })),
+    })
+  })
+
   it('rejects an invalid plan id after confirmation', async () => {
     searchParamsRef.current = new URLSearchParams('plan=abc')
     mockQuestions()

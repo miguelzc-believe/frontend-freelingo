@@ -97,8 +97,8 @@ export default function WhatsNew() {
 
         {/* Entries */}
         <div className="max-h-[50vh] space-y-5 overflow-y-auto px-5 py-5">
-          {entries.map((entry, idx) => (
-            <div key={idx} className="flex gap-3">
+          {entries.map((entry) => (
+            <div key={entry.key} className="flex gap-3">
               <CircleDot
                 className="text-fl-accent mt-0.5 h-3.5 w-3.5 shrink-0"
                 aria-hidden="true"

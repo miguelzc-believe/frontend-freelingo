@@ -4,9 +4,9 @@ import { useThemeStore } from '@/store/theme'
 function applyTheme(theme: 'dark' | 'light') {
   const html = document.documentElement
   if (theme === 'light') {
-    html.setAttribute('data-theme', 'light')
+    html.dataset.theme = 'light'
   } else {
-    html.removeAttribute('data-theme')
+    delete html.dataset.theme
   }
 }
 

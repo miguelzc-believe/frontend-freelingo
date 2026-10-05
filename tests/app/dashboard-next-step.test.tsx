@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import React from 'react'
 
 const { mockApiFetch, mockPush } = vi.hoisted(() => ({
@@ -98,6 +98,46 @@ describe('dashboard end-of-plan next step', () => {
       todayLessons: [],
       completedToday: [],
     })
+  })
+
+  it('preserves same-day lesson slots across reorder and persistence', async () => {
+    const lessons = ['Slot A', 'Slot B'].map((title) => ({
+      id: null,
+      title,
+      lesson_type: 'grammar',
+      week: 1,
+      day: 1,
+      objectives: [],
+      estimated_minutes: 25,
+      is_completed: true,
+    }))
+    mockToday(todayPayload({ lessons }))
+    render(<DashboardPage />)
+
+    const slotA = (await screen.findByText('Slot A')).closest('div.border')
+    const slotB = screen.getByText('Slot B').closest('div.border')
+    expect(slotA).not.toBeNull()
+    expect(slotB).not.toBeNull()
+    expect(screen.getAllByText('lessonDone')).toHaveLength(2)
+    const original = useProgressStore.getState().todayLessons
+
+    act(() => {
+      useProgressStore.setState({ todayLessons: [...original].reverse() })
+    })
+    expect(screen.getByText('Slot A').closest('div.border')).toBe(slotA)
+    expect(screen.getByText('Slot B').closest('div.border')).toBe(slotB)
+
+    act(() => {
+      useProgressStore.setState({
+        todayLessons: original.map((lesson, index) => ({
+          ...lesson,
+          id: index + 50,
+        })),
+      })
+    })
+    expect(screen.getByText('Slot A').closest('div.border')).toBe(slotA)
+    expect(screen.getByText('Slot B').closest('div.border')).toBe(slotB)
+    expect(screen.getAllByText('lessonDone')).toHaveLength(2)
   })
 
   it('offers the level test at the final plan position', async () => {

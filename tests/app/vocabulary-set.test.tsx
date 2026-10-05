@@ -106,6 +106,69 @@ beforeEach(() => {
 })
 
 describe('VocabularySetPage', () => {
+  it('retains duplicate words and help nodes during unrelated UI updates', async () => {
+    mockApiFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          set: {
+            ...vocabularySet,
+            words: [vocabularySet.words[0], vocabularySet.words[0]],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          native_help: {
+            ...help,
+            study_tips: ['Repeated tip', 'Repeated tip'],
+            word_notes: [
+              { word: 'Repeated word', meaning: 'meaning', note: 'note' },
+              { word: 'Repeated word', meaning: 'meaning', note: 'note' },
+            ],
+            common_traps: [
+              { mistake: 'Repeated trap', fix: 'fix' },
+              { mistake: 'Repeated trap', fix: 'fix' },
+            ],
+            mini_glossary: [
+              { term: 'Repeated term', meaning: 'meaning' },
+              { term: 'Repeated term', meaning: 'meaning' },
+            ],
+            practice_prompts: ['Repeated prompt', 'Repeated prompt'],
+          },
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ created: 2 }))
+    render(<VocabularySetPage params={{ setId: 'set/one' }} />)
+    await screen.findByRole('heading', { name: 'Everyday words' })
+    const words = screen.getAllByText('Haus')
+    expect(words).toHaveLength(2)
+    expect(words[0]).not.toBe(words[1])
+    fireEvent.click(screen.getByRole('button', { name: /nativeHelpTitle/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'nativeHelpShow' }))
+    await screen.findByText(help.summary)
+    const duplicates = [
+      'Repeated tip',
+      'Repeated word',
+      'Repeated trap',
+      'Repeated term',
+      'Repeated prompt',
+    ].map((text) => screen.getAllByText(text))
+    duplicates.forEach((nodes) => {
+      expect(nodes).toHaveLength(2)
+      expect(nodes[0]).not.toBe(nodes[1])
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'addAll' }))
+    await screen.findByText(/cardsAdded/)
+    screen
+      .getAllByText('Haus')
+      .forEach((node, occurrence) => expect(node).toBe(words[occurrence]))
+    duplicates.forEach((nodes) =>
+      nodes.forEach((node) => expect(node).toBeInTheDocument())
+    )
+    const request = JSON.parse(mockApiFetch.mock.calls[2]![1].body)
+    expect(request.flashcards).toHaveLength(2)
+  })
+
   it('omits native help when the user has no native language', async () => {
     useAuthStore.setState({ user: null })
     render(<VocabularySetPage params={{ setId: 'set/one' }} />)

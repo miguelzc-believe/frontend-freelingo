@@ -5,8 +5,14 @@ export interface FreeWriteCorrection {
 }
 
 export type AnswerSegment =
-  | { type: 'plain'; text: string }
-  | { type: 'fix'; original: string; corrected: string }
+  | { type: 'plain'; text: string; start: number; end: number }
+  | {
+      type: 'fix'
+      original: string
+      corrected: string
+      start: number
+      end: number
+    }
 
 interface Occurrence {
   start: number
@@ -125,17 +131,29 @@ export function annotateAnswer(
   let cursor = 0
   for (const match of matches) {
     if (match.start > cursor) {
-      segments.push({ type: 'plain', text: answer.slice(cursor, match.start) })
+      segments.push({
+        type: 'plain',
+        text: answer.slice(cursor, match.start),
+        start: cursor,
+        end: match.start,
+      })
     }
     segments.push({
       type: 'fix',
       original: answer.slice(match.start, match.end),
       corrected: match.corrected,
+      start: match.start,
+      end: match.end,
     })
     cursor = match.end
   }
   if (cursor < answer.length) {
-    segments.push({ type: 'plain', text: answer.slice(cursor) })
+    segments.push({
+      type: 'plain',
+      text: answer.slice(cursor),
+      start: cursor,
+      end: answer.length,
+    })
   }
   return segments
 }

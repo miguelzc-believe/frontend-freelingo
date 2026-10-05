@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { annotateAnswer } from '@/lib/free-write-corrections'
+import {
+  annotateAnswer,
+  annotateAnswer as annotateWithRanges,
+} from '@/lib/free-write-corrections'
 
 const correction = (original: string, corrected: string) => ({
   original,
@@ -8,214 +11,259 @@ const correction = (original: string, corrected: string) => ({
 })
 
 describe('annotateAnswer', () => {
-  it('splits the answer around an exact match', () => {
-    const segments = annotateAnswer('Ich bin mit auto gefahren.', [
-      correction('mit auto', 'mit dem Auto'),
+  it('retains distinct original ranges for repeated corrections and intervening text', () => {
+    const answer = 'in und in'
+    const segments = annotateAnswer(answer, [
+      correction('in', 'aus'),
+      correction('in', 'aus'),
     ])
     expect(segments).toEqual([
-      { type: 'plain', text: 'Ich bin ' },
-      { type: 'fix', original: 'mit auto', corrected: 'mit dem Auto' },
-      { type: 'plain', text: ' gefahren.' },
+      { type: 'fix', original: 'in', corrected: 'aus', start: 0, end: 2 },
+      { type: 'plain', text: ' und ', start: 2, end: 7 },
+      { type: 'fix', original: 'in', corrected: 'aus', start: 7, end: 9 },
     ])
+    expect(
+      segments.map((segment) => answer.slice(segment.start, segment.end))
+    ).toEqual(['in', ' und ', 'in'])
   })
 
-  it('annotates multiple corrections in answer order', () => {
-    const segments = annotateAnswer(
-      'Ich habe viele abenteuer gehabt. Ich bin mit auto gefahren.',
-      [
+  it('retains UTF-16 ranges without changing Unicode allocation', () => {
+    expect(annotateAnswer('😀 İ IN', [correction('in', 'aus')])).toEqual([
+      { type: 'plain', text: '😀 İ ', start: 0, end: 5 },
+      { type: 'fix', original: 'IN', corrected: 'aus', start: 5, end: 7 },
+    ])
+    expect(annotateAnswer('', [])).toEqual([])
+  })
+  describe('existing allocation behavior', () => {
+    // Compare the original payload separately from the newly retained ranges.
+    const annotateAnswer = (
+      ...args: Parameters<
+        typeof import('@/lib/free-write-corrections').annotateAnswer
+      >
+    ) => {
+      const segments = annotateWithRanges(...args)
+      return segments.map((segment) =>
+        segment.type === 'plain'
+          ? { type: segment.type, text: segment.text }
+          : {
+              type: segment.type,
+              original: segment.original,
+              corrected: segment.corrected,
+            }
+      )
+    }
+
+    it('splits the answer around an exact match', () => {
+      const segments = annotateAnswer('Ich bin mit auto gefahren.', [
         correction('mit auto', 'mit dem Auto'),
-        correction('abenteuer', 'Abenteuer'),
-      ]
-    )
-    expect(segments.filter((s) => s.type === 'fix')).toEqual([
-      { type: 'fix', original: 'abenteuer', corrected: 'Abenteuer' },
-      { type: 'fix', original: 'mit auto', corrected: 'mit dem Auto' },
-    ])
-  })
-
-  it('matches case-insensitively when the exact fragment is absent', () => {
-    const segments = annotateAnswer('ich wohne in berlin', [
-      correction('Ich wohne', 'Ich lebe'),
-    ])
-    expect(segments[0]).toEqual({
-      type: 'fix',
-      original: 'ich wohne',
-      corrected: 'Ich lebe',
-    })
-  })
-
-  it('matches after trimming whitespace from the original', () => {
-    const segments = annotateAnswer('Das ist gut.', [
-      correction(' gut ', 'sehr gut'),
-    ])
-    expect(segments.some((s) => s.type === 'fix')).toBe(true)
-  })
-
-  it('produces no fix segment for an unmatched correction', () => {
-    const segments = annotateAnswer('Ich gehe nach Hause.', [
-      correction('completely different text', 'whatever'),
-    ])
-    expect(segments).toEqual([{ type: 'plain', text: 'Ich gehe nach Hause.' }])
-  })
-
-  it('keeps the earlier match when corrections overlap', () => {
-    const segments = annotateAnswer('mit auto gefahren', [
-      correction('mit auto', 'mit dem Auto'),
-      correction('auto gefahren', 'Auto gefahren'),
-    ])
-    expect(segments.filter((s) => s.type === 'fix')).toEqual([
-      { type: 'fix', original: 'mit auto', corrected: 'mit dem Auto' },
-    ])
-  })
-
-  it('skips corrections with an empty original or corrected value', () => {
-    const segments = annotateAnswer('Ich gehe.', [
-      correction('', 'something'),
-      correction('Ich', ''),
-    ])
-    expect(segments).toEqual([{ type: 'plain', text: 'Ich gehe.' }])
-  })
-
-  it('assigns repeated identical fragments to successive occurrences', () => {
-    const segments = annotateAnswer('Ich gehe in Schule und in Park.', [
-      correction('in', 'in die'),
-      correction('in', 'in den'),
-    ])
-    expect(segments).toEqual([
-      { type: 'plain', text: 'Ich gehe ' },
-      { type: 'fix', original: 'in', corrected: 'in die' },
-      { type: 'plain', text: ' Schule und ' },
-      { type: 'fix', original: 'in', corrected: 'in den' },
-      { type: 'plain', text: ' Park.' },
-    ])
-  })
-
-  it('prefers a whole-word occurrence over a match inside another word', () => {
-    const segments = annotateAnswer('Ich bin in Berlin', [
-      correction('in', 'aus'),
-    ])
-    expect(segments).toEqual([
-      { type: 'plain', text: 'Ich bin ' },
-      { type: 'fix', original: 'in', corrected: 'aus' },
-      { type: 'plain', text: ' Berlin' },
-    ])
-  })
-
-  it('falls back to a match inside a word when no whole-word occurrence exists', () => {
-    const segments = annotateAnswer('nach Deutschalnd fahren', [
-      correction('alnd', 'land'),
-    ])
-    expect(segments).toEqual([
-      { type: 'plain', text: 'nach Deutsch' },
-      { type: 'fix', original: 'alnd', corrected: 'land' },
-      { type: 'plain', text: ' fahren' },
-    ])
-  })
-
-  it('prefers a case-insensitive whole word over an exact subword', () => {
-    expect(
-      annotateAnswer('Ich bin In Berlin', [correction('in', 'aus')])
-    ).toEqual([
-      { type: 'plain', text: 'Ich bin ' },
-      { type: 'fix', original: 'In', corrected: 'aus' },
-      { type: 'plain', text: ' Berlin' },
-    ])
-  })
-
-  it('allocates repeated fragments across mixed capitalization without duplicate ranges', () => {
-    const segments = annotateAnswer('in Schule und In Park', [
-      correction('in', 'in die'),
-      correction('in', 'in den'),
-    ])
-    expect(segments).toEqual([
-      { type: 'fix', original: 'in', corrected: 'in die' },
-      { type: 'plain', text: ' Schule und ' },
-      { type: 'fix', original: 'In', corrected: 'in den' },
-      { type: 'plain', text: ' Park' },
-    ])
-  })
-
-  it('prefers an exact whole word over an earlier case-insensitive occurrence', () => {
-    const segments = annotateAnswer('In Berlin und in Paris', [
-      correction('in', 'aus'),
-    ])
-    expect(segments).toEqual([
-      { type: 'plain', text: 'In Berlin und ' },
-      { type: 'fix', original: 'in', corrected: 'aus' },
-      { type: 'plain', text: ' Paris' },
-    ])
-  })
-
-  it('keeps trimmed occurrences available after an untrimmed match is allocated', () => {
-    const segments = annotateAnswer(' gut und gut.', [
-      correction(' gut ', ' sehr gut '),
-      correction(' gut ', 'besser'),
-    ])
-    expect(segments).toEqual([
-      { type: 'fix', original: ' gut ', corrected: ' sehr gut ' },
-      { type: 'plain', text: 'und ' },
-      { type: 'fix', original: 'gut', corrected: 'besser' },
-      { type: 'plain', text: '.' },
-    ])
-  })
-
-  it('treats regular expression characters as literal correction text', () => {
-    expect(annotateAnswer('a+b?', [correction('a+b?', 'a plus b')])).toEqual([
-      { type: 'fix', original: 'a+b?', corrected: 'a plus b' },
-    ])
-  })
-
-  it('escapes literal backslashes and every regex metacharacter', () => {
-    const original = '\\.*+?^${}()|[]'
-    expect(
-      annotateAnswer(`before ${original} after`, [
-        correction(original, 'fixed'),
       ])
-    ).toEqual([
-      { type: 'plain', text: 'before ' },
-      { type: 'fix', original, corrected: 'fixed' },
-      { type: 'plain', text: ' after' },
-    ])
-  })
+      expect(segments).toEqual([
+        { type: 'plain', text: 'Ich bin ' },
+        { type: 'fix', original: 'mit auto', corrected: 'mit dem Auto' },
+        { type: 'plain', text: ' gefahren.' },
+      ])
+    })
 
-  it('preserves answer offsets when earlier Unicode text expands on lowercasing', () => {
-    expect(annotateAnswer('İ IN Berlin', [correction('in', 'aus')])).toEqual([
-      { type: 'plain', text: 'İ ' },
-      { type: 'fix', original: 'IN', corrected: 'aus' },
-      { type: 'plain', text: ' Berlin' },
-    ])
-  })
+    it('annotates multiple corrections in answer order', () => {
+      const segments = annotateAnswer(
+        'Ich habe viele abenteuer gehabt. Ich bin mit auto gefahren.',
+        [
+          correction('mit auto', 'mit dem Auto'),
+          correction('abenteuer', 'Abenteuer'),
+        ]
+      )
+      expect(segments.filter((s) => s.type === 'fix')).toEqual([
+        { type: 'fix', original: 'abenteuer', corrected: 'Abenteuer' },
+        { type: 'fix', original: 'mit auto', corrected: 'mit dem Auto' },
+      ])
+    })
 
-  it('prefers the longer fragment when two corrections start at the same position', () => {
-    const segments = annotateAnswer('Ich bin mit auto gefahren.', [
-      correction('mit', 'mit dem'),
-      correction('mit auto', 'mit dem Auto'),
-    ])
-    expect(segments.filter((s) => s.type === 'fix')).toEqual([
-      { type: 'fix', original: 'mit auto', corrected: 'mit dem Auto' },
-    ])
-  })
+    it('matches case-insensitively when the exact fragment is absent', () => {
+      const segments = annotateAnswer('ich wohne in berlin', [
+        correction('Ich wohne', 'Ich lebe'),
+      ])
+      expect(segments[0]).toEqual({
+        type: 'fix',
+        original: 'ich wohne',
+        corrected: 'Ich lebe',
+      })
+    })
 
-  it('places a repeated fragment elsewhere when its first occurrence is taken', () => {
-    const segments = annotateAnswer('das auto und das haus', [
-      correction('das auto', 'das Auto'),
-      correction('das', 'dem'),
-    ])
-    expect(segments.filter((s) => s.type === 'fix')).toEqual([
-      { type: 'fix', original: 'das auto', corrected: 'das Auto' },
-      { type: 'fix', original: 'das', corrected: 'dem' },
-    ])
-  })
+    it('matches after trimming whitespace from the original', () => {
+      const segments = annotateAnswer('Das ist gut.', [
+        correction(' gut ', 'sehr gut'),
+      ])
+      expect(segments.some((s) => s.type === 'fix')).toBe(true)
+    })
 
-  it('covers matches at the start and end of the answer', () => {
-    const segments = annotateAnswer('abc def', [
-      correction('abc', 'ABC'),
-      correction('def', 'DEF'),
-    ])
-    expect(segments).toEqual([
-      { type: 'fix', original: 'abc', corrected: 'ABC' },
-      { type: 'plain', text: ' ' },
-      { type: 'fix', original: 'def', corrected: 'DEF' },
-    ])
+    it('produces no fix segment for an unmatched correction', () => {
+      const segments = annotateAnswer('Ich gehe nach Hause.', [
+        correction('completely different text', 'whatever'),
+      ])
+      expect(segments).toEqual([
+        { type: 'plain', text: 'Ich gehe nach Hause.' },
+      ])
+    })
+
+    it('keeps the earlier match when corrections overlap', () => {
+      const segments = annotateAnswer('mit auto gefahren', [
+        correction('mit auto', 'mit dem Auto'),
+        correction('auto gefahren', 'Auto gefahren'),
+      ])
+      expect(segments.filter((s) => s.type === 'fix')).toEqual([
+        { type: 'fix', original: 'mit auto', corrected: 'mit dem Auto' },
+      ])
+    })
+
+    it('skips corrections with an empty original or corrected value', () => {
+      const segments = annotateAnswer('Ich gehe.', [
+        correction('', 'something'),
+        correction('Ich', ''),
+      ])
+      expect(segments).toEqual([{ type: 'plain', text: 'Ich gehe.' }])
+    })
+
+    it('assigns repeated identical fragments to successive occurrences', () => {
+      const segments = annotateAnswer('Ich gehe in Schule und in Park.', [
+        correction('in', 'in die'),
+        correction('in', 'in den'),
+      ])
+      expect(segments).toEqual([
+        { type: 'plain', text: 'Ich gehe ' },
+        { type: 'fix', original: 'in', corrected: 'in die' },
+        { type: 'plain', text: ' Schule und ' },
+        { type: 'fix', original: 'in', corrected: 'in den' },
+        { type: 'plain', text: ' Park.' },
+      ])
+    })
+
+    it('prefers a whole-word occurrence over a match inside another word', () => {
+      const segments = annotateAnswer('Ich bin in Berlin', [
+        correction('in', 'aus'),
+      ])
+      expect(segments).toEqual([
+        { type: 'plain', text: 'Ich bin ' },
+        { type: 'fix', original: 'in', corrected: 'aus' },
+        { type: 'plain', text: ' Berlin' },
+      ])
+    })
+
+    it('falls back to a match inside a word when no whole-word occurrence exists', () => {
+      const segments = annotateAnswer('nach Deutschalnd fahren', [
+        correction('alnd', 'land'),
+      ])
+      expect(segments).toEqual([
+        { type: 'plain', text: 'nach Deutsch' },
+        { type: 'fix', original: 'alnd', corrected: 'land' },
+        { type: 'plain', text: ' fahren' },
+      ])
+    })
+
+    it('prefers a case-insensitive whole word over an exact subword', () => {
+      expect(
+        annotateAnswer('Ich bin In Berlin', [correction('in', 'aus')])
+      ).toEqual([
+        { type: 'plain', text: 'Ich bin ' },
+        { type: 'fix', original: 'In', corrected: 'aus' },
+        { type: 'plain', text: ' Berlin' },
+      ])
+    })
+
+    it('allocates repeated fragments across mixed capitalization without duplicate ranges', () => {
+      const segments = annotateAnswer('in Schule und In Park', [
+        correction('in', 'in die'),
+        correction('in', 'in den'),
+      ])
+      expect(segments).toEqual([
+        { type: 'fix', original: 'in', corrected: 'in die' },
+        { type: 'plain', text: ' Schule und ' },
+        { type: 'fix', original: 'In', corrected: 'in den' },
+        { type: 'plain', text: ' Park' },
+      ])
+    })
+
+    it('prefers an exact whole word over an earlier case-insensitive occurrence', () => {
+      const segments = annotateAnswer('In Berlin und in Paris', [
+        correction('in', 'aus'),
+      ])
+      expect(segments).toEqual([
+        { type: 'plain', text: 'In Berlin und ' },
+        { type: 'fix', original: 'in', corrected: 'aus' },
+        { type: 'plain', text: ' Paris' },
+      ])
+    })
+
+    it('keeps trimmed occurrences available after an untrimmed match is allocated', () => {
+      const segments = annotateAnswer(' gut und gut.', [
+        correction(' gut ', ' sehr gut '),
+        correction(' gut ', 'besser'),
+      ])
+      expect(segments).toEqual([
+        { type: 'fix', original: ' gut ', corrected: ' sehr gut ' },
+        { type: 'plain', text: 'und ' },
+        { type: 'fix', original: 'gut', corrected: 'besser' },
+        { type: 'plain', text: '.' },
+      ])
+    })
+
+    it('treats regular expression characters as literal correction text', () => {
+      expect(annotateAnswer('a+b?', [correction('a+b?', 'a plus b')])).toEqual([
+        { type: 'fix', original: 'a+b?', corrected: 'a plus b' },
+      ])
+    })
+
+    it('escapes literal backslashes and every regex metacharacter', () => {
+      const original = '\\.*+?^${}()|[]'
+      expect(
+        annotateAnswer(`before ${original} after`, [
+          correction(original, 'fixed'),
+        ])
+      ).toEqual([
+        { type: 'plain', text: 'before ' },
+        { type: 'fix', original, corrected: 'fixed' },
+        { type: 'plain', text: ' after' },
+      ])
+    })
+
+    it('preserves answer offsets when earlier Unicode text expands on lowercasing', () => {
+      expect(annotateAnswer('İ IN Berlin', [correction('in', 'aus')])).toEqual([
+        { type: 'plain', text: 'İ ' },
+        { type: 'fix', original: 'IN', corrected: 'aus' },
+        { type: 'plain', text: ' Berlin' },
+      ])
+    })
+
+    it('prefers the longer fragment when two corrections start at the same position', () => {
+      const segments = annotateAnswer('Ich bin mit auto gefahren.', [
+        correction('mit', 'mit dem'),
+        correction('mit auto', 'mit dem Auto'),
+      ])
+      expect(segments.filter((s) => s.type === 'fix')).toEqual([
+        { type: 'fix', original: 'mit auto', corrected: 'mit dem Auto' },
+      ])
+    })
+
+    it('places a repeated fragment elsewhere when its first occurrence is taken', () => {
+      const segments = annotateAnswer('das auto und das haus', [
+        correction('das auto', 'das Auto'),
+        correction('das', 'dem'),
+      ])
+      expect(segments.filter((s) => s.type === 'fix')).toEqual([
+        { type: 'fix', original: 'das auto', corrected: 'das Auto' },
+        { type: 'fix', original: 'das', corrected: 'dem' },
+      ])
+    })
+
+    it('covers matches at the start and end of the answer', () => {
+      const segments = annotateAnswer('abc def', [
+        correction('abc', 'ABC'),
+        correction('def', 'DEF'),
+      ])
+      expect(segments).toEqual([
+        { type: 'fix', original: 'abc', corrected: 'ABC' },
+        { type: 'plain', text: ' ' },
+        { type: 'fix', original: 'def', corrected: 'DEF' },
+      ])
+    })
   })
 })

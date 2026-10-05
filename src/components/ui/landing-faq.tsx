@@ -29,21 +29,21 @@ export function LandingFAQ() {
 
     if (key === 'q_workflow') {
       const steps = [
-        t('workflowStep1'),
-        t('workflowStep2'),
-        t('workflowStep3'),
-        t('workflowStep4'),
-        t('workflowStep5'),
-        t('workflowStep6'),
+        'workflowStep1',
+        'workflowStep2',
+        'workflowStep3',
+        'workflowStep4',
+        'workflowStep5',
+        'workflowStep6',
       ]
       return (
         <ol className="list-none space-y-1">
           {steps.map((step, i) => (
-            <li key={i} className="flex items-start gap-3">
+            <li key={step} className="flex items-start gap-3">
               <span className="text-fl-label text-fl-muted-4 mt-0.5 shrink-0 font-mono">
                 {i + 1}.
               </span>
-              <span>{step}</span>
+              <span>{t(step)}</span>
             </li>
           ))}
         </ol>

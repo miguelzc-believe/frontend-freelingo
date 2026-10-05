@@ -114,6 +114,92 @@ beforeEach(() => {
 })
 
 describe('PhrasebookPage', () => {
+  it('preserves duplicate phrase and help occurrences through register/search filtering', async () => {
+    const duplicate = {
+      text: 'Hello again',
+      context: '',
+      register: 'formal' as const,
+    }
+    mockCategories.mockResolvedValue([
+      {
+        ...categories[0],
+        phrases: [
+          { text: 'Hey', context: '', register: 'informal' },
+          duplicate,
+          { ...duplicate },
+        ],
+      },
+    ])
+    mockNativeHelp.mockResolvedValue({
+      ...nativeHelp,
+      usage_tips: ['Repeated tip', 'Repeated tip'],
+      register_notes: ['Repeated register', 'Repeated register'],
+      phrase_notes: [
+        { phrase: 'Repeated phrase', note: 'note' },
+        { phrase: 'Repeated phrase', note: 'note' },
+      ],
+      common_traps: [
+        { mistake: 'Repeated trap', fix: 'fix' },
+        { mistake: 'Repeated trap', fix: 'fix' },
+      ],
+      mini_glossary: [
+        { term: 'Repeated term', meaning: 'meaning' },
+        { term: 'Repeated term', meaning: 'meaning' },
+      ],
+    })
+    render(<PhrasebookPage />)
+    await screen.findByText('Greetings')
+    fireEvent.click(screen.getByRole('button', { name: 'nativeHelpShow' }))
+    await screen.findByText(nativeHelp.summary)
+    const helpNodes = [
+      'Repeated tip',
+      'Repeated register',
+      'Repeated phrase',
+      'Repeated trap',
+      'Repeated term',
+    ].map((text) => screen.getAllByText(text))
+    helpNodes.forEach((nodes) => {
+      expect(nodes).toHaveLength(2)
+      expect(nodes[0]).not.toBe(nodes[1])
+    })
+    const original = screen
+      .getAllByText('Hello again')
+      .map((node) => node.closest('li'))
+    expect(original[0]).not.toBe(original[1])
+    const expectOriginalRows = () =>
+      screen
+        .getAllByText('Hello again')
+        .forEach((node, occurrence) =>
+          expect(node.closest('li')).toBe(original[occurrence])
+        )
+    fireEvent.click(screen.getByRole('button', { name: 'formal' }))
+    expectOriginalRows()
+    fireEvent.change(screen.getByPlaceholderText('searchPlaceholder'), {
+      target: { value: 'Hello' },
+    })
+    expectOriginalRows()
+    helpNodes.forEach((nodes) =>
+      nodes.forEach((node) => expect(node).toBeInTheDocument())
+    )
+    // Restoring the earlier filtered-out phrase must not renumber surviving rows.
+    fireEvent.change(screen.getByPlaceholderText('searchPlaceholder'), {
+      target: { value: '' },
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: 'all' })[1]!)
+    expect(screen.getByText('Hey')).toBeInTheDocument()
+    expectOriginalRows()
+    expect(mockAudioPlayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audioUrl: '/api/phrasebook/audio/greetings/1?language=de',
+      })
+    )
+    expect(mockAudioPlayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audioUrl: '/api/phrasebook/audio/greetings/2?language=de',
+      })
+    )
+  })
+
   it('loads the active target language and passes meaningful audio props', async () => {
     render(<PhrasebookPage />)
 

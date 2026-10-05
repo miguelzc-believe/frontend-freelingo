@@ -707,6 +707,80 @@ describe('chat memory stream', () => {
     ).not.toHaveProperty('conversation_id')
   })
 
+  it('allocates each duplicate record once and keeps its DOM through tokens, reset and done', async () => {
+    const uuid = vi.spyOn(globalThis.crypto, 'randomUUID')
+    const stream = controlledChatStreamResponse()
+    const history = [
+      { role: 'user', content: 'Same' },
+      { role: 'assistant', content: 'Same' },
+      { role: 'user', content: 'Same' },
+      { role: 'assistant', content: 'Same' },
+    ]
+    mocks.apiFetch.mockImplementation((path: string) => {
+      if (path === '/api/chat') return Promise.resolve(stream.response)
+      if (path === '/api/chat/conversations') {
+        return Promise.resolve(
+          jsonResponse([{ id: 7, title: 'History', source: 'text' }])
+        )
+      }
+      return Promise.resolve(jsonResponse({ messages: history }))
+    })
+    try {
+      render(<ChatPage />)
+      const originals = await screen.findAllByText('Same')
+      expect(originals).toHaveLength(4)
+      const input = screen.getByPlaceholderText('placeholder')
+      fireEvent.change(input, { target: { value: 'Same' } })
+      fireEvent.click(screen.getByRole('button', { name: 'send' }))
+      await act(async () => {
+        stream.enqueue({ token: 'Same' })
+      })
+      const duplicates = await screen.findAllByText('Same')
+      expect(duplicates).toHaveLength(6)
+      const assistant = duplicates[5]!
+      const row = assistant.parentElement!.parentElement!
+      await act(async () => {
+        stream.enqueue({ token: ' token' })
+      })
+      expect(screen.getByText('Same token')).toBe(assistant)
+      await act(async () => {
+        stream.enqueue({ response_reset: true })
+      })
+      expect(row).toBeInTheDocument()
+      expect(assistant).toContainHTML('▌')
+      await act(async () => {
+        stream.enqueue({ token: 'Same' })
+        stream.enqueue({ memory_updated: true })
+        stream.enqueue({ done: true })
+        stream.close()
+      })
+      await waitFor(() => expect(input).not.toBeDisabled())
+      expect(screen.getAllByText('Same')).toEqual(duplicates)
+      expect(row).toBeInTheDocument()
+      expect(screen.getByText('memorySavedToast')).toBeInTheDocument()
+      fireEvent.pointerUp(assistant)
+      expect(mocks.handleTextSelection).toHaveBeenCalledWith('Same')
+      fireEvent.click(screen.getByRole('button', { name: 'continueInVoice' }))
+      expect(
+        JSON.parse(sessionStorage.getItem('voice_context') ?? '{}')
+      ).toEqual({
+        messages: [
+          ...history,
+          { role: 'user', content: 'Same' },
+          { role: 'assistant', content: 'Same' },
+        ],
+      })
+      expect(mocks.apiFetch).toHaveBeenCalledWith('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Same', conversation_id: 7 }),
+      })
+      expect(uuid).toHaveBeenCalledTimes(6)
+    } finally {
+      uuid.mockRestore()
+    }
+  })
+
   it('replaces a partial incompatible-tools response with the complete fallback', async () => {
     const stream = controlledChatStreamResponse()
     mocks.apiFetch.mockImplementation((path: string) => {

@@ -27,6 +27,7 @@ import {
   shouldShowUnitReviewPrompt,
 } from '@/lib/review-prompt-triggers'
 import { cn } from '@/lib/utils'
+import { documentOccurrences } from '@/lib/document-occurrences'
 import {
   annotateAnswer,
   type FreeWriteCorrection,
@@ -561,9 +562,11 @@ export default function LessonPage() {
   if (!exercise) return
   const isEvaluated = exercise?.score !== null
   const isAnswerCorrect = (exercise?.score ?? 0) >= 1
-  const exerciseCorrections = (exercise?.corrections ?? []).filter(
-    (c) => c.original && c.corrected
-  )
+  const correctionOccurrences = documentOccurrences(
+    ['lesson', id, 'exercise', String(exercise.id), 'corrections'],
+    exercise.corrections ?? []
+  ).filter(({ value }) => value.original && value.corrected)
+  const exerciseCorrections = correctionOccurrences.map(({ value }) => value)
   // Amber only when the evaluator returned corrections with a partial score.
   // The LLM-unavailable fallback (score 0.5, no corrections) stays red/✕.
   const isPartiallyCorrect =
@@ -594,6 +597,37 @@ export default function LessonPage() {
   const explanationText = targetExplanation.text
   const nativeExplanation = validatedNativeExplanation.record
   const nativeExplanationText = validatedNativeExplanation.text
+  const explanationPoints = documentOccurrences(
+    ['lesson', id, 'explanation', 'key_points'],
+    (explanation?.key_points ?? []) as string[]
+  )
+  const explanationExamples = documentOccurrences(
+    ['lesson', id, 'explanation', 'examples'],
+    (explanation?.examples ?? []) as { sentence: string; note: string }[]
+  )
+  const nativePoints = documentOccurrences(
+    ['lesson', id, 'native_explanation', 'key_points'],
+    (nativeExplanation?.key_points ?? []) as string[]
+  )
+  const nativeExamples = documentOccurrences(
+    ['lesson', id, 'native_explanation', 'examples'],
+    (nativeExplanation?.examples ?? []) as { sentence: string; note: string }[]
+  )
+  const nativeTraps = documentOccurrences(
+    ['lesson', id, 'native_explanation', 'common_traps'],
+    (nativeExplanation?.common_traps ?? []) as {
+      mistake: string
+      fix: string
+    }[]
+  )
+  const nativeGlossary = documentOccurrences(
+    ['lesson', id, 'native_explanation', 'mini_glossary'],
+    (nativeExplanation?.mini_glossary ?? []) as {
+      term: string
+      meaning: string
+      note?: string
+    }[]
+  )
 
   return (
     <>
@@ -666,8 +700,8 @@ export default function LessonPage() {
                 )}
                 {(explanation.key_points as string[])?.length > 0 && (
                   <ul className="border-fl-border space-y-1 border-t pt-3">
-                    {(explanation.key_points as string[]).map((kp, i) => (
-                      <li key={i} className="text-fl-muted-1">
+                    {explanationPoints.map(({ value: kp, key }) => (
+                      <li key={key} className="text-fl-muted-1">
                         <span className="text-fl-muted-2 mr-2">·</span>
                         <TargetLanguageText languageCode={targetLanguageCode}>
                           {kp}
@@ -682,13 +716,8 @@ export default function LessonPage() {
                     <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                       {t('examples')}
                     </p>
-                    {(
-                      explanation.examples as {
-                        sentence: string
-                        note: string
-                      }[]
-                    ).map((ex, i) => (
-                      <div key={i} className="flex items-start gap-3">
+                    {explanationExamples.map(({ value: ex, key }) => (
+                      <div key={key} className="flex items-start gap-3">
                         <span className="text-fl-muted-3 mt-0.5">·</span>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -735,17 +764,15 @@ export default function LessonPage() {
                       {(nativeExplanation.key_points as string[])?.length >
                         0 && (
                         <ul className="space-y-1">
-                          {(nativeExplanation.key_points as string[]).map(
-                            (kp, i) => (
-                              <li
-                                key={i}
-                                className="text-fl-muted-1 text-base leading-relaxed"
-                              >
-                                <span className="text-fl-muted-2 mr-2">·</span>
-                                {kp}
-                              </li>
-                            )
-                          )}
+                          {nativePoints.map(({ value: kp, key }) => (
+                            <li
+                              key={key}
+                              className="text-fl-muted-1 text-base leading-relaxed"
+                            >
+                              <span className="text-fl-muted-2 mr-2">·</span>
+                              {kp}
+                            </li>
+                          ))}
                         </ul>
                       )}
                       {(
@@ -758,13 +785,8 @@ export default function LessonPage() {
                           <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
                             {t('examples')}
                           </p>
-                          {(
-                            nativeExplanation.examples as {
-                              sentence: string
-                              note: string
-                            }[]
-                          ).map((ex, i) => (
-                            <div key={i} className="flex items-start gap-3">
+                          {nativeExamples.map(({ value: ex, key }) => (
+                            <div key={key} className="flex items-start gap-3">
                               <span className="text-fl-muted-3 mt-0.5 text-sm">
                                 ·
                               </span>
@@ -795,13 +817,8 @@ export default function LessonPage() {
                           <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
                             {t('commonTraps')}
                           </p>
-                          {(
-                            nativeExplanation.common_traps as {
-                              mistake: string
-                              fix: string
-                            }[]
-                          ).map((trap, i) => (
-                            <div key={i} className="space-y-0.5">
+                          {nativeTraps.map(({ value: trap, key }) => (
+                            <div key={key} className="space-y-0.5">
                               <p className="text-fl-muted-2 text-sm">
                                 {trap.mistake}
                               </p>
@@ -823,14 +840,8 @@ export default function LessonPage() {
                           <p className="text-fl-label text-fl-muted-3 font-mono text-xs tracking-widest uppercase">
                             {t('miniGlossary')}
                           </p>
-                          {(
-                            nativeExplanation.mini_glossary as {
-                              term: string
-                              meaning: string
-                              note?: string
-                            }[]
-                          ).map((item, i) => (
-                            <div key={i}>
+                          {nativeGlossary.map(({ value: item, key }) => (
+                            <div key={key}>
                               <TargetLanguageText
                                 languageCode={targetLanguageCode}
                                 className="text-fl-muted-1 text-sm font-bold"
@@ -1072,11 +1083,29 @@ export default function LessonPage() {
                             : 'border-fl-error-fg/50'
                       )}
                     >
-                      {answerSegments.map((segment, index) =>
+                      {answerSegments.map((segment) =>
                         segment.type === 'plain' ? (
-                          <span key={index}>{segment.text}</span>
+                          <span
+                            key={JSON.stringify([
+                              id,
+                              exercise.id,
+                              'answer',
+                              segment.start,
+                              segment.end,
+                            ])}
+                          >
+                            {segment.text}
+                          </span>
                         ) : (
-                          <span key={index}>
+                          <span
+                            key={JSON.stringify([
+                              id,
+                              exercise.id,
+                              'answer',
+                              segment.start,
+                              segment.end,
+                            ])}
+                          >
                             <del className="text-fl-error-fg decoration-fl-error-fg/70 line-through">
                               {segment.original}
                             </del>{' '}
@@ -1175,28 +1204,30 @@ export default function LessonPage() {
                         {t('corrections')}
                       </p>
                       <ul className="space-y-3">
-                        {exerciseCorrections.map((correction, index) => (
-                          <li key={index}>
-                            <p
-                              className={getTargetLanguageTextClass(
-                                targetLanguageCode
-                              )}
-                            >
-                              <del className="text-fl-error-fg decoration-fl-error-fg/70 line-through">
-                                {correction.original}
-                              </del>
-                              <span className="text-fl-muted-3"> → </span>
-                              <ins className="text-fl-success decoration-fl-success/70 font-semibold">
-                                {correction.corrected}
-                              </ins>
-                            </p>
-                            {correction.explanation && (
-                              <p className="text-fl-muted-2 mt-1 text-sm">
-                                {correction.explanation}
+                        {correctionOccurrences.map(
+                          ({ value: correction, key }) => (
+                            <li key={key}>
+                              <p
+                                className={getTargetLanguageTextClass(
+                                  targetLanguageCode
+                                )}
+                              >
+                                <del className="text-fl-error-fg decoration-fl-error-fg/70 line-through">
+                                  {correction.original}
+                                </del>
+                                <span className="text-fl-muted-3"> → </span>
+                                <ins className="text-fl-success decoration-fl-success/70 font-semibold">
+                                  {correction.corrected}
+                                </ins>
                               </p>
-                            )}
-                          </li>
-                        ))}
+                              {correction.explanation && (
+                                <p className="text-fl-muted-2 mt-1 text-sm">
+                                  {correction.explanation}
+                                </p>
+                              )}
+                            </li>
+                          )
+                        )}
                       </ul>
                     </div>
                   )}
@@ -1298,8 +1329,11 @@ export default function LessonPage() {
                 {t('vocabulary')}
               </p>
               <div className="space-y-3">
-                {vocabItems.map((item, idx) => (
-                  <div key={idx} className="border-fl-border border px-4 py-3">
+                {documentOccurrences(
+                  ['lesson', id, 'vocabulary'],
+                  vocabItems
+                ).map(({ value: item, key }) => (
+                  <div key={key} className="border-fl-border border px-4 py-3">
                     <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         {item.word && (

@@ -213,6 +213,68 @@ describe('LessonPage free-write corrections', () => {
     mocks.apiFetch.mockReset()
   })
 
+  it('keeps duplicate answer occurrences distinct and scopes nodes to their exercise', async () => {
+    const detail = lessonDetail({
+      isCompleted: true,
+      exercise: {
+        user_answer: 'in und in',
+        score: 0.8,
+        corrections: [
+          { original: 'in', corrected: 'aus', explanation: 'same' },
+          { original: 'in', corrected: 'aus', explanation: 'same' },
+        ],
+      },
+    })
+    detail.lesson.content = {
+      explanation: {
+        key_points: ['duplicate', 'duplicate'],
+        examples: [
+          { sentence: 'example', note: '' },
+          { sentence: 'example', note: '' },
+        ],
+      },
+      vocabulary: [{ word: 'word' }, { word: 'word' }],
+      native_explanation: { key_points: ['native', 'native'] },
+    }
+    detail.exercises.push({ ...detail.exercises[0]!, id: 11 })
+    mockApi(detail)
+    const { container } = render(<LessonPage />)
+    await screen.findByText('corrections')
+    const first = Array.from(annotatedBlock(container).querySelectorAll('ins'))
+    expect(first).toHaveLength(2)
+    expect(first[0]).not.toBe(first[1])
+    const duplicates = screen.getAllByText('duplicate')
+    const examples = screen.getAllByText('example')
+    const words = screen.getAllByText('word')
+    expect(duplicates).toHaveLength(2)
+    expect(examples).toHaveLength(2)
+    expect(words).toHaveLength(2)
+    expect(duplicates[0]).not.toBe(duplicates[1])
+    fireEvent.click(screen.getByRole('button', { name: 'en−' }))
+    expect(screen.queryByText('native')).toBeNull()
+    expect(screen.getAllByText('duplicate')).toEqual(duplicates)
+    expect(screen.getAllByText('example')).toEqual(examples)
+    expect(screen.getAllByText('word')).toEqual(words)
+    expect(
+      Array.from(annotatedBlock(container).querySelectorAll('ins'))
+    ).toEqual(first)
+    const list = screen.getByText('corrections').closest('div')!
+    const corrections = Array.from(list.querySelectorAll('li'))
+    expect(corrections).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'next →' }))
+    await waitFor(() => {
+      const second = Array.from(
+        annotatedBlock(container).querySelectorAll('ins')
+      )
+      expect(second).toHaveLength(2)
+      expect(second[0]).not.toBe(first[0])
+      expect(second[1]).not.toBe(first[1])
+      expect(
+        screen.getByText('corrections').closest('div')!.querySelector('li')
+      ).not.toBe(corrections[0])
+    })
+  })
+
   it('renders inline annotations, the corrections list and the amber state after evaluation', async () => {
     mockApi(lessonDetail({}), {
       id: 10,

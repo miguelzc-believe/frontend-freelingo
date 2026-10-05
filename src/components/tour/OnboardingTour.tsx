@@ -13,14 +13,14 @@ import {
 
 const STORAGE_KEY = 'fl_tour_done'
 
-const STEP_ICONS = [
-  Sparkles,
-  MessageSquare,
-  Mic,
-  Layers,
-  BookOpen,
-  Headphones,
-  Zap,
+const TOUR_STEPS = [
+  { key: 'step1', icon: Sparkles },
+  { key: 'step2', icon: MessageSquare },
+  { key: 'step3', icon: Mic },
+  { key: 'step4', icon: Layers },
+  { key: 'step5', icon: BookOpen },
+  { key: 'step6', icon: Headphones },
+  { key: 'step7', icon: Zap },
 ]
 const PREMIUM_STEPS = new Set([1, 2, 5])
 
@@ -33,7 +33,7 @@ export default function OnboardingTour() {
   const [leaving, setLeaving] = useState(false)
   const [dir, setDir] = useState<'next' | 'prev'>('next')
 
-  const totalSteps = 7
+  const totalSteps = TOUR_STEPS.length
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !localStorage.getItem(STORAGE_KEY)) {
@@ -88,9 +88,9 @@ export default function OnboardingTour() {
         <div className="border-fl-border flex items-center justify-between border-b px-5 pt-5 pb-4">
           {/* Progress dots */}
           <div className="flex gap-1.5">
-            {Array.from({ length: totalSteps }).map((_, i) => (
+            {TOUR_STEPS.map((descriptor, i) => (
               <span
-                key={i}
+                key={descriptor.key}
                 className={`block h-1.5 w-1.5 rounded-full transition-colors ${
                   i === step ? 'bg-fl-accent' : 'bg-fl-border'
                 }`}
@@ -117,7 +117,7 @@ export default function OnboardingTour() {
         >
           <div className="mb-4 flex items-center gap-3">
             {(() => {
-              const Icon = STEP_ICONS[step] ?? Sparkles
+              const Icon = TOUR_STEPS[step]?.icon ?? Sparkles
               return <Icon className="text-fl-muted-2 h-5 w-5" />
             })()}
             <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">

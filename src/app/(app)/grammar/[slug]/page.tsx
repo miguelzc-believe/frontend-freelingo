@@ -12,34 +12,34 @@ import { TargetLanguageText } from '@/components/TargetLanguageText'
 import { useAuthStore } from '@/store/auth'
 import { useLanguageStore } from '@/store/language'
 import { PageLoading } from '@/components/ui/page-loading'
+import { documentOccurrences, documentRanges } from '@/lib/document-occurrences'
 
-function renderExplanation(text: string) {
-  const lines = text.split('\n')
-  return lines.map((line, i) => {
+function renderExplanation(text: string, section: string) {
+  const lines = documentRanges([section, 'explanation'], text, '\n')
+  return lines.map(({ value: line, key }) => {
     if (line.startsWith('- ')) {
       return (
         <li
-          key={i}
+          key={key}
           className="text-fl-muted-1 font-sans text-base leading-relaxed"
         >
           <span className="text-fl-muted-3 mr-2">{'\u00b7'}</span>
-          <RichText text={line.slice(2)} />
+          <RichText text={line.slice(2)} section={key} />
         </li>
       )
     }
     if (line.trim() === '') return null
     if (line.startsWith('|')) {
       return (
-        <tr key={i}>
-          {line
-            .split('|')
-            .filter(Boolean)
-            .map((cell, ci) => (
+        <tr key={key}>
+          {documentRanges([key, 'cells'], line, '|')
+            .filter((cell) => Boolean(cell.value))
+            .map(({ value: cell, key: cellKey }) => (
               <td
-                key={ci}
+                key={cellKey}
                 className="text-fl-label text-fl-muted-1 border-fl-border border px-3 py-1.5 font-mono"
               >
-                <RichText text={cell.trim()} />
+                <RichText text={cell.trim()} section={cellKey} />
               </td>
             ))}
         </tr>
@@ -47,35 +47,48 @@ function renderExplanation(text: string) {
     }
     return (
       <p
-        key={i}
+        key={key}
         className="text-fl-muted-1 font-sans text-base leading-relaxed"
       >
-        <RichText text={line} />
+        <RichText text={line} section={key} />
       </p>
     )
   })
 }
 
-function RichText({ text }: { readonly text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/)
+function RichText({
+  text,
+  section,
+}: {
+  readonly text: string
+  readonly section: string
+}) {
+  const parts = documentRanges(
+    [section, 'tokens'],
+    text,
+    /(\*\*[^*]+\*\*|`[^`]+`)/
+  )
   return (
     <>
-      {parts.map((part, i) => {
+      {parts.map(({ value: part, key }) => {
         if (part.startsWith('**') && part.endsWith('**')) {
           return (
-            <strong key={i} className="text-fl-fg font-bold">
+            <strong key={key} className="text-fl-fg font-bold">
               {part.slice(2, -2)}
             </strong>
           )
         }
         if (part.startsWith('`') && part.endsWith('`')) {
           return (
-            <code key={i} className="bg-fl-surface-2 text-fl-fg font-code px-1">
+            <code
+              key={key}
+              className="bg-fl-surface-2 text-fl-fg font-code px-1"
+            >
               {part.slice(1, -1)}
             </code>
           )
         }
-        return <span key={i}>{part}</span>
+        return <span key={key}>{part}</span>
       })}
     </>
   )
@@ -248,16 +261,27 @@ export default function GrammarDetailPage({
           {hasTable ? (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
-                <tbody>{renderExplanation(topic.explanation)}</tbody>
+                <tbody>
+                  {renderExplanation(
+                    topic.explanation,
+                    JSON.stringify([targetLanguageCode, topic.slug])
+                  )}
+                </tbody>
               </table>
             </div>
           ) : hasList ? (
             <ul className="max-w-[70ch] space-y-1">
-              {renderExplanation(topic.explanation)}
+              {renderExplanation(
+                topic.explanation,
+                JSON.stringify([targetLanguageCode, topic.slug])
+              )}
             </ul>
           ) : (
             <div className="max-w-[70ch] space-y-2">
-              {renderExplanation(topic.explanation)}
+              {renderExplanation(
+                topic.explanation,
+                JSON.stringify([targetLanguageCode, topic.slug])
+              )}
             </div>
           )}
         </div>
@@ -301,9 +325,17 @@ export default function GrammarDetailPage({
                         {tCommon('nativeHelpKeyPoints')}
                       </p>
                       <ul className="space-y-1">
-                        {nativeHelp.key_points.map((point, i) => (
+                        {documentOccurrences(
+                          [
+                            targetLanguageCode,
+                            topic.slug,
+                            'native-help',
+                            'key-points',
+                          ],
+                          nativeHelp.key_points
+                        ).map(({ value: point, key }) => (
                           <li
-                            key={i}
+                            key={key}
                             className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
                           >
                             <span className="text-fl-muted-3 mr-2">·</span>
@@ -319,8 +351,16 @@ export default function GrammarDetailPage({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {t('examples')}
                       </p>
-                      {nativeHelp.examples.map((ex, i) => (
-                        <div key={i} className="space-y-0.5">
+                      {documentOccurrences(
+                        [
+                          targetLanguageCode,
+                          topic.slug,
+                          'native-help',
+                          'examples',
+                        ],
+                        nativeHelp.examples
+                      ).map(({ value: ex, key }) => (
+                        <div key={key} className="space-y-0.5">
                           <TargetLanguageText
                             languageCode={targetLanguageCode}
                             className="text-fl-muted-1 text-sm italic"
@@ -340,8 +380,16 @@ export default function GrammarDetailPage({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpCommonTraps')}
                       </p>
-                      {nativeHelp.common_traps.map((trap, i) => (
-                        <div key={i} className="space-y-0.5">
+                      {documentOccurrences(
+                        [
+                          targetLanguageCode,
+                          topic.slug,
+                          'native-help',
+                          'common-traps',
+                        ],
+                        nativeHelp.common_traps
+                      ).map(({ value: trap, key }) => (
+                        <div key={key} className="space-y-0.5">
                           <p className="text-fl-muted-2 text-sm">
                             {trap.mistake}
                           </p>
@@ -358,8 +406,16 @@ export default function GrammarDetailPage({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpMiniGlossary')}
                       </p>
-                      {nativeHelp.mini_glossary.map((item, i) => (
-                        <div key={i}>
+                      {documentOccurrences(
+                        [
+                          targetLanguageCode,
+                          topic.slug,
+                          'native-help',
+                          'mini-glossary',
+                        ],
+                        nativeHelp.mini_glossary
+                      ).map(({ value: item, key }) => (
+                        <div key={key}>
                           <TargetLanguageText
                             languageCode={targetLanguageCode}
                             className="text-fl-muted-1 text-sm font-bold"
@@ -407,8 +463,11 @@ export default function GrammarDetailPage({
             </span>
           </div>
           <ul className="space-y-2 px-6 py-5">
-            {topic.rules.map((rule, i) => (
-              <li key={i} className="flex items-start gap-2">
+            {documentOccurrences(
+              [targetLanguageCode, topic.slug, 'rules'],
+              topic.rules
+            ).map(({ value: rule, key }, i) => (
+              <li key={key} className="flex items-start gap-2">
                 <span className="text-fl-label text-fl-muted-3 mt-0.5 shrink-0 font-mono">
                   {i + 1}.
                 </span>
@@ -429,9 +488,12 @@ export default function GrammarDetailPage({
             </span>
           </div>
           <div className="space-y-3 px-6 py-5">
-            {topic.examples.map((ex, i) => (
+            {documentOccurrences(
+              [targetLanguageCode, topic.slug, 'examples'],
+              topic.examples
+            ).map(({ value: ex, key }) => (
               <div
-                key={i}
+                key={key}
                 className="border-fl-border space-y-0.5 border-l-2 pl-4"
               >
                 <p className="text-fl-fg font-sans text-base leading-relaxed">
@@ -456,8 +518,11 @@ export default function GrammarDetailPage({
             </span>
           </div>
           <div className="space-y-4 px-6 py-5">
-            {topic.common_mistakes.map((m, i) => (
-              <div key={i} className="space-y-1.5">
+            {documentOccurrences(
+              [targetLanguageCode, topic.slug, 'common-mistakes'],
+              topic.common_mistakes
+            ).map(({ value: m, key }) => (
+              <div key={key} className="space-y-1.5">
                 {m.wrong && (
                   <div className="flex items-start gap-2">
                     <span className="text-fl-label shrink-0 font-mono text-red-500">

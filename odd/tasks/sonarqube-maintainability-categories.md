@@ -548,7 +548,118 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
   - Mapper musxn10w-2d-1lrf derives exact18test surfaces, meaningful act
     boundaries, assertion/parameterization/hook/skip/networkidle contracts.
     No test source writes yet; internal batches, one C5commit.
-- [ ] C6: List identity and DOM attributes — S6479/S7761, 48
+- [ ] C6: List identity and DOM attributes — S6479/S7761, 48 baseline — in progress
+  - User authorized "trabaja c6". Clean branch fix/sonar-maintainability-categories
+    at5aff74ab402d4deb9fe8f1fde5c3c96ff4346a01; prior categories preserved.
+    Read-only mapper muubav3m-9-w15m refreshes48baseline issues/14sources,
+    derives actual domain identity/duplicates/static positions and dataset
+    theme contracts before source edits. Internal bounded single-writer
+    batches, oneC6commit; no random/render-time keys or hidden index workaround.
+    Identity continuity/reorder tests first where meaningful, existing behaviour
+    equivalence for static maps; no commit/merge/push/scanner yet.
+  - Mapper muubav3m-9-w15m verified48baselineissues/14sources
+    (46S6479+2S7761) with exact current-line mapping: static authored
+    translation records require translationidentifier keys, never translated
+    text; tour dots derive named steps; parser spans need immutable document
+    offsets with repeated fragments; free-write-corrections parser already
+    computes occurrence ranges then discards them. Theme dark means data-theme
+    ATTRIBUTE ABSENT (prehydration script, CSS, listener cleanup depend on it).
+    Entity lists (chat streamed messages, dashboard nullable lesson IDs,
+    assessment text options, ID-less content schemas) need real identity
+    contracts, not random/render-time keys or disguised indices.
+  - First bounded batch muubk735-a-78of: ThemeProvider dataset reads/deletes
+    plus equivalence tests, and WhatsNew entry.key identity with a real
+    node-identity regression. Deeper entity contract mapper muubl2rd-b-7d6x
+    runs read-only alongside. One C6commit; no production decision invented
+    for ID-less content until mapper evidence returns.
+  - Entity-contract mapper muubl2rd-b-7d6x verified from frontend plus
+    read-only sibling backend sources: chat API transports only role/content,
+    so identity must be allocated once at ingestion/send outside render and
+    updaters and preserved across token/reset; voice handoff must stay
+    role/content-only. Dashboard backend omits null-lesson-id upcoming cards and
+    lesson uniqueness is plan+week+day+title, so keys must not switch on
+    generation; use a plan-slot tuple, keep the completed-null fixture.
+    Assessment option uniqueness is only enforced per bank, so level-test needs
+    question-scoped option occurrences without changing text-based scoring.
+    ID-less authored content uses immutable document-occurrence identity
+    assigned BEFORE filtering (phrasebook audio already relies on authored
+    ordinal), and free-write-corrections already computes ranges it discards.
+    No persistent-ID migration needed for immutable documents.
+  - BatchA muubk735-a-78of completed: ThemeProvider reads/deletes data-theme
+    (dark = attribute absent) with four real-provider tests; WhatsNew uses
+    existing entry.key with a meaningful DOM-identity regression after
+    inserting an earlier numeric identifier. WhatsNew RED1failed/12passed then
+    GREEN13/13; theme baseline12/12 equivalence; typecheck/lint/format clean.
+    Independent verifier muubve8a-c-2ekx:13/13, typecheck/lint/format clean,
+    theme dark=attribute absence and exact handler removal confirmed, WhatsNew
+    production diff limited to entry.key with DOM identity after inserting an
+    earlier numeric entry; existing storage/Escape/richtext checks preserved;
+    tests clean globals/store/storage/attribute. No blocker, no Sonar/browser
+    claim. Its untracked tests/lib/chat-messages.test.ts observation is the
+    authorized concurrent batchB writer, not an incident; no cleanup needed.
+  - BatchB muubwajx-d-ifwo completed: new src/lib/chat-messages.ts identity
+    helpers allocating opaque IDs once at history ingestion and record creation
+    outside render/updaters, chat state merged by stable identity across
+    tokens/reset/done, React keys use identity, voice context explicitly
+    role/content. Baseline21/21; RED exit1 (missing module, then allocation
+    count0 versus6); GREEN25/25, typecheck/lint/format clean. Honest note:
+    DOM continuity assertions already passed with index keys, so RED proved
+    missing once-only allocation, not a key-induced DOM failure.
+  - Independent verifier muuc61vg-e-fahs: 25/25 plus typecheck/lint/format;
+    no allocation in render/updaters/tokens/reset; merge-by-id preserves
+    duplicate content and object references; no local ID in voice context or
+    chat POST; streaming gates, word selection, scrolling, error handling and
+    conversation selection unchanged. Limit recorded: allocateMessageId calls
+    crypto.randomUUID() without a fallback, consistent with the existing
+    AudioPlayer convention in an app that already requires a secure context;
+    no universal-runtime claim. No backend/browser/Sonar claim.
+  - BatchC muuc7nl2-f-4q88 completed: dashboard lesson card key is a JSON
+    tuple of language/planId/week/day/title that deliberately EXCLUDES the
+    nullable lesson ID so the key cannot switch on persistence; assessment
+    level-test keys are question-scoped option-text occurrences without
+    deduplication, leaving order, prefixes, text selection and text-based
+    scoring untouched; AdaptiveQuizCard untouched. Baseline15/15, meaningful RED
+    2 failed/15 passed, GREEN17/17 with typecheck/lint/format clean after scoped
+    formatting. Independent verifier muucu8b8-g-8aq7 accepted batchC: 17/17
+    plus typecheck/lint/format; dashboard JSON tuple identity excludes the
+    nullable lesson ID and does not rely on unit/type alone, completion logic
+    and null-ID completed rendering unchanged, no data/API change; assessment
+    keys are question/option-text occurrence identities with duplicates
+    retained, order/prefixes/marking/scoring/payload unchanged,
+    AdaptiveQuizCard untouched. Limit recorded: full-tuple uniqueness for two
+    identical dashboard slots not proven by tests; backend evidence says
+    identical tuples are the same lesson slot. No browser/backend/Sonar claim.
+  - BatchD part1 muucyzcg-h-9wvs active: new
+    src/lib/document-occurrences.ts immutable document-occurrence keys
+    assigned from authored structure before filtering, inline parser segments
+    keyed by source offset/range (never word text), native-help/rules/
+    examples/mistakes by section plus occurrence ordinal; no persistent
+    content IDs, no data schema change. Meaningful RED for duplicate authored
+    lines/cells/words keeping identity under filter changes. Remaining S6479
+    sites (phrasebook, vocabulary detail, lesson, progress, pricing, tour,
+    landing faq) follow in later batches.
+  - BatchD part1 muucyzcg-h-9wvs replaced all 14 grammar-detail index
+    sites with pure occurrence/range keys; value+repetition ordinal for
+    authored arrays, original start/end offsets for inline segments, never
+    displayed position or word text; ranges assigned before blank/cell
+    filtering. Baseline7/7, RED missing module then 2 keys versus3 expected,
+    GREEN11/11 with typecheck/lint/format clean. Honest notes: DOM continuity
+    already passed with index keys so that is equivalence evidence, and the
+    detail page has no category/topic filter so continuity is proven on the
+    occurrence records directly. One intermediate existing toggle test needed
+    an explicit topic-settlement readiness barrier. Independent verifier
+    muuddfyb-i-f1pq running; no browser/full-suite/Sonar claim.
+  - Independent verifier muuddfyb-i-f1pq accepted D part1: 11/11 plus
+    typecheck/lint/format; occurrence keys are pure and deterministic from
+    section path plus serialized authored value plus same-value repetition
+    ordinal, never displayed index; inline keys use original split-segment
+    start/end offsets and keep empty boundary spans distinct; ranges assigned
+    before blank/cell filtering; parsing output, escaping, rule numbering,
+    related-topic slug keys and native-help lifecycle unchanged; the new topic
+    readiness wait adds synchronization without relaxing existing assertions.
+    Limits: regex range correctness depends on the capturing split retaining
+    delimiters (outside verified usage); escaping is source-inspected; no
+    browser/full-suite/Sonar claim.
 - [ ] C7: Semantic HTML/accessibility — S6819, 5
 - [ ] C8: Readability and complexity — S3358/S3776/S6660/S7721, 144
 - [ ] Final local quality gate, relevant browser regressions and Sonar scan

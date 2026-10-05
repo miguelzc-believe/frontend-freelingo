@@ -13,6 +13,7 @@ import { AudioPlayer } from '@/components/ui/AudioPlayer'
 import { PageLoading } from '@/components/ui/page-loading'
 import { TargetLanguageText } from '@/components/TargetLanguageText'
 import { useAuthStore } from '@/store/auth'
+import { documentOccurrences } from '@/lib/document-occurrences'
 
 const CEFR_LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const REGISTERS: Register[] = ['formal', 'neutral', 'informal']
@@ -49,7 +50,11 @@ function CategoryCard({
   )
   const [loadingNativeHelp, setLoadingNativeHelp] = useState(false)
   const [nativeHelpError, setNativeHelpError] = useState(false)
-  const phrases = cat.phrases.filter((p) => {
+  const sectionPath = ['phrasebook', language, cat.id]
+  const phrases = documentOccurrences(
+    [...sectionPath, 'phrases'],
+    cat.phrases
+  ).filter(({ value: p }) => {
     const matchesRegister =
       registerFilter === 'All' || p.register === registerFilter
     const matchesSearch =
@@ -124,9 +129,12 @@ function CategoryCard({
                         {tCommon('nativeHelpUsageTips')}
                       </p>
                       <ul className="space-y-1">
-                        {nativeHelp.usage_tips.map((tip, i) => (
+                        {documentOccurrences(
+                          [...sectionPath, 'usage_tips'],
+                          nativeHelp.usage_tips
+                        ).map(({ value: tip, key }) => (
                           <li
-                            key={i}
+                            key={key}
                             className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
                           >
                             <span className="text-fl-muted-3 mr-2">·</span>
@@ -142,9 +150,12 @@ function CategoryCard({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpRegisterNotes')}
                       </p>
-                      {nativeHelp.register_notes.map((note, i) => (
+                      {documentOccurrences(
+                        [...sectionPath, 'register_notes'],
+                        nativeHelp.register_notes
+                      ).map(({ value: note, key }) => (
                         <p
-                          key={i}
+                          key={key}
                           className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
                         >
                           {note}
@@ -158,8 +169,11 @@ function CategoryCard({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpPhraseNotes')}
                       </p>
-                      {nativeHelp.phrase_notes.map((item, i) => (
-                        <div key={i} className="space-y-0.5">
+                      {documentOccurrences(
+                        [...sectionPath, 'phrase_notes'],
+                        nativeHelp.phrase_notes
+                      ).map(({ value: item, key }) => (
+                        <div key={key} className="space-y-0.5">
                           <TargetLanguageText
                             languageCode={language}
                             className="text-fl-muted-1 text-sm italic"
@@ -179,8 +193,11 @@ function CategoryCard({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpCommonTraps')}
                       </p>
-                      {nativeHelp.common_traps.map((trap, i) => (
-                        <div key={i} className="space-y-0.5">
+                      {documentOccurrences(
+                        [...sectionPath, 'common_traps'],
+                        nativeHelp.common_traps
+                      ).map(({ value: trap, key }) => (
+                        <div key={key} className="space-y-0.5">
                           <p className="text-fl-muted-2 text-sm">
                             {trap.mistake}
                           </p>
@@ -197,8 +214,11 @@ function CategoryCard({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpMiniGlossary')}
                       </p>
-                      {nativeHelp.mini_glossary.map((item, i) => (
-                        <div key={i}>
+                      {documentOccurrences(
+                        [...sectionPath, 'mini_glossary'],
+                        nativeHelp.mini_glossary
+                      ).map(({ value: item, key }) => (
+                        <div key={key}>
                           <TargetLanguageText
                             languageCode={language}
                             className="text-fl-muted-1 text-sm font-bold"
@@ -237,8 +257,8 @@ function CategoryCard({
       )}
 
       <ul className="divide-fl-border divide-y">
-        {phrases.map((phrase, i) => (
-          <li key={i} className="group space-y-1 px-5 py-3">
+        {phrases.map(({ value: phrase, key }) => (
+          <li key={key} className="group space-y-1 px-5 py-3">
             <div className="flex items-start justify-between gap-3">
               <TargetLanguageText
                 as="p"

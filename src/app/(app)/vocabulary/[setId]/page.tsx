@@ -7,6 +7,7 @@ import type { VocabularyNativeHelp, VocabularySet } from '@/data/types'
 import { useLanguageStore } from '@/store/language'
 import { useAuthStore } from '@/store/auth'
 import { apiFetch } from '@/lib/api'
+import { documentOccurrences } from '@/lib/document-occurrences'
 import { TargetLanguageText } from '@/components/TargetLanguageText'
 
 const POS_LABELS: Record<string, string> = {
@@ -93,6 +94,8 @@ export default function VocabularySetPage({
   }
 
   if (!vocabSet) notFound()
+
+  const sectionPath = ['vocabulary', targetLanguageCode, vocabSet.id]
 
   async function handleAddAll() {
     if (!vocabSet) return
@@ -235,9 +238,12 @@ export default function VocabularySetPage({
                         {tCommon('nativeHelpStudyTips')}
                       </p>
                       <ul className="space-y-1">
-                        {nativeHelp.study_tips.map((tip, i) => (
+                        {documentOccurrences(
+                          [...sectionPath, 'study_tips'],
+                          nativeHelp.study_tips
+                        ).map(({ value: tip, key }) => (
                           <li
-                            key={i}
+                            key={key}
                             className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
                           >
                             <span className="text-fl-muted-3 mr-2">·</span>
@@ -253,8 +259,11 @@ export default function VocabularySetPage({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpWordNotes')}
                       </p>
-                      {nativeHelp.word_notes.map((item, i) => (
-                        <div key={i} className="space-y-0.5">
+                      {documentOccurrences(
+                        [...sectionPath, 'word_notes'],
+                        nativeHelp.word_notes
+                      ).map(({ value: item, key }) => (
+                        <div key={key} className="space-y-0.5">
                           <TargetLanguageText
                             languageCode={targetLanguageCode}
                             className="text-fl-muted-1 text-sm font-bold"
@@ -277,8 +286,11 @@ export default function VocabularySetPage({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpCommonTraps')}
                       </p>
-                      {nativeHelp.common_traps.map((trap, i) => (
-                        <div key={i} className="space-y-0.5">
+                      {documentOccurrences(
+                        [...sectionPath, 'common_traps'],
+                        nativeHelp.common_traps
+                      ).map(({ value: trap, key }) => (
+                        <div key={key} className="space-y-0.5">
                           <p className="text-fl-muted-2 text-sm">
                             {trap.mistake}
                           </p>
@@ -295,8 +307,11 @@ export default function VocabularySetPage({
                       <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
                         {tCommon('nativeHelpMiniGlossary')}
                       </p>
-                      {nativeHelp.mini_glossary.map((item, i) => (
-                        <div key={i}>
+                      {documentOccurrences(
+                        [...sectionPath, 'mini_glossary'],
+                        nativeHelp.mini_glossary
+                      ).map(({ value: item, key }) => (
+                        <div key={key}>
                           <TargetLanguageText
                             languageCode={targetLanguageCode}
                             className="text-fl-muted-1 text-sm font-bold"
@@ -322,9 +337,12 @@ export default function VocabularySetPage({
                         {tCommon('nativeHelpPractice')}
                       </p>
                       <ul className="space-y-1">
-                        {nativeHelp.practice_prompts.map((prompt, i) => (
+                        {documentOccurrences(
+                          [...sectionPath, 'practice_prompts'],
+                          nativeHelp.practice_prompts
+                        ).map(({ value: prompt, key }) => (
                           <li
-                            key={i}
+                            key={key}
                             className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
                           >
                             <span className="text-fl-muted-3 mr-2">·</span>
@@ -357,45 +375,47 @@ export default function VocabularySetPage({
 
       {/* Word list */}
       <div className="border-fl-border bg-fl-surface divide-fl-border divide-y border">
-        {vocabSet.words.map((word, i) => (
-          <div key={i} className="space-y-1.5 px-5 py-4">
-            <div className="flex items-baseline gap-3">
+        {documentOccurrences([...sectionPath, 'words'], vocabSet.words).map(
+          ({ value: word, key }) => (
+            <div key={key} className="space-y-1.5 px-5 py-4">
+              <div className="flex items-baseline gap-3">
+                <TargetLanguageText
+                  languageCode={targetLanguageCode}
+                  className="text-fl-fg font-bold"
+                >
+                  {word.word}
+                </TargetLanguageText>
+                <span className="text-fl-label text-fl-muted-3 font-mono italic">
+                  {POS_LABELS[word.pos] ?? word.pos}
+                </span>
+                {word.ipa && (
+                  <span className="text-fl-muted-1 font-sans text-sm">
+                    {word.ipa}
+                  </span>
+                )}
+                {word.frequency_rank && (
+                  <span className="text-fl-label text-fl-muted-4 ml-auto font-mono">
+                    #{word.frequency_rank}
+                  </span>
+                )}
+              </div>
               <TargetLanguageText
+                as="p"
                 languageCode={targetLanguageCode}
-                className="text-fl-fg font-bold"
+                className="text-fl-muted-1"
               >
-                {word.word}
+                {word.definition}
               </TargetLanguageText>
-              <span className="text-fl-label text-fl-muted-3 font-mono italic">
-                {POS_LABELS[word.pos] ?? word.pos}
-              </span>
-              {word.ipa && (
-                <span className="text-fl-muted-1 font-sans text-sm">
-                  {word.ipa}
-                </span>
-              )}
-              {word.frequency_rank && (
-                <span className="text-fl-label text-fl-muted-4 ml-auto font-mono">
-                  #{word.frequency_rank}
-                </span>
-              )}
+              <TargetLanguageText
+                as="p"
+                languageCode={targetLanguageCode}
+                className="text-fl-muted-1 italic"
+              >
+                &ldquo;{word.example}&rdquo;
+              </TargetLanguageText>
             </div>
-            <TargetLanguageText
-              as="p"
-              languageCode={targetLanguageCode}
-              className="text-fl-muted-1"
-            >
-              {word.definition}
-            </TargetLanguageText>
-            <TargetLanguageText
-              as="p"
-              languageCode={targetLanguageCode}
-              className="text-fl-muted-1 italic"
-            >
-              &ldquo;{word.example}&rdquo;
-            </TargetLanguageText>
-          </div>
-        ))}
+          )
+        )}
       </div>
 
       <Link

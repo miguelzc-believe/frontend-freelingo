@@ -405,6 +405,12 @@ export default function LevelTestPage() {
 
   const progress = (currentIndex / questions.length) * 100
   const skillLabel = getSkillLabel(q.skill)
+  const optionOccurrences = new Map<string, number>()
+  const optionRows = q.options.map((option) => {
+    const occurrence = optionOccurrences.get(option) ?? 0
+    optionOccurrences.set(option, occurrence + 1)
+    return { option, key: JSON.stringify([q.id, option, occurrence]) }
+  })
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center p-6">
@@ -448,7 +454,7 @@ export default function LevelTestPage() {
 
           {/* Options */}
           <div className="space-y-2">
-            {q.options.map((option, i) => {
+            {optionRows.map(({ option, key }, i) => {
               let style =
                 'w-full text-left border font-mono text-xs tracking-wide py-3.5 px-4 transition-colors cursor-pointer'
 
@@ -472,7 +478,7 @@ export default function LevelTestPage() {
 
               return (
                 <button
-                  key={i}
+                  key={key}
                   onClick={() => handleSelectOption(option)}
                   disabled={answerConfirmed}
                   className={style}
