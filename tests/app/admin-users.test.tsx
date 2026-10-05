@@ -381,7 +381,6 @@ describe('AdminUsersPage', () => {
     expect(screen.queryByRole('button', { name: 'close' })).toBeNull()
     expect(dialog.closest('button, [role="button"]')).toBeNull()
     expect(dialog).toHaveAttribute('closedby', 'any')
-    // jsdom has no native light-dismiss algorithm; browser coverage clicks outside.
     fireEvent(dialog, new Event('cancel', { cancelable: true }))
     expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
   })

@@ -148,8 +148,24 @@ Tracked in pending maintenance sequencing; implementation spans
 The pending local manifest maps sources and file-ownership slices but does
 not commit batches separately.
 
-### Pending validation for step 3
+### Final verification (revision e7e27fc + working-tree correction)
 
-Full quality: `pnpm quality:local`, migrated-route browser regressions, and a
-final authenticated Sonar scan/query. No Sonar closure or merge is claimed
-until the independent query returns zero unresolved MAINTAINABILITY issues.
+- Initial scan after `pnpm test:coverage` ( revision e7e27fc ) reported one
+  pre-existing finding: `S6747` on the JSX `closedby="any"` attribute. The
+  analyzer does not yet recognize HTML `closedby`; the working-tree correction
+  writes `closedby="any"` at runtime via `setAttribute` only in drivers that
+  expose `closedBy`, so the static JSX stays clean and no suppressed violation
+  is introduced.
+- `pnpm typecheck`, `pnpm exec eslint` , scoped formatting and the local
+  maintainability mirror `/tmp/opencode/sonar-maintainability-check/check.mjs`
+  — total 0 ; `pnpm vitest run tests/app/admin-users.test.tsx`
+  — 38/38 passed; FAQ continuity and the native-dialog browser suite remain in
+  the step-1 record.
+- Coverage-gated rescan (after regenerated LCOV; SCM revision still e7e27fc)
+  — QUALITY GATE STATUS: PASSED.
+- Authenticated `api/issues/search` query on `frontend-freelingo` — 0 open
+  issues, 0 maintainability, gate OK
+  (`new_violations: 0`, `new_coverage: 93.8`, `new_duplicated_lines: 1.46`).
+  Previous `S6747` was the JS/TS CSS rule evaluating JSX attributes, not a new
+  S3358/S3776 class, so no new-violation was admitted for the remaining
+  `closedBy` probe.

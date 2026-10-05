@@ -286,6 +286,9 @@ export default function AdminUsersPage() {
   useEffect(() => {
     const dialog = createDialogRef.current
     if (!createDialogMounted || !dialog?.isConnected) return
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      dialog.setAttribute('closedby', 'any')
+    }
     if (!dialog.open) dialog.showModal()
     const needsLightDismiss = !('closedBy' in HTMLDialogElement.prototype)
     const dismissOutside = (event: MouseEvent) => {
@@ -989,7 +992,6 @@ export default function AdminUsersPage() {
             ref={createDialogRef}
             className="border-fl-border bg-fl-surface fixed inset-0 m-auto max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto border p-0 text-inherit shadow-2xl"
             style={{ width: 'calc(100% - 2rem)' }}
-            closedby="any"
             onCancel={(event) => {
               event.preventDefault()
               event.currentTarget.close()
