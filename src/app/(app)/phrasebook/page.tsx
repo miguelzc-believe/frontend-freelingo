@@ -111,13 +111,14 @@ function CategoryCard({
           </button>
           {nativeHelpOpen && (
             <div className="mt-3 space-y-3">
-              {loadingNativeHelp ? (
+              {loadingNativeHelp && (
                 <p className="text-fl-muted-3 font-mono text-xs">
                   {tCommon('nativeHelpLoading', {
                     language: nativeLanguageName,
                   })}
                 </p>
-              ) : nativeHelp ? (
+              )}
+              {!loadingNativeHelp && nativeHelp && (
                 <>
                   <p className="text-fl-muted-1 max-w-[70ch] text-base leading-relaxed">
                     {nativeHelp.summary}
@@ -238,7 +239,8 @@ function CategoryCard({
                     </div>
                   )}
                 </>
-              ) : (
+              )}
+              {!loadingNativeHelp && !nativeHelp && (
                 <button
                   type="button"
                   onClick={generateNativeHelp}

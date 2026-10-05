@@ -205,12 +205,12 @@ export default function AppLayout({
     )
   }
 
-  const feedbackBadgeText =
-    feedbackUnreadCount > 99
-      ? '99+'
-      : feedbackUnreadCount > 0
-        ? String(feedbackUnreadCount)
-        : ''
+  let feedbackBadgeText = ''
+  if (feedbackUnreadCount > 99) {
+    feedbackBadgeText = '99+'
+  } else if (feedbackUnreadCount > 0) {
+    feedbackBadgeText = String(feedbackUnreadCount)
+  }
 
   return (
     <div className="bg-fl-bg flex min-h-screen md:h-screen md:overflow-hidden">

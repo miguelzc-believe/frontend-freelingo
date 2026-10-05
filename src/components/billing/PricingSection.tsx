@@ -21,6 +21,40 @@ interface PricingSectionProps {
   totalPriceYearly: number
 }
 
+function getPlanCardClass(
+  isFree: boolean,
+  name: string,
+  yearlyName: string
+): string {
+  if (isFree) return 'border-fl-border-2 bg-fl-bg-alt'
+  if (name === yearlyName) return 'border-fl-accent/30 bg-fl-surface'
+  return 'border-fl-border bg-fl-surface'
+}
+
+function ComparisonCell({
+  value,
+  limitedLabel,
+}: Readonly<{ value: boolean | 'limited'; limitedLabel: string }>) {
+  if (value === 'limited') {
+    return (
+      <span className="text-fl-muted-2 text-fl-label font-mono tracking-normal wrap-anywhere uppercase sm:tracking-widest">
+        {limitedLabel}
+      </span>
+    )
+  }
+  if (value) return <Check className="text-fl-accent mx-auto h-3.5 w-3.5" />
+  return <Minus className="text-fl-muted-4 mx-auto h-3.5 w-3.5" />
+}
+
+function getCheckoutLabel(
+  loading: boolean,
+  trialUsed: boolean,
+  t: (key: string) => string
+): string {
+  if (loading) return '...'
+  return t(trialUsed ? 'ctaRegisterTrialUsed' : 'ctaRegister')
+}
+
 export default function PricingSection({
   allowRegistration,
   stripeEnabled,
@@ -190,13 +224,7 @@ export default function PricingSection({
           return (
             <div
               key={plan.name}
-              className={`flex flex-col gap-4 border p-6 ${
-                plan.isFree
-                  ? 'border-fl-border-2 bg-fl-bg-alt'
-                  : plan.name === tBilling('planYearlyName')
-                    ? 'border-fl-accent/30 bg-fl-surface'
-                    : 'border-fl-border bg-fl-surface'
-              }`}
+              className={`flex flex-col gap-4 border p-6 ${getPlanCardClass(plan.isFree, plan.name, tBilling('planYearlyName'))}`}
             >
               <div className="border-fl-border flex items-center justify-between border-b pb-3">
                 <div className="flex items-center gap-2">
@@ -314,15 +342,10 @@ export default function PricingSection({
                   {row.label}
                 </td>
                 <td className="px-1 py-3 text-center sm:px-4">
-                  {row.free === 'limited' ? (
-                    <span className="text-fl-muted-2 text-fl-label font-mono tracking-normal wrap-anywhere uppercase sm:tracking-widest">
-                      {tBilling('limitedLabel')}
-                    </span>
-                  ) : row.free ? (
-                    <Check className="text-fl-accent mx-auto h-3.5 w-3.5" />
-                  ) : (
-                    <Minus className="text-fl-muted-4 mx-auto h-3.5 w-3.5" />
-                  )}
+                  <ComparisonCell
+                    value={row.free}
+                    limitedLabel={tBilling('limitedLabel')}
+                  />
                 </td>
                 <td className="px-1 py-3 text-center sm:px-4">
                   {row.monthly ? (
@@ -352,9 +375,11 @@ export default function PricingSection({
             onClick={() => startCheckout('yearly')}
             className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 inline-block px-10 py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors disabled:opacity-50"
           >
-            {checkoutLoading === 'yearly'
-              ? '...'
-              : tBilling(trialUsed ? 'ctaRegisterTrialUsed' : 'ctaRegister')}
+            {getCheckoutLabel(
+              checkoutLoading === 'yearly',
+              trialUsed,
+              tBilling
+            )}
           </button>
         ) : (
           <Link
@@ -362,7 +387,7 @@ export default function PricingSection({
             className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 inline-block px-10 py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors"
           >
             {allowRegistration
-              ? tBilling(trialUsed ? 'ctaRegisterTrialUsed' : 'ctaRegister')
+              ? getCheckoutLabel(false, trialUsed, tBilling)
               : tLanding('signIn')}
           </Link>
         )}

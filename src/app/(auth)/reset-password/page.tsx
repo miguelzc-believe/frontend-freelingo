@@ -42,13 +42,15 @@ function ResetPasswordContent() {
         body: JSON.stringify({ token, new_password: password }),
       })
       if (!res.ok) {
-        throw new Error(
-          res.status === 400 || res.status === 404
-            ? t('error')
-            : res.status === 422
-              ? tRegister('invalidPassword')
-              : tCommon('errorMessage')
-        )
+        let message: string
+        if (res.status === 400 || res.status === 404) {
+          message = t('error')
+        } else if (res.status === 422) {
+          message = tRegister('invalidPassword')
+        } else {
+          message = tCommon('errorMessage')
+        }
+        throw new Error(message)
       }
       setDone(true)
       setTimeout(() => router.push('/login'), 2000)

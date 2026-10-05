@@ -24,6 +24,12 @@ const TOUR_STEPS = [
 ]
 const PREMIUM_STEPS = new Set([1, 2, 5])
 
+function getTransitionClass(leaving: boolean, direction: 'next' | 'prev') {
+  if (!leaving) return 'translate-x-0 opacity-100'
+  if (direction === 'next') return '-translate-x-3 opacity-0'
+  return 'translate-x-3 opacity-0'
+}
+
 export default function OnboardingTour() {
   const t = useTranslations('tour')
   const tc = useTranslations('common')
@@ -107,13 +113,7 @@ export default function OnboardingTour() {
 
         {/* Step content */}
         <div
-          className={`px-6 py-7 transition-all duration-150 ${
-            leaving
-              ? dir === 'next'
-                ? '-translate-x-3 opacity-0'
-                : 'translate-x-3 opacity-0'
-              : 'translate-x-0 opacity-100'
-          }`}
+          className={`px-6 py-7 transition-all duration-150 ${getTransitionClass(leaving, dir)}`}
         >
           <div className="mb-4 flex items-center gap-3">
             {(() => {

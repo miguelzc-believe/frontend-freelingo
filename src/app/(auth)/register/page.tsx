@@ -33,6 +33,43 @@ function getSelectedPlan(plan: string | null): SelectedPlan | null {
   return plan === 'monthly' || plan === 'yearly' ? plan : null
 }
 
+function getRegistrationError(
+  detail: unknown,
+  t: (key: string) => string
+): string {
+  if (typeof detail === 'string') {
+    if (detail === 'Username already taken') return t('usernameTaken')
+    if (detail === 'Email already taken') return t('emailTaken')
+    if (detail === 'Registration is closed') return t('registrationClosed')
+    if (detail === 'Invalid or expired invite') return t('invalidInvite')
+    if (detail === 'Email domain not allowed') return t('invalidEmail')
+  } else if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { loc?: string[]; msg?: string }
+    const loc = (first.loc ?? []).join('.')
+    if (loc.includes('email') || first.msg?.toLowerCase().includes('email')) {
+      return t('invalidEmail')
+    }
+    if (loc.includes('password')) return t('invalidPassword')
+  }
+  return t('error')
+}
+
+function getRegistrationValidationError(
+  password: string,
+  confirmPassword: string,
+  termsAccepted: boolean,
+  username: string,
+  t: (key: string) => string
+): string | null {
+  if (password !== confirmPassword) return t('passwordMismatch')
+  if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{10,25}$/.test(password)) {
+    return t('invalidPassword')
+  }
+  if (!termsAccepted) return t('termsRequired')
+  if (!/^[a-zA-Z0-9._\s-]+$/.test(username)) return t('invalidUsernameChars')
+  return null
+}
+
 function RegisterForm() {
   const t = useTranslations('auth.register')
   const tLang = useTranslations('languages')
@@ -59,20 +96,15 @@ function RegisterForm() {
     async (e: React.SubmitEvent<HTMLFormElement>) => {
       e.preventDefault()
       setError('')
-      if (password !== confirmPassword) {
-        setError(t('passwordMismatch'))
-        return
-      }
-      if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{10,25}$/.test(password)) {
-        setError(t('invalidPassword'))
-        return
-      }
-      if (!termsAccepted) {
-        setError(t('termsRequired'))
-        return
-      }
-      if (!/^[a-zA-Z0-9._\s-]+$/.test(username)) {
-        setError(t('invalidUsernameChars'))
+      const validationError = getRegistrationValidationError(
+        password,
+        confirmPassword,
+        termsAccepted,
+        username,
+        t
+      )
+      if (validationError !== null) {
+        setError(validationError)
         return
       }
       setLoading(true)
@@ -94,31 +126,7 @@ function RegisterForm() {
         })
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
-          let msg = t('error')
-          if (typeof data.detail === 'string') {
-            if (data.detail === 'Username already taken')
-              msg = t('usernameTaken')
-            else if (data.detail === 'Email already taken')
-              msg = t('emailTaken')
-            else if (data.detail === 'Registration is closed')
-              msg = t('registrationClosed')
-            else if (data.detail === 'Invalid or expired invite')
-              msg = t('invalidInvite')
-            else if (data.detail === 'Email domain not allowed')
-              msg = t('invalidEmail')
-          } else if (Array.isArray(data.detail) && data.detail.length > 0) {
-            const first = data.detail[0] as { loc?: string[]; msg?: string }
-            const loc = (first.loc ?? []).join('.')
-            if (
-              loc.includes('email') ||
-              first.msg?.toLowerCase().includes('email')
-            ) {
-              msg = t('invalidEmail')
-            } else if (loc.includes('password')) {
-              msg = t('invalidPassword')
-            }
-          }
-          throw new Error(msg)
+          throw new Error(getRegistrationError(data.detail, t))
         }
         const data = await res.json()
         setTokens(data.access_token)

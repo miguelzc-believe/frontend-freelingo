@@ -258,7 +258,7 @@ export default function GrammarDetailPage({
           </span>
         </div>
         <div className="space-y-2 px-6 py-5">
-          {hasTable ? (
+          {hasTable && (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <tbody>
@@ -269,14 +269,16 @@ export default function GrammarDetailPage({
                 </tbody>
               </table>
             </div>
-          ) : hasList ? (
+          )}
+          {!hasTable && hasList && (
             <ul className="max-w-[70ch] space-y-1">
               {renderExplanation(
                 topic.explanation,
                 JSON.stringify([targetLanguageCode, topic.slug])
               )}
             </ul>
-          ) : (
+          )}
+          {!hasTable && !hasList && (
             <div className="max-w-[70ch] space-y-2">
               {renderExplanation(
                 topic.explanation,
@@ -302,13 +304,14 @@ export default function GrammarDetailPage({
           </button>
           {nativeHelpOpen && (
             <div className="space-y-4 px-6 py-5">
-              {loadingNativeHelp ? (
+              {loadingNativeHelp && (
                 <p className="text-fl-muted-3 font-mono text-xs">
                   {tCommon('nativeHelpLoading', {
                     language: nativeLanguageName,
                   })}
                 </p>
-              ) : nativeHelp ? (
+              )}
+              {!loadingNativeHelp && nativeHelp && (
                 <>
                   <div className="space-y-2">
                     <p className="text-fl-muted-1 max-w-[70ch] text-base leading-relaxed">
@@ -435,7 +438,8 @@ export default function GrammarDetailPage({
                     </div>
                   )}
                 </>
-              ) : (
+              )}
+              {!loadingNativeHelp && !nativeHelp && (
                 <div className="text-center">
                   <button
                     type="button"

@@ -332,11 +332,9 @@ export default function ProgressPage() {
         <section className="space-y-4">
           <div className="flex items-center gap-3">
             <span className="text-fl-fg font-mono text-base font-bold tracking-widest">
-              {showAllLevels
-                ? t('vocabularySection')
-                : cefrLevel
-                  ? t('vocabularyHeader', { level: cefrLevel })
-                  : t('vocabularySection')}
+              {!showAllLevels && cefrLevel
+                ? t('vocabularyHeader', { level: cefrLevel })
+                : t('vocabularySection')}
             </span>
             <div className="bg-fl-border h-px flex-1" />
             <span className="text-fl-label text-fl-muted-3 font-mono">

@@ -20,6 +20,43 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+async function confirmSubscription(
+  isCancelled: () => boolean,
+  setUser: ReturnType<typeof useAuthStore.getState>['setUser'],
+  setStatus: (status: ConfirmationStatus) => void
+) {
+  try {
+    if (!useAuthStore.getState().accessToken) {
+      const refreshed = await refreshAccessToken()
+      if (!refreshed) {
+        if (!isCancelled()) setStatus('error')
+        return
+      }
+    }
+
+    for (let attempt = 0; attempt < CONFIRMATION_ATTEMPTS; attempt += 1) {
+      const res = await apiFetch('/api/auth/me')
+      if (!res.ok) throw new Error('me failed')
+      const me = await res.json()
+      const mappedUser = mapUser(me)
+      if (!isCancelled()) setUser(mappedUser)
+
+      if (isPremiumStatus(mappedUser.subscription_status)) {
+        if (!isCancelled()) setStatus('confirmed')
+        return
+      }
+
+      if (attempt < CONFIRMATION_ATTEMPTS - 1) {
+        await wait(CONFIRMATION_DELAY_MS)
+      }
+    }
+
+    if (!isCancelled()) setStatus('pending')
+  } catch {
+    if (!isCancelled()) setStatus('error')
+  }
+}
+
 export default function BillingSuccessPage() {
   const t = useTranslations('billing')
   const router = useRouter()
@@ -31,40 +68,7 @@ export default function BillingSuccessPage() {
   useEffect(() => {
     let cancelled = false
 
-    async function confirmSubscription() {
-      try {
-        if (!useAuthStore.getState().accessToken) {
-          const refreshed = await refreshAccessToken()
-          if (!refreshed) {
-            if (!cancelled) setStatus('error')
-            return
-          }
-        }
-
-        for (let attempt = 0; attempt < CONFIRMATION_ATTEMPTS; attempt += 1) {
-          const res = await apiFetch('/api/auth/me')
-          if (!res.ok) throw new Error('me failed')
-          const me = await res.json()
-          const mappedUser = mapUser(me)
-          if (!cancelled) setUser(mappedUser)
-
-          if (isPremiumStatus(mappedUser.subscription_status)) {
-            if (!cancelled) setStatus('confirmed')
-            return
-          }
-
-          if (attempt < CONFIRMATION_ATTEMPTS - 1) {
-            await wait(CONFIRMATION_DELAY_MS)
-          }
-        }
-
-        if (!cancelled) setStatus('pending')
-      } catch {
-        if (!cancelled) setStatus('error')
-      }
-    }
-
-    void confirmSubscription()
+    void confirmSubscription(() => cancelled, setUser, setStatus)
 
     return () => {
       cancelled = true

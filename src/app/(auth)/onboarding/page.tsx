@@ -33,6 +33,17 @@ function getSelectedPlan(plan: string | null): BillingInterval | null {
   return plan === 'monthly' || plan === 'yearly' ? plan : null
 }
 
+function getOnboardingHeadline(
+  step: number,
+  isNewLanguage: boolean,
+  trialEligible: boolean,
+  t: (key: string) => string
+): string {
+  if (step === 1) return t(isNewLanguage ? 'newLanguageHeadline' : 'title')
+  if (step === 2) return t('goals.title')
+  return t(trialEligible ? 'trialHeadline' : 'trialHeadlineTrialUsed')
+}
+
 export default function OnboardingPage() {
   const t = useTranslations('onboarding')
   const tCommon = useTranslations('common')
@@ -195,17 +206,7 @@ export default function OnboardingPage() {
             <div className="flex items-center gap-2">
               <span className="text-fl-label text-fl-muted-2">●</span>
               <span className="text-fl-muted-2 font-mono text-xs tracking-widest uppercase">
-                {step === 1
-                  ? isNewLanguage
-                    ? t('newLanguageHeadline')
-                    : t('title')
-                  : step === 2
-                    ? t('goals.title')
-                    : t(
-                        trialEligible
-                          ? 'trialHeadline'
-                          : 'trialHeadlineTrialUsed'
-                      )}
+                {getOnboardingHeadline(step, isNewLanguage, trialEligible, t)}
               </span>
             </div>
             <span className="text-fl-hint text-fl-muted-4 font-mono tabular-nums">

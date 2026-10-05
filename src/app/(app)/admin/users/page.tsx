@@ -81,6 +81,39 @@ function statusBadgeClass(status: string) {
   }
 }
 
+function getCreateUserError(
+  detail: unknown,
+  t: (key: string) => string,
+  tRegister: (key: string) => string
+): string {
+  if (detail === 'Username already taken') return tRegister('usernameTaken')
+  if (detail === 'Email already taken') return tRegister('emailTaken')
+  return t('createUserError')
+}
+
+function desktopDeactivateClass(isSelf: boolean, isActive: boolean): string {
+  if (isSelf) return 'cursor-not-allowed opacity-20'
+  if (isActive)
+    return 'border-fl-error/30 text-fl-error-fg hover:border-fl-error'
+  return 'border-fl-border text-fl-muted-2 hover:text-fl-fg hover:border-fl-border-2'
+}
+
+function mobileDeactivateClass(isSelf: boolean, isActive: boolean): string {
+  if (isSelf) return 'cursor-not-allowed opacity-20'
+  if (isActive)
+    return 'border-fl-error/30 text-fl-error-fg hover:border-fl-error'
+  return 'border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2'
+}
+
+function deactivateTitle(
+  isSelf: boolean,
+  isActive: boolean,
+  t: (key: string) => string
+): string {
+  if (isSelf) return t('cannotDeactivateSelf')
+  return isActive ? t('deactivate') : t('activate')
+}
+
 export default function AdminUsersPage() {
   const t = useTranslations('admin')
   const tCommon = useTranslations('common')
@@ -333,13 +366,7 @@ export default function AdminUsersPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(
-          data.detail === 'Username already taken'
-            ? tRegister('usernameTaken')
-            : data.detail === 'Email already taken'
-              ? tRegister('emailTaken')
-              : t('createUserError')
-        )
+        throw new Error(getCreateUserError(data.detail, t, tRegister))
       }
       setShowCreate(false)
       setForm({
@@ -728,23 +755,15 @@ export default function AdminUsersPage() {
                           <button
                             onClick={() => setActivePending(u)}
                             disabled={u.id === currentUserId}
-                            className={`inline-flex size-8 items-center justify-center border transition-colors ${
-                              u.id === currentUserId
-                                ? 'cursor-not-allowed opacity-20'
-                                : u.is_active
-                                  ? 'border-fl-error/30 text-fl-error-fg hover:border-fl-error'
-                                  : 'border-fl-border text-fl-muted-2 hover:text-fl-fg hover:border-fl-border-2'
-                            }`}
+                            className={`inline-flex size-8 items-center justify-center border transition-colors ${desktopDeactivateClass(u.id === currentUserId, u.is_active)}`}
                             aria-label={
                               u.is_active ? t('deactivate') : t('activate')
                             }
-                            title={
-                              u.id === currentUserId
-                                ? t('cannotDeactivateSelf')
-                                : u.is_active
-                                  ? t('deactivate')
-                                  : t('activate')
-                            }
+                            title={deactivateTitle(
+                              u.id === currentUserId,
+                              u.is_active,
+                              t
+                            )}
                           >
                             {actionBusy === `active-${u.id}` ? (
                               <Loader2
@@ -840,13 +859,7 @@ export default function AdminUsersPage() {
                     <button
                       onClick={() => setActivePending(u)}
                       disabled={u.id === currentUserId}
-                      className={`text-fl-label inline-flex items-center gap-2 border px-3 py-2 font-mono tracking-widest uppercase transition-colors ${
-                        u.id === currentUserId
-                          ? 'cursor-not-allowed opacity-20'
-                          : u.is_active
-                            ? 'border-fl-error/30 text-fl-error-fg hover:border-fl-error'
-                            : 'border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2'
-                      }`}
+                      className={`text-fl-label inline-flex items-center gap-2 border px-3 py-2 font-mono tracking-widest uppercase transition-colors ${mobileDeactivateClass(u.id === currentUserId, u.is_active)}`}
                     >
                       {actionBusy === `active-${u.id}` && (
                         <Loader2

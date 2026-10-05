@@ -5,6 +5,30 @@ import { useAuthStore, isSubscribed, needsPaymentRecovery } from '@/store/auth'
 import { useConfigStore } from '@/store/config'
 import { SubscriptionPlanButtons } from '@/components/billing/SubscriptionPlanButtons'
 
+function getBillingBadgeClass(
+  status: string | undefined,
+  cancelAtPeriodEnd: boolean | undefined,
+  paymentRecovery: boolean
+): string {
+  if (status === 'active' && !cancelAtPeriodEnd) {
+    return 'border-green-600/40 text-green-500'
+  }
+  if ((status === 'active' && cancelAtPeriodEnd) || status === 'trialing') {
+    return 'border-fl-accent/40 text-fl-accent'
+  }
+  if (paymentRecovery) return 'border-yellow-500/40 text-yellow-500'
+  return 'border-fl-border text-fl-muted-3'
+}
+
+function getManageLabel(
+  loading: boolean,
+  paymentRecovery: boolean,
+  t: (key: string) => string
+): string {
+  if (loading) return '...'
+  return t(paymentRecovery ? 'updatePayment' : 'manage')
+}
+
 export function BillingSection() {
   const tBilling = useTranslations('billing')
   const locale = useLocale()
@@ -46,19 +70,7 @@ export function BillingSection() {
             {tBilling('status')}
           </span>
           <span
-            className={`border px-2.5 py-1 font-mono text-xs font-bold tracking-widest uppercase ${
-              user?.subscription_status === 'active' &&
-              !user?.cancel_at_period_end
-                ? 'border-green-600/40 text-green-500'
-                : user?.subscription_status === 'active' &&
-                    user?.cancel_at_period_end
-                  ? 'border-fl-accent/40 text-fl-accent'
-                  : user?.subscription_status === 'trialing'
-                    ? 'border-fl-accent/40 text-fl-accent'
-                    : paymentRecovery
-                      ? 'border-yellow-500/40 text-yellow-500'
-                      : 'border-fl-border text-fl-muted-3'
-            }`}
+            className={`border px-2.5 py-1 font-mono text-xs font-bold tracking-widest uppercase ${getBillingBadgeClass(user?.subscription_status, user?.cancel_at_period_end, paymentRecovery)}`}
           >
             {user?.subscription_status === 'active' &&
               !user?.cancel_at_period_end &&
@@ -125,9 +137,7 @@ export function BillingSection() {
             disabled={portalLoading}
             className="border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2 w-full border py-2.5 font-mono text-sm tracking-widest uppercase transition-colors disabled:opacity-50"
           >
-            {portalLoading
-              ? '...'
-              : tBilling(paymentRecovery ? 'updatePayment' : 'manage')}
+            {getManageLabel(portalLoading, paymentRecovery, tBilling)}
           </button>
         ) : (
           <SubscriptionPlanButtons />

@@ -463,15 +463,12 @@ export default function LevelTestPage() {
                   selectedOption === option
                     ? ' border-fl-fg text-fl-fg bg-fl-surface'
                     : ' border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg'
+              } else if (option === q.correct) {
+                style += ' border-green-500 text-green-600 dark:text-green-400'
+              } else if (option === selectedOption && option !== q.correct) {
+                style += ' border-red-500 text-red-500'
               } else {
-                if (option === q.correct) {
-                  style +=
-                    ' border-green-500 text-green-600 dark:text-green-400'
-                } else if (option === selectedOption && option !== q.correct) {
-                  style += ' border-red-500 text-red-500'
-                } else {
-                  style += ' border-fl-border text-fl-muted-3 opacity-50'
-                }
+                style += ' border-fl-border text-fl-muted-3 opacity-50'
               }
 
               const prefix = ['A', 'B', 'C', 'D'][i] ?? String(i + 1)

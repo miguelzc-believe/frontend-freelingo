@@ -39,6 +39,12 @@ const jsonLd = {
   },
 }
 
+function heroDestination(hasSession: boolean, allowRegistration: boolean) {
+  if (hasSession) return '/dashboard'
+  if (allowRegistration) return '/register'
+  return '/login'
+}
+
 export default function Home({ data }: { readonly data: LandingData }) {
   const t = useTranslations('landing')
   const tCommon = useTranslations('common')
@@ -92,20 +98,12 @@ export default function Home({ data }: { readonly data: LandingData }) {
         </div>
         <div className="flex flex-col items-center gap-3 sm:flex-row">
           <Link
-            href={
-              hasSession
-                ? '/dashboard'
-                : allowRegistration
-                  ? '/register'
-                  : '/login'
-            }
+            href={heroDestination(hasSession, allowRegistration)}
             className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 px-8 py-3 font-mono text-sm font-bold tracking-widest uppercase transition-colors"
           >
-            {hasSession
-              ? t('dashboard')
-              : allowRegistration
-                ? tCommon('start')
-                : t('signIn')}
+            {hasSession && t('dashboard')}
+            {!hasSession && allowRegistration && tCommon('start')}
+            {!hasSession && !allowRegistration && t('signIn')}
           </Link>
           <a
             href="#features"

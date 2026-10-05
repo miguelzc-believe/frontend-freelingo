@@ -119,11 +119,9 @@ export function VoiceSection({ title }: { title?: string } = {}) {
           disabled={loadingVoice === selectedVoice}
           className="text-fl-muted-3 hover:text-fl-fg border-fl-border hover:border-fl-border-2 border px-4 py-3 font-mono text-xs tracking-widest whitespace-nowrap uppercase transition-colors disabled:opacity-40"
         >
-          {loadingVoice === selectedVoice
-            ? '...'
-            : playingVoice === selectedVoice
-              ? t('voiceStop')
-              : t('voicePlay')}
+          {loadingVoice === selectedVoice && '...'}
+          {loadingVoice !== selectedVoice &&
+            t(playingVoice === selectedVoice ? 'voiceStop' : 'voicePlay')}
         </button>
       </div>
     </div>

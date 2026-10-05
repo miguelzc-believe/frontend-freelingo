@@ -4,6 +4,19 @@ import Image from '@/components/ui/app-image'
 import { useTranslations } from 'use-intl'
 import { useSearchParams } from '@/lib/navigation'
 import { useConfigStore } from '@/store/config'
+import { getLegalBackHref, getLegalBackLabel } from '@/lib/legal-navigation'
+
+function getTermsHref(
+  isFromSettings: boolean,
+  isFromRegister: boolean,
+  isFromLanding: boolean,
+  inviteQuery: string
+): string {
+  if (isFromSettings) return '/terms?from=settings'
+  if (isFromRegister) return `/terms?from=register${inviteQuery}`
+  if (isFromLanding) return '/terms?from=landing'
+  return '/terms'
+}
 
 export default function PrivacyPage() {
   const t = useTranslations('legal.privacy')
@@ -22,29 +35,27 @@ export default function PrivacyPage() {
   useEffect(() => {
     if (isFromRegister) void loadConfig()
   }, [isFromRegister, loadConfig])
-  const backHref = isFromSettings
-    ? '/settings'
-    : isFromRegister
-      ? invite
-        ? `/register?invite=${encodeURIComponent(invite)}`
-        : allowRegistration
-          ? '/register'
-          : '/login'
-      : '/'
-  const backLabel = isFromSettings
-    ? t('linkBackSettings')
-    : isFromRegister
-      ? allowRegistration || invite
-        ? t('linkBack')
-        : tRegister('login')
-      : tCommon('back')
-  const termsHref = isFromSettings
-    ? '/terms?from=settings'
-    : isFromRegister
-      ? `/terms?from=register${inviteQuery}`
-      : isFromLanding
-        ? '/terms?from=landing'
-        : '/terms'
+  const backHref = getLegalBackHref(
+    isFromSettings,
+    isFromRegister,
+    invite,
+    allowRegistration
+  )
+  const backLabel = getLegalBackLabel(
+    isFromSettings,
+    isFromRegister,
+    invite,
+    allowRegistration,
+    t,
+    tRegister,
+    tCommon
+  )
+  const termsHref = getTermsHref(
+    isFromSettings,
+    isFromRegister,
+    isFromLanding,
+    inviteQuery
+  )
   const s2Items = [
     t('s2i1'),
     t('s2i2'),

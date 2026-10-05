@@ -199,9 +199,8 @@ export default function SettingsMemoriesPage() {
           )}
         </div>
 
-        {loading ? (
-          <PageLoading fullScreen={false} />
-        ) : loadError ? (
+        {loading && <PageLoading fullScreen={false} />}
+        {!loading && loadError && (
           <div role="alert" className="border-fl-error/40 border p-4">
             <p className="text-fl-error-fg mb-3 font-mono text-xs">
               {t('memoryLoadError')}
@@ -213,11 +212,13 @@ export default function SettingsMemoriesPage() {
               {tCommon('retry')}
             </button>
           </div>
-        ) : memories.length === 0 ? (
+        )}
+        {!loading && !loadError && memories.length === 0 && (
           <p className="text-fl-hint text-fl-muted-2 font-mono">
             {t('memoryEmpty')}
           </p>
-        ) : (
+        )}
+        {!loading && !loadError && memories.length !== 0 && (
           <>
             <ul className="mb-4 flex flex-col gap-3">
               {memories.map((memory) => (

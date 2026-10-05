@@ -14,6 +14,42 @@ interface Props {
   onPointerUp?: (() => void) | undefined
 }
 
+function renderAvatar(
+  isUser: boolean,
+  userAvatar: Props['userAvatar'],
+  userInitial: Props['userInitial']
+) {
+  if (!isUser) {
+    return (
+      <Image
+        src="/logo_head.png"
+        alt="Lingu"
+        width={28}
+        height={28}
+        className="h-full w-full object-cover"
+      />
+    )
+  }
+  const fallback = (
+    <div className="bg-fl-surface-2 flex h-full w-full items-center justify-center">
+      <span className="text-fl-hint text-fl-muted-1 font-mono select-none">
+        {(userInitial ?? '?').toUpperCase()}
+      </span>
+    </div>
+  )
+  if (!userAvatar) return fallback
+  return (
+    <AuthAvatarImage
+      avatar={userAvatar}
+      alt=""
+      width={28}
+      height={28}
+      className="h-full w-full object-cover"
+      fallback={fallback}
+    />
+  )
+}
+
 export default function TranscriptBubble({
   role,
   text,
@@ -41,36 +77,7 @@ export default function TranscriptBubble({
           }`}
         />
         <div className="border-fl-border h-7 w-7 overflow-hidden rounded-full border">
-          {!isUser ? (
-            <Image
-              src="/logo_head.png"
-              alt="Lingu"
-              width={28}
-              height={28}
-              className="h-full w-full object-cover"
-            />
-          ) : userAvatar ? (
-            <AuthAvatarImage
-              avatar={userAvatar}
-              alt=""
-              width={28}
-              height={28}
-              className="h-full w-full object-cover"
-              fallback={
-                <div className="bg-fl-surface-2 flex h-full w-full items-center justify-center">
-                  <span className="text-fl-hint text-fl-muted-1 font-mono select-none">
-                    {(userInitial ?? '?').toUpperCase()}
-                  </span>
-                </div>
-              }
-            />
-          ) : (
-            <div className="bg-fl-surface-2 flex h-full w-full items-center justify-center">
-              <span className="text-fl-hint text-fl-muted-1 font-mono select-none">
-                {(userInitial ?? '?').toUpperCase()}
-              </span>
-            </div>
-          )}
+          {renderAvatar(isUser, userAvatar, userInitial)}
         </div>
       </div>
 

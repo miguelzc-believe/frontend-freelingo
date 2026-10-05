@@ -21,6 +21,55 @@ interface Props {
   onStartLesson?: (() => void) | undefined
 }
 
+function statusDescriptor(status: UnitStatus) {
+  if (status.isLevelTest) {
+    return {
+      label: 'levelTestLabel',
+      Icon: SquarePlus,
+      className: 'text-fl-muted-1 size-4',
+    }
+  }
+  if (status.completed) {
+    return {
+      label: 'completed',
+      Icon: Check,
+      className: 'text-fl-fg size-4',
+    }
+  }
+  if (status.active) {
+    return {
+      label: 'currentUnit',
+      Icon: Circle,
+      className:
+        'text-fl-fg size-2 animate-pulse fill-current motion-reduce:animate-none',
+    }
+  }
+  if (status.locked) {
+    return {
+      label: 'unitLocked',
+      Icon: Circle,
+      className: 'text-fl-muted-3 size-4',
+    }
+  }
+  return {
+    label: 'unitAvailable',
+    Icon: Circle,
+    className: 'text-fl-muted-2 size-2',
+  }
+}
+
+function cardClass(status: UnitStatus) {
+  if (status.locked) return 'border-fl-border opacity-40'
+  if (status.active) return 'border-fl-fg bg-fl-surface'
+  return 'border-fl-border bg-fl-surface'
+}
+
+function hoverClass(status: UnitStatus) {
+  if (status.locked) return 'cursor-default'
+  if (status.active) return 'hover:bg-fl-surface-2'
+  return 'hover:border-fl-border-2'
+}
+
 function StatusIcon({
   status,
   id,
@@ -29,32 +78,7 @@ function StatusIcon({
   readonly id: string
 }): ReactNode {
   const t = useTranslations('plan')
-  const { label, Icon, className } = status.isLevelTest
-    ? {
-        label: 'levelTestLabel',
-        Icon: SquarePlus,
-        className: 'text-fl-muted-1 size-4',
-      }
-    : status.completed
-      ? { label: 'completed', Icon: Check, className: 'text-fl-fg size-4' }
-      : status.active
-        ? {
-            label: 'currentUnit',
-            Icon: Circle,
-            className:
-              'text-fl-fg size-2 animate-pulse fill-current motion-reduce:animate-none',
-          }
-        : status.locked
-          ? {
-              label: 'unitLocked',
-              Icon: Circle,
-              className: 'text-fl-muted-3 size-4',
-            }
-          : {
-              label: 'unitAvailable',
-              Icon: Circle,
-              className: 'text-fl-muted-2 size-2',
-            }
+  const { label, Icon, className } = statusDescriptor(status)
 
   return (
     <span
@@ -84,26 +108,12 @@ export default function UnitCard({
   const barWidth = Math.round(competency * 100)
 
   return (
-    <div
-      className={`w-full border transition-colors ${
-        status.locked
-          ? 'border-fl-border opacity-40'
-          : status.active
-            ? 'border-fl-fg bg-fl-surface'
-            : 'border-fl-border bg-fl-surface'
-      }`}
-    >
+    <div className={`w-full border transition-colors ${cardClass(status)}`}>
       {/* Clickable card header — opens drawer */}
       <button
         onClick={onClick}
         disabled={status.locked}
-        className={`group focus-visible:outline-fl-fg w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2 ${
-          status.locked
-            ? 'cursor-default'
-            : status.active
-              ? 'hover:bg-fl-surface-2'
-              : 'hover:border-fl-border-2'
-        }`}
+        className={`group focus-visible:outline-fl-fg w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2 ${hoverClass(status)}`}
         aria-label={t('unitAriaLabel', { index: index + 1, title })}
         aria-describedby={statusId}
       >

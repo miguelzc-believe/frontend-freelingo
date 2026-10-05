@@ -51,6 +51,28 @@ type PageState =
 
 const HISTORY_PAGE_SIZE = 10
 
+function getOptionReviewClass(
+  key: string,
+  correctKey: string | undefined,
+  userAnswer: string | undefined,
+  isCorrect: boolean
+): string {
+  if (key === correctKey) return 'text-fl-success font-bold'
+  if (key === userAnswer && !isCorrect) return 'text-fl-error-fg line-through'
+  return 'text-fl-muted-1'
+}
+
+async function readGeneratedExercise(
+  response: Response
+): Promise<ListeningExercise | null> {
+  if (!response.ok) return null
+  const data = (await response.json()) as {
+    available: boolean
+    exercise?: ListeningExercise
+  }
+  return data.available && data.exercise ? data.exercise : null
+}
+
 function ListeningPage() {
   const t = useTranslations('listening')
   const tCommon = useTranslations('common')
@@ -176,19 +198,14 @@ function ListeningPage() {
           signal: controller.signal,
         })
         generateAbortRef.current = null
-        if (nextRes.ok) {
-          const data = (await nextRes.json()) as {
-            available: boolean
-            exercise?: ListeningExercise
-          }
-          if (data.available && data.exercise) {
-            setExercise(data.exercise)
-            setAnswers({})
-            setResult(null)
-            setIsReplay(false)
-            setPageState('exercise')
-            return
-          }
+        const generatedExercise = await readGeneratedExercise(nextRes)
+        if (generatedExercise) {
+          setExercise(generatedExercise)
+          setAnswers({})
+          setResult(null)
+          setIsReplay(false)
+          setPageState('exercise')
+          return
         }
         setError(t('generationFailed'))
         setPageState('idle')
@@ -489,13 +506,7 @@ function ListeningPage() {
                   {Object.entries(q.options).map(([k, v]) => (
                     <div
                       key={k}
-                      className={`px-3 py-1.5 ${
-                        k === correctKey
-                          ? 'text-fl-success font-bold'
-                          : k === userAnswer && !isCorrect
-                            ? 'text-fl-error-fg line-through'
-                            : 'text-fl-muted-1'
-                      }`}
+                      className={`px-3 py-1.5 ${getOptionReviewClass(k, correctKey, userAnswer, isCorrect)}`}
                     >
                       <span className="text-fl-label font-mono font-bold">
                         {k}.

@@ -153,11 +153,11 @@ export default function UnitDrawer({
                       onClick={() => onStartLesson(lesson.id!)}
                       className="text-fl-bg bg-fl-fg hover:bg-fl-fg/90 min-w-24 shrink-0 px-3 py-2 font-mono text-sm font-bold tracking-widest uppercase transition-colors"
                     >
-                      {lesson.action === 'review'
-                        ? t('reviewLesson')
-                        : lesson.action === 'continue'
-                          ? t('resume')
-                          : `${tCommon('start')} →`}
+                      {lesson.action === 'review' && t('reviewLesson')}
+                      {lesson.action === 'continue' && t('resume')}
+                      {lesson.action !== 'review' &&
+                        lesson.action !== 'continue' &&
+                        `${tCommon('start')} →`}
                     </button>
                   )}
                 </div>

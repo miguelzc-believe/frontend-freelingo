@@ -53,6 +53,17 @@ const HISTORY_PAGE_SIZE = 10
 // Main page logic
 // ---------------------------------------------------------------------------
 
+function getOptionReviewClass(
+  key: string,
+  correctKey: string | undefined,
+  userAnswer: string | undefined,
+  isCorrect: boolean
+): string {
+  if (key === correctKey) return 'text-fl-success font-bold'
+  if (key === userAnswer && !isCorrect) return 'text-fl-error-fg line-through'
+  return 'text-fl-muted-1'
+}
+
 function ReadingPage() {
   const t = useTranslations('reading')
   const tCommon = useTranslations('common')
@@ -443,13 +454,7 @@ function ReadingPage() {
                   {Object.entries(q.options).map(([k, v]) => (
                     <div
                       key={k}
-                      className={`px-3 py-1.5 ${
-                        k === correctKey
-                          ? 'text-fl-success font-bold'
-                          : k === userAnswer && !isCorrect
-                            ? 'text-fl-error-fg line-through'
-                            : 'text-fl-muted-1'
-                      }`}
+                      className={`px-3 py-1.5 ${getOptionReviewClass(k, correctKey, userAnswer, isCorrect)}`}
                     >
                       <span className="text-fl-label font-mono font-bold">
                         {k}.

@@ -698,7 +698,84 @@ license to skip testing. Avoid mechanical fixes that change business semantics.
     delimiters (outside verified usage); escaping is source-inspected; no
     browser/full-suite/Sonar claim.
 - [ ] C7: Semantic HTML/accessibility — S6819, 5
-- [ ] C8: Readability and complexity — S3358/S3776/S6660/S7721, 144
+- [ ] C8: Readability and complexity — S3358/S3776/S6660/S7721, 144 — in progress
+  - User authorized a checkpoint commit of the current partial work (8A and
+    the implemented subset of 8B), superseding the single-terminal-commit plan.
+    Remaining 8B extractions and batch 8C are not complete.
+  - Sonar scan uploaded the dirty working tree with SCM revision 9c198ab;
+    that revision identifies HEAD, not a committed snapshot of these changes.
+    Branch analysis was rejected by this server edition; scan without the
+    branch parameter updated the main project analysis. Existing LCOV was
+    reused, not regenerated for this checkpoint.
+  - Latest API results: 88 unresolved issues overall; S3358 50, S3776 23,
+    S6819 0, S6660 0, S7721 0, S6759 0, S6479 2. Overall issue count is not
+    interchangeable with unresolved MAINTAINABILITY count.
+  - Quality gate ERROR: new_violations actual 10, threshold 0; new coverage
+    88.7 and new duplication density 0.34199 passed. The earlier prose saying
+    the gate counted all 88 as new was incorrect: the issue search returned
+    88, but the gate condition explicitly returned 10.
+  - Native final review, browser acceptance and full quality:local remain
+    pending. Zero S6819 does not imply closure of every C1-C7 rule.
+  - Server confirms 144 open: S3358 112, S3776 30, S6660 1, S7721 1, 47 files.
+    Records retrieved via the authenticated read-only Sonar API (no new scan)
+    and normalised to repo-relative paths.
+  - Read-only mapper muullmzd-t-zsbi mapped all 144 against HEAD 9c198ab with
+    per-finding class, behaviour_sensitive flag and batch override. Caveats it
+    recorded: server lines shifted, so every site was relocated by construct;
+    LessonPage is at HEAD 95 not 79; S3776 scores range 16 to 101 (LessonPage
+    101, DashboardPage 66); VoiceRecorder findings moved about 35 lines after
+    the C1 AudioWorklet rewrite; getLangInfo only delegates and needs no
+    memoization; the S6660 construct is the else-block if, not the preceding
+    if; F49 line 54 also holds an unrelated changefreq ternary.
+  - Batch plan: 8A mechanical and behaviour-safe across ~22 sources; 8B
+    bounded extraction in behaviour-sensitive medium files (legal pages,
+    admin, pricing, billing, register, reading, listening, onboarding,
+    conversation page); 8C real decomposition of lesson, dashboard, chat,
+    ConversationMode, AudioPlayer, VoiceRecorder and the audio/SSE/correction
+    libs. ONE C8 category commit at the end, no batch commits.
+  - Batch 8A writer muulz9jp-u-skkf active against /tmp/c8-batch-8a.md:
+    literal CSS/icon selectors, numeric display selectors, getLangInfo
+    inlining, the S6660 else-if flattening and the sitemap priority helper.
+    Constraints: no fabricated RED, baseline/post equivalence, translate the
+    selected key only, no eagerly translated maps, preserve branch order,
+    keys, class strings and DOM order, no new shared module.
+  - Batch 8A muulz9jp-u-skkf implemented all 22 sites: 23 files, +253/-192.
+    No tests or assertions changed. Writer reported baseline/post 13 files /
+    141 tests green, typecheck and lint exit 0, but left Prettier failing on
+    flashcards/vocabulary and UnitCard.
+  - Parent closed the formatting gap and re-verified independently: scoped
+    prettier --write on those two sources, then prettier --check over all 22
+    8A sources exit 0, focused suites 13 files / 141 tests passed, typecheck
+    exit 0, lint exit 0, git diff --check exit 0.
+  - Parent spot-checks on 8A: sitemapPriority is a pure module-scope helper;
+    getLangInfo is gone with no replacement wrapper; the S6660 else-block if
+    became else if with branch order and the redundant correct-option guard
+    preserved; level-test rows still key on the C6 occurrence key, not index.
+  - Batch 8B first run muumoido-v-5hzx stopped before any repository work:
+    it required the effective TDD mode and an exact runner. Parent resolved mode
+    A (baseline/post equivalence, no fabricated RED) and, after checking that
+    four proposed paths do not exist, substituted the real ones:
+    assessment.test -> assessment-page, plan-page -> plan-level-test-node,
+    register -> registration, onboarding -> onboarding-goals-subtitle, and added
+    privacy-page/terms-page. Verified runner baseline: 16 files / 246 tests,
+    exit 0.
+  - Batch 8B writer resumed as muumrpo6-w-vwop with the authorized runner and
+    the same hard constraints.
+  - Batch 8B muumrpo6-w-vwop completed a bounded subset: created
+    src/lib/legal-navigation.ts (parameterised by t), extracted local helpers
+    across privacy/terms, admin users, reading/listening, plan, register,
+    onboarding, billing-success, PricingSection and BillingSection. Not all spec
+    targets finished (missing admin detail, assessment page, conversation
+    components, ReviewPrompt/ReviewSection, UnitDrawer and some onboarding
+    selectors); writer reported partial status. Typecheck/lint exit 0. Focused
+    suites (16 files/246 + 2 files/17) green after correcting test paths.
+    Scoped prettier on modified 8B sources exit 0.
+    bounded extraction in behaviour-sensitive medium files (legal pages,
+    admin, pricing, billing, register, reading, listening, onboarding,
+    conversation, plan, billing success). Hooks must never move; the C7
+    dialog lifecycle and the C6 authored key identifiers must survive; legal
+    back-link helpers may be shared only when parameterised by t because each
+    page uses a different i18n namespace.
 - [ ] Final local quality gate, relevant browser regressions and Sonar scan
 
 Counts are disjoint and sum393; explanatory categories, not official Sonar

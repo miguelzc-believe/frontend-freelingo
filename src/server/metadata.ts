@@ -48,10 +48,16 @@ export function robotsResponse(): Response {
     { headers: { 'content-type': 'text/plain; charset=utf-8' } }
   )
 }
+function sitemapPriority(path: string) {
+  if (!path) return 1
+  if (['/login', '/register'].includes(path)) return 0.5
+  return 0.3
+}
+
 export function sitemapResponse(): Response {
   const entries = ['', '/login', '/register', '/privacy', '/terms'].map(
     (path) =>
-      `<url><loc>https://freelingo.app${path}</loc><lastmod>${new Date().toISOString()}</lastmod><changefreq>${path ? 'yearly' : 'monthly'}</changefreq><priority>${path ? (['/login', '/register'].includes(path) ? 0.5 : 0.3) : 1}</priority></url>`
+      `<url><loc>https://freelingo.app${path}</loc><lastmod>${new Date().toISOString()}</lastmod><changefreq>${path ? 'yearly' : 'monthly'}</changefreq><priority>${sitemapPriority(path)}</priority></url>`
   )
   return new Response(
     `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries.join('')}</urlset>`,

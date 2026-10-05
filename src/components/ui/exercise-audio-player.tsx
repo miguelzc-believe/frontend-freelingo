@@ -127,7 +127,12 @@ export function ExerciseAudioPlayer({
     }
   }, [])
 
-  const icon = state === 'loading' ? '◌' : state === 'playing' ? '▐▐' : '▶'
+  let icon = '▶'
+  if (state === 'loading') {
+    icon = '◌'
+  } else if (state === 'playing') {
+    icon = '▐▐'
+  }
   const label = state === 'playing' ? 'Pause' : 'Play'
 
   return (

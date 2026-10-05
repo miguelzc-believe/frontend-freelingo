@@ -5,6 +5,19 @@ import { mapUser } from '@/lib/mappers'
 import { useAuthStore } from '@/store/auth'
 import { SPEECH_PAUSE_OPTIONS, type SpeechPause } from '@/lib/conversation-vad'
 
+function inactivityLabelKey(duration: number) {
+  if (duration === 60) return 'min1'
+  if (duration === 180) return 'min3'
+  return 'min5'
+}
+
+function speechPauseLabelKey(pause: number) {
+  if (pause === 0) return 'speechPauseAuto'
+  if (pause === 1000) return 'speechPauseSec1'
+  if (pause === 2000) return 'speechPauseSec2'
+  return 'speechPauseSec3'
+}
+
 export function ConversationSection({ title }: { title?: string } = {}) {
   const t = useTranslations('settings')
   const user = useAuthStore((s) => s.user)
@@ -106,7 +119,7 @@ export function ConversationSection({ title }: { title?: string } = {}) {
                     : 'border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg'
                 }`}
               >
-                {val === 60 ? t('min1') : val === 180 ? t('min3') : t('min5')}
+                {t(inactivityLabelKey(val))}
               </button>
             ))}
           </div>
@@ -128,13 +141,7 @@ export function ConversationSection({ title }: { title?: string } = {}) {
                     : 'border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg'
                 }`}
               >
-                {val === 0
-                  ? t('speechPauseAuto')
-                  : val === 1000
-                    ? t('speechPauseSec1')
-                    : val === 2000
-                      ? t('speechPauseSec2')
-                      : t('speechPauseSec3')}
+                {t(speechPauseLabelKey(val))}
               </button>
             ))}
           </div>

@@ -45,10 +45,6 @@ export default function MyLanguagesPage() {
     load()
   }, [load])
 
-  function getLangInfo(code: string) {
-    return getLanguageByCode(code)
-  }
-
   async function handleSwitch(info: UserLanguageInfo) {
     if (info.is_active) return
     setSwitchingCode(info.target_language)
@@ -139,15 +135,15 @@ export default function MyLanguagesPage() {
       </div>
 
       {/* Language cards */}
-      {loading ? (
-        <PageLoading />
-      ) : userLanguages.length === 0 ? (
+      {loading && <PageLoading />}
+      {!loading && userLanguages.length === 0 && (
         <div className="border-fl-border bg-fl-surface border px-6 py-10 text-center">
           <p className="text-fl-muted-2 font-mono text-sm">
             {t('noLanguages')}
           </p>
         </div>
-      ) : (
+      )}
+      {!loading && userLanguages.length !== 0 && (
         <div className="space-y-3">
           {[...userLanguages]
             .sort((a, b) =>
@@ -156,7 +152,7 @@ export default function MyLanguagesPage() {
               )
             )
             .map((ulang) => {
-              const lang = getLangInfo(ulang.target_language)
+              const lang = getLanguageByCode(ulang.target_language)
               const isActive = ulang.is_active
               const plan = ulang.plan
               const progress = ulang.progress
@@ -182,15 +178,16 @@ export default function MyLanguagesPage() {
                     <span className="text-fl-fg flex-1 font-mono text-sm font-bold">
                       {tTarget(ulang.target_language)}
                     </span>
-                    {isActive ? (
+                    {isActive && (
                       <span className="text-fl-label bg-fl-accent/20 text-fl-accent px-2 py-0.5 font-mono text-xs tracking-widest uppercase">
                         {t('activeLanguage')}
                       </span>
-                    ) : plan?.cefr_level ? (
+                    )}
+                    {!isActive && !!plan?.cefr_level && (
                       <span className="text-fl-label text-fl-muted-2 font-mono tracking-widest uppercase">
                         {plan.cefr_level}
                       </span>
-                    ) : null}
+                    )}
                   </div>
 
                   {/* Stats */}

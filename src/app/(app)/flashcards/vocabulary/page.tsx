@@ -112,15 +112,13 @@ export default function VocabularyPage() {
 
       {/* List */}
       <div className="border-fl-border bg-fl-surface border">
-        {loading ? (
-          <PageLoading fullScreen={false} className="block p-5" />
-        ) : items.length === 0 ? (
+        {loading && <PageLoading fullScreen={false} className="block p-5" />}
+        {!loading && items.length === 0 && (
           <p className="text-fl-muted-3 p-5 font-mono text-xs tracking-widest uppercase">
-            {debouncedSearch
-              ? t('myVocabularyNoResults')
-              : t('myVocabularyEmpty')}
+            {t(debouncedSearch ? 'myVocabularyNoResults' : 'myVocabularyEmpty')}
           </p>
-        ) : (
+        )}
+        {!loading && items.length !== 0 && (
           <div className="divide-fl-border divide-y">
             {items.map((item) => (
               <div

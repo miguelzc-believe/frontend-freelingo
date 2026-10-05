@@ -220,13 +220,14 @@ export default function VocabularySetPage({
           </button>
           {nativeHelpOpen && (
             <div className="space-y-4 px-6 py-5">
-              {loadingNativeHelp ? (
+              {loadingNativeHelp && (
                 <p className="text-fl-muted-3 font-mono text-xs">
                   {tCommon('nativeHelpLoading', {
                     language: nativeLanguageName,
                   })}
                 </p>
-              ) : nativeHelp ? (
+              )}
+              {!loadingNativeHelp && nativeHelp && (
                 <>
                   <p className="text-fl-muted-1 max-w-[70ch] text-base leading-relaxed">
                     {nativeHelp.summary}
@@ -353,7 +354,8 @@ export default function VocabularySetPage({
                     </div>
                   )}
                 </>
-              ) : (
+              )}
+              {!loadingNativeHelp && !nativeHelp && (
                 <div className="text-center">
                   <button
                     type="button"

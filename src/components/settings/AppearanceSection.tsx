@@ -1,6 +1,18 @@
 import { useTranslations } from 'use-intl'
 import { useThemeStore } from '@/store/theme'
 
+function activeThemeKey(theme: string) {
+  if (theme === 'dark') return 'darkActive'
+  if (theme === 'light') return 'lightActive'
+  return 'systemActive'
+}
+
+function themeOptionKey(theme: string) {
+  if (theme === 'system') return 'themeSystem'
+  if (theme === 'dark') return 'themeDark'
+  return 'themeLight'
+}
+
 export function AppearanceSection({ title }: { title?: string } = {}) {
   const t = useTranslations('settings')
   const theme = useThemeStore((s) => s.theme)
@@ -20,11 +32,7 @@ export function AppearanceSection({ title }: { title?: string } = {}) {
             {t('theme')}
           </p>
           <p className="text-fl-label text-fl-muted-2 mt-0.5 font-mono">
-            {theme === 'dark'
-              ? t('darkActive')
-              : theme === 'light'
-                ? t('lightActive')
-                : t('systemActive')}
+            {t(activeThemeKey(theme))}
           </p>
         </div>
         <div className="flex gap-1">
@@ -38,11 +46,7 @@ export function AppearanceSection({ title }: { title?: string } = {}) {
                   : 'border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg'
               }`}
             >
-              {opt === 'system'
-                ? t('themeSystem')
-                : opt === 'dark'
-                  ? t('themeDark')
-                  : t('themeLight')}
+              {t(themeOptionKey(opt))}
             </button>
           ))}
         </div>

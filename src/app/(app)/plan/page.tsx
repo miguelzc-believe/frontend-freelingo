@@ -116,6 +116,48 @@ function lessonKey(week: number, day: number, title: string): string {
   return `${week}:${day}:${title}`
 }
 
+type LessonStates = Record<string, Pick<Lesson, 'id' | 'completed' | 'action'>>
+
+function applyGeneratedLessons(states: LessonStates, lessons: PlanLesson[]) {
+  for (const lesson of lessons) {
+    states[lessonKey(lesson.week_number, lesson.day_number, lesson.title)] = {
+      id: lesson.id,
+      completed: lesson.is_completed,
+      ...(lesson.is_completed ? { action: 'review' as const } : {}),
+    }
+  }
+}
+
+function applyPendingLessons(states: LessonStates, lessons: PendingLesson[]) {
+  for (const lesson of lessons) {
+    states[lessonKey(lesson.week_number, lesson.day_number, lesson.title)] = {
+      id: lesson.id,
+      completed: false,
+      action: 'continue',
+    }
+  }
+}
+
+function applyTodayLessons(states: LessonStates, lessons: TodayLesson[]) {
+  for (const lesson of lessons) {
+    if (lesson.id == null) continue
+    states[lessonKey(lesson.week, lesson.day, lesson.title)] = {
+      id: lesson.id,
+      completed: lesson.is_completed ?? false,
+      action: lesson.is_completed ? 'review' : 'start',
+    }
+  }
+}
+
+function mapCompetencies(data: unknown): CompetencyMap {
+  if (!Array.isArray(data)) return data as CompetencyMap
+  const map: CompetencyMap = {}
+  for (const item of data as { unit_id: string; score: number }[]) {
+    map[item.unit_id] = item.score
+  }
+  return map
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PlanPage() {
@@ -165,15 +207,7 @@ export default function PlanPage() {
       if (compRes?.ok) {
         const compData = await compRes.json()
         // Backend returns [{unit_id, score}, ...] or Record<string, number>
-        if (Array.isArray(compData)) {
-          const map: CompetencyMap = {}
-          for (const item of compData as { unit_id: string; score: number }[]) {
-            map[item.unit_id] = item.score
-          }
-          setCompetencies(map)
-        } else {
-          setCompetencies(compData as CompetencyMap)
-        }
+        setCompetencies(mapCompetencies(compData))
       }
 
       const states: Record<
@@ -183,29 +217,13 @@ export default function PlanPage() {
 
       if (lessonsRes?.ok) {
         const generatedLessons = (await lessonsRes.json()) as PlanLesson[]
-        for (const lesson of generatedLessons) {
-          states[
-            lessonKey(lesson.week_number, lesson.day_number, lesson.title)
-          ] = {
-            id: lesson.id,
-            completed: lesson.is_completed,
-            ...(lesson.is_completed ? { action: 'review' as const } : {}),
-          }
-        }
+        applyGeneratedLessons(states, generatedLessons)
       }
 
       if (pendingRes?.ok) {
         const pendingData = (await pendingRes.json()) as PendingLesson[]
         setPendingLessons(pendingData)
-        for (const lesson of pendingData) {
-          states[
-            lessonKey(lesson.week_number, lesson.day_number, lesson.title)
-          ] = {
-            id: lesson.id,
-            completed: false,
-            action: 'continue',
-          }
-        }
+        applyPendingLessons(states, pendingData)
       }
 
       if (todayRes?.ok) {
@@ -218,14 +236,7 @@ export default function PlanPage() {
           (l) => l.id != null && !l.is_completed
         )
         setActiveLessonId(nextLesson?.id ?? null)
-        for (const lesson of todayData.lessons) {
-          if (lesson.id == null) continue
-          states[lessonKey(lesson.week, lesson.day, lesson.title)] = {
-            id: lesson.id,
-            completed: lesson.is_completed ?? false,
-            action: lesson.is_completed ? 'review' : 'start',
-          }
-        }
+        applyTodayLessons(states, todayData.lessons)
       }
 
       setLessonStates(states)

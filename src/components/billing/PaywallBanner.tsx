@@ -76,6 +76,10 @@ export function PaywallBanner({
   const context = PAYWALL_CONTEXT[feature] ?? PAYWALL_CONTEXT.chat
   const Icon = context.icon
   const trialEligible = !user?.trial_used
+  const defaultDescriptionKey = trialEligible
+    ? 'paywallDesc'
+    : 'paywallDescTrialUsed'
+  const descriptionKey = context.desc ?? defaultDescriptionKey
 
   async function handleCheckout(interval: BillingInterval) {
     setLoading(interval)
@@ -123,11 +127,7 @@ export function PaywallBanner({
       description={
         paymentRecovery
           ? t('pastDueDesc')
-          : t(
-              context.desc ??
-                (trialEligible ? 'paywallDesc' : 'paywallDescTrialUsed'),
-              { days: trialDays }
-            )
+          : t(descriptionKey, { days: trialDays })
       }
       paymentRecovery={paymentRecovery}
       yearlyCta={yearlyCta}

@@ -724,16 +724,18 @@ export default function FeedbackPage() {
 
       {/* List */}
       <div className="border-fl-border bg-fl-surface border">
-        {loading ? (
+        {loading && (
           <PageLoading
             fullScreen={false}
             className="block px-6 py-10 text-center"
           />
-        ) : entries.length === 0 ? (
+        )}
+        {!loading && entries.length === 0 && (
           <p className="text-fl-muted-2 px-6 py-10 text-center font-mono text-xs">
             {t('noEntries')}
           </p>
-        ) : (
+        )}
+        {!loading && entries.length !== 0 && (
           <div>
             {entries.map((entry, i) => {
               const canDelete = currentUserId === entry.author.id || isAdmin
