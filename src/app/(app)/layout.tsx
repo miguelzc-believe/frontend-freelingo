@@ -14,6 +14,7 @@ import { LoadingBar } from '@/components/ui/loading-bar'
 import { PageLoading } from '@/components/ui/page-loading'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { AuthAvatarImage } from '@/components/AuthAvatarImage'
+import { AiConfigurationBanner } from '@/components/AiConfigurationBanner'
 
 export default function AppLayout({
   children,
@@ -627,6 +628,7 @@ export default function AppLayout({
             )}
           </div>
         )}
+        <AiConfigurationBanner />
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </main>
 

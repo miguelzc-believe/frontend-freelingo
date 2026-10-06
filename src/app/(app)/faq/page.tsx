@@ -33,6 +33,14 @@ export default function FAQPage() {
       {chunks}
     </Link>
   )
+  const aiSettingsLink = (chunks: React.ReactNode) => (
+    <Link
+      href="/settings#ai"
+      className="text-fl-fg underline underline-offset-2"
+    >
+      {chunks}
+    </Link>
+  )
   const feedbackLink = (chunks: React.ReactNode) => (
     <Link href="/feedback" className="text-fl-fg underline underline-offset-2">
       {chunks}
@@ -53,6 +61,7 @@ export default function FAQPage() {
     ['openai', t('provider_openai')],
     ['anthropic', t('provider_anthropic')],
     ['deepseek', t('provider_deepseek')],
+    ['custom', t('provider_custom')],
   ]
 
   const faqs: FAQItem[] = (() => {
@@ -132,7 +141,7 @@ export default function FAQPage() {
           q: t('q_providers'),
           a: (
             <>
-              {t.rich('a_providers_intro', { code })}
+              {t.rich('a_providers_intro', { aiSettingsLink })}
               <ul className="mt-2 list-none space-y-1">
                 {providers.map(([name, desc]) => (
                   <li key={name} className="flex items-start gap-2">
