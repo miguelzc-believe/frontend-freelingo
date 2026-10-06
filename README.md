@@ -49,6 +49,18 @@ All `/api/*` requests stay on the frontend origin and are streamed to FastAPI wi
 
 Production requires `/ws/*` forwarding to FastAPI. `deploy/nginx.conf` is an example for integration into an existing TLS deployment. It disables HTTP buffering for SSE and supports WebSocket upgrades. Docker and reverse-proxy configuration are prepared artifacts; their deployment acceptance belongs to the maintainer.
 
+## Global AI configuration
+
+An administrator configures the instance-wide AI provider, model, optional base
+URL and write-only API key in **Settings → AI** (`/settings#ai`). Regular users
+see only the provider and model. A fresh instance has no AI configuration, and
+AI learning features remain unavailable until an administrator saves one.
+Testing uses the current draft without saving and may cost a small number of
+tokens. Keys stay in component-local memory while editing and are encrypted by
+FastAPI; they are never public frontend configuration or browser persistence.
+See [the AI settings guide](docs/ai-settings.md) for provider requirements,
+Docker-host Ollama URLs, key retention, API contracts and validation boundaries.
+
 ## Structure
 
 - `src/routes`: native typed TanStack route definitions and server routes.

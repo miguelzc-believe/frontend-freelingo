@@ -43,6 +43,37 @@ describe('admin i18n messages', () => {
   })
 })
 
+describe('global AI settings messages', () => {
+  it('includes complete localized AI settings and updated FAQ in all fifteen locales', () => {
+    for (const [locale, messages] of Object.entries({ en, ...locales })) {
+      expect(Object.keys(messages.settings.ai).sort(), locale).toEqual(
+        Object.keys(en.settings.ai).sort()
+      )
+      const errors: string[] = []
+      const t = createTranslator({
+        locale,
+        messages,
+        onError: (error) => errors.push(error.message),
+      })
+      for (const key of Object.keys(
+        en.settings.ai
+      ) as (keyof typeof en.settings.ai)[]) {
+        expect(t(`settings.ai.${key}`), locale).not.toBe(`settings.ai.${key}`)
+      }
+      expect(t('settings.sectionAi'), locale).toBeTruthy()
+      expect(t('faq.provider_custom'), locale).toBeTruthy()
+      expect(
+        t.rich('faq.a_providers_intro', { aiSettingsLink: (text) => text }),
+        locale
+      ).toBeTruthy()
+      expect(JSON.stringify(messages.faq), locale).not.toMatch(
+        /LLM_PROVIDER|OPENAI_API_KEY|ANTHROPIC_API_KEY|DEEPSEEK_API_KEY/
+      )
+      expect(errors, locale).toEqual([])
+    }
+  })
+})
+
 describe('shared interface messages', () => {
   it('renders generic errors and vocabulary counts in all fifteen locales', () => {
     for (const [locale, messages] of Object.entries({ en, ...locales })) {

@@ -45,6 +45,9 @@ vi.mock('@/components/settings/AppearanceSection', () => ({
 vi.mock('@/components/settings/BillingSection', () => ({
   BillingSection: () => <div>billingSection</div>,
 }))
+vi.mock('@/components/settings/AiSection', () => ({
+  AiSection: () => <div>aiSection</div>,
+}))
 vi.mock('@/components/settings/ReviewSection', () => ({
   ReviewSection: ({ title }: { title: string }) => <div>{title}</div>,
 }))
@@ -89,6 +92,7 @@ describe('settings page', () => {
     ).toBeInTheDocument()
     for (const [label, id] of [
       ['sectionAccount', 'account'],
+      ['sectionAi', 'ai'],
       ['sectionAppearance', 'preferences'],
       ['sectionConversation', 'voice'],
       ['sectionUsageLimits', 'plan'],

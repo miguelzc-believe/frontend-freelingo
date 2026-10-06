@@ -19,6 +19,7 @@ import { ConversationSection } from '@/components/settings/ConversationSection'
 import { VoiceSection } from '@/components/settings/VoiceSection'
 import { UsageLimitsSection } from '@/components/settings/UsageLimitsSection'
 import { AppearanceSection } from '@/components/settings/AppearanceSection'
+import { AiSection } from '@/components/settings/AiSection'
 import { BillingSection } from '@/components/settings/BillingSection'
 import { ReviewSection } from '@/components/settings/ReviewSection'
 import {
@@ -42,6 +43,7 @@ export default function SettingsPage() {
 
   const navItems = [
     { href: '#account', label: t('sectionAccount'), icon: User },
+    { href: '#ai', label: t('sectionAi'), icon: Bot },
     { href: '#preferences', label: t('sectionAppearance'), icon: Palette },
     { href: '#voice', label: t('sectionConversation'), icon: Volume2 },
     { href: '#plan', label: t('sectionUsageLimits'), icon: CreditCard },
@@ -114,6 +116,10 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+        </SettingsPanel>
+
+        <SettingsPanel id="ai" title={t('sectionAi')}>
+          <AiSection />
         </SettingsPanel>
 
         <SettingsPanel id="preferences" title={t('sectionAppearance')}>
