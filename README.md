@@ -43,6 +43,16 @@ The browser tests start a fixture backend on port 3199 and build/start the produ
 - `PUBLIC_UMAMI_WEBSITE_ID`: public analytics identifier.
 - `HOST` and `PORT`: production server bind address and port; container defaults are `0.0.0.0:3000`.
 
+TTS and STT use independent global OmniRoute configurations in **Settings → AI**
+under the chat model. Enter the OmniRoute OpenAI-compatible base URL and the full
+audio route model ID, with a write-only key for each service. TTS also includes
+voice and speed and can play a short test sample. STT tests connectivity using
+generated silence; it does not retain or upload a learner recording. Neither
+service falls back to speech environment variables or local Kokoro/Whisper.
+Missing TTS disables generated speech, missing STT disables microphone input,
+and voice conversations require both plus the LLM. Existing audio/history stays
+readable. See the [backend voice configuration guide](../backend-freelingo/docs/operations.md#voice-settings-omniroute).
+
 Only the explicit public values, UI locale and translation catalog enter the root loader's browser payload. Never put service keys in public configuration.
 
 All `/api/*` requests stay on the frontend origin and are streamed to FastAPI with authorization, cookies, cancellation and upstream statuses. The browser stores the access token only in Zustand memory; FastAPI owns the rotating httpOnly refresh cookie and authorization. Navigation guards are presentation aids.

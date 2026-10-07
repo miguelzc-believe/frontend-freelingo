@@ -48,6 +48,9 @@ vi.mock('@/components/settings/BillingSection', () => ({
 vi.mock('@/components/settings/AiSection', () => ({
   AiSection: () => <div>aiSection</div>,
 }))
+vi.mock('@/components/settings/VoiceProviderSettings', () => ({
+  VoiceProviderSettings: () => <div>voiceProviderSettings</div>,
+}))
 vi.mock('@/components/settings/ReviewSection', () => ({
   ReviewSection: ({ title }: { title: string }) => <div>{title}</div>,
 }))
