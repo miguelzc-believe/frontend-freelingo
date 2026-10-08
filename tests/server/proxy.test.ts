@@ -89,6 +89,40 @@ describe('same-origin transport', () => {
     )
   })
 
+  it('preserves private voice audio range requests and no-store responses', async () => {
+    const bytes = new Uint8Array([82, 73, 70, 70])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: URL, init: RequestInit) => {
+        expect(url.pathname).toBe(
+          '/api/conversation/sessions/session/turns/turn/audio/assistant'
+        )
+        const headers = new Headers(init.headers)
+        expect(headers.get('authorization')).toBe('Bearer access')
+        expect(headers.get('range')).toBe('bytes=0-3')
+        return new Response(bytes, {
+          status: 206,
+          headers: {
+            'content-type': 'audio/wav',
+            'cache-control': 'private, no-store',
+            'content-range': 'bytes 0-3/100',
+            'accept-ranges': 'bytes',
+          },
+        })
+      })
+    )
+    const response = await proxyBackend(
+      new Request(
+        'http://frontend/api/conversation/sessions/session/turns/turn/audio/assistant',
+        { headers: { authorization: 'Bearer access', range: 'bytes=0-3' } }
+      )
+    )
+    expect(response.status).toBe(206)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.get('content-range')).toBe('bytes 0-3/100')
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes)
+  })
+
   it('keeps API error responses and query strings intact', async () => {
     vi.stubGlobal(
       'fetch',

@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
@@ -177,6 +178,55 @@ describe('ConversationPage', () => {
     expect(sessionStorage.getItem('assessment_voice_trial')).toBeNull()
   })
 
+  it('retains the consumed trial and context during StrictMode effect replay', async () => {
+    mockToday()
+    sessionStorage.setItem(
+      'assessment_voice_trial',
+      JSON.stringify({
+        token: 'strict-trial',
+        durationSeconds: 240,
+        cefrLevel: 'A2',
+        targetLanguage: 'fr-FR',
+      })
+    )
+    render(
+      <StrictMode>
+        <ConversationPage />
+      </StrictMode>
+    )
+    expect(await screen.findByTestId('conversation-mode')).toBeInTheDocument()
+    expect(lastProps()).toMatchObject({
+      voiceTrialToken: 'strict-trial',
+      autoStart: true,
+      trialMode: true,
+      targetLanguage: 'fr-FR',
+      cefrLevel: 'A2',
+    })
+    expect(sessionStorage.getItem('assessment_voice_trial')).toBeNull()
+    expect(mockApiFetch.mock.calls[0]?.[1]?.signal.aborted).toBe(true)
+  })
+
+  it('retains consumed text context during StrictMode effect replay', async () => {
+    mockToday()
+    sessionStorage.setItem(
+      'voice_context',
+      JSON.stringify({
+        messages: [{ role: 'assistant', content: 'Continue our topic' }],
+      })
+    )
+    render(
+      <StrictMode>
+        <ConversationPage />
+      </StrictMode>
+    )
+    expect(await screen.findByTestId('conversation-mode')).toBeInTheDocument()
+    expect(lastProps()).toMatchObject({
+      autoStart: true,
+      initialContext: [{ role: 'assistant', content: 'Continue our topic' }],
+    })
+    expect(sessionStorage.getItem('voice_context')).toBeNull()
+  })
+
   it('prioritizes a trial over exhausted quota and defaults invalid optional fields', async () => {
     useConfigStore.setState({ stripeEnabled: true })
     useAuthStore.setState({ user: freeUser })
@@ -263,6 +313,35 @@ describe('ConversationPage', () => {
         freemiumVoiceLimit: 60,
       })
     )
+  })
+
+  it('clears the previous language context and ignores its late plan response', async () => {
+    let resolveOldPlan: ((response: Response) => void) | undefined
+    mockApiFetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveOldPlan = resolve
+        })
+    )
+    mockApiFetch.mockResolvedValue(jsonResponse({ cefr_level: 'A1' }))
+    sessionStorage.setItem(
+      'voice_context',
+      JSON.stringify([{ role: 'user', content: 'Old language topic' }])
+    )
+    render(<ConversationPage />)
+    const oldSignal = mockApiFetch.mock.calls[0]?.[1]?.signal as AbortSignal
+    useLanguageStore.setState({ activeLanguage: { ...german, code: 'fr-FR' } })
+    await waitFor(() =>
+      expect(lastProps()).toMatchObject({
+        targetLanguage: 'fr-FR',
+        cefrLevel: 'A1',
+        autoStart: false,
+        initialContext: undefined,
+      })
+    )
+    expect(oldSignal.aborted).toBe(true)
+    resolveOldPlan?.(jsonResponse({ cefr_level: 'C2' }))
+    await waitFor(() => expect(lastProps().cefrLevel).toBe('A1'))
   })
 
   it('blocks the conversation and shows the paywall when the quota is spent', async () => {

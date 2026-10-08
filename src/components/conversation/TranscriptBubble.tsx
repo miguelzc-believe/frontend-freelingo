@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Image from '@/components/ui/app-image'
 import { useTranslations } from 'use-intl'
 import { TargetLanguageText } from '@/components/TargetLanguageText'
@@ -12,6 +13,7 @@ interface Props {
   userInitial?: string | undefined
   languageCode?: string | null | undefined
   onPointerUp?: (() => void) | undefined
+  children?: ReactNode
 }
 
 function renderAvatar(
@@ -59,6 +61,7 @@ export default function TranscriptBubble({
   userInitial,
   languageCode,
   onPointerUp,
+  children,
 }: Readonly<Props>) {
   const t = useTranslations('conversation')
   const isUser = role === 'user'
@@ -104,6 +107,7 @@ export default function TranscriptBubble({
             <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current align-middle motion-reduce:animate-none" />
           )}
         </TargetLanguageText>
+        {children}
       </div>
     </div>
   )

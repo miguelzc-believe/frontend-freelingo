@@ -18,7 +18,6 @@
     ".tanstack",
     ".scannerwork",
     "coverage",
-    "public/vad",
     "test-results",
     "playwright-report"
   ],

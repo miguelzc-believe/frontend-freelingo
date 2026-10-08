@@ -1,12 +1,11 @@
 /**
  * /conversation — Voice conversation page.
  *
- * ConversationMode uses @ricky0123/vad-web (ONNX/WASM) and the Web Audio
- * API, neither of which are compatible with SSR. It is loaded client-side only
- * through React.lazy inside the client-only app layout.
+ * Explicit voice-message recording uses the browser AudioWorklet API.
+ * The conversation screen is lazy-loaded inside the client-only app layout.
  */
-import { useEffect, useState, lazy, Suspense } from 'react'
-import type { ChatContextItem } from '@/lib/conversation-ws'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
+import type { ChatContextItem } from '@/lib/conversation-api'
 import { PageLoading } from '@/components/ui/page-loading'
 import { FreemiumQuotaBanner } from '@/components/billing/FreemiumQuotaBanner'
 import { PaywallBanner } from '@/components/billing/PaywallBanner'
@@ -121,6 +120,7 @@ export default function ConversationPage() {
   const [cefrLevel, setCefrLevel] = useState<string | null>(null)
   const [planReady, setPlanReady] = useState(false)
   const [voiceTrial, setVoiceTrial] = useState<VoiceTrial | null>(null)
+  const handoffScopeRef = useRef<{ language: string | undefined } | null>(null)
 
   useEffect(() => {
     if (stripeEnabled && !isSubscribed(user, stripeEnabled)) {
@@ -129,41 +129,62 @@ export default function ConversationPage() {
   }, [stripeEnabled, user, fetchFreemium])
 
   useEffect(() => {
-    const raw = sessionStorage.getItem('voice_context')
-    if (raw) {
-      sessionStorage.removeItem('voice_context')
-      const context = parseVoiceContext(raw)
-      if (context) {
-        if (context.messages) setInitialContext(context.messages)
-        setAutoStart(true)
+    let active = true
+    const controller = new AbortController()
+    setCefrLevel(null)
+    // Consume a handoff once per language scope, not once per effect setup.
+    // StrictMode replays effects; its second setup must retain the consumed
+    // context/trial rather than clear a token already removed from storage.
+    if (
+      handoffScopeRef.current?.language !== activeLanguage?.code ||
+      !handoffScopeRef.current
+    ) {
+      handoffScopeRef.current = { language: activeLanguage?.code }
+      setInitialContext(undefined)
+      setAutoStart(false)
+      setVoiceTrial(null)
+      const raw = sessionStorage.getItem('voice_context')
+      if (raw) {
+        sessionStorage.removeItem('voice_context')
+        const context = parseVoiceContext(raw)
+        if (context) {
+          if (context.messages) setInitialContext(context.messages)
+          setAutoStart(true)
+        }
       }
-    }
-    const trialRaw = sessionStorage.getItem('assessment_voice_trial')
-    if (trialRaw) {
-      sessionStorage.removeItem('assessment_voice_trial')
-      const trial = parseVoiceTrial(trialRaw)
-      if (trial) {
-        setVoiceTrial(trial)
-        setInitialContext([
-          {
-            role: 'user',
-            content:
-              'I just completed the placement assessment. Please start a short, friendly voice conversation adapted to my level.',
-          },
-        ])
-        setAutoStart(true)
+      const trialRaw = sessionStorage.getItem('assessment_voice_trial')
+      if (trialRaw) {
+        sessionStorage.removeItem('assessment_voice_trial')
+        const trial = parseVoiceTrial(trialRaw)
+        if (trial) {
+          setVoiceTrial(trial)
+          setInitialContext([
+            {
+              role: 'user',
+              content:
+                'I just completed the placement assessment. Please start a short, friendly voice conversation adapted to my level.',
+            },
+          ])
+          setAutoStart(true)
+        }
       }
     }
     setPlanReady(false)
-    apiFetch('/api/study-plan/today')
+    apiFetch('/api/study-plan/today', { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.cefr_level) setCefrLevel(data.cefr_level)
+        if (active && data?.cefr_level) setCefrLevel(data.cefr_level)
       })
       .catch(() => {
-        /* sin plan — usa default 1500ms */
+        /* No active plan — the backend resolves the language's default level. */
       })
-      .finally(() => setPlanReady(true))
+      .finally(() => {
+        if (active) setPlanReady(true)
+      })
+    return () => {
+      active = false
+      controller.abort()
+    }
   }, [activeLanguage?.code])
 
   if (!planReady) return null

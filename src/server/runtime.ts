@@ -12,7 +12,6 @@ export const getRuntime = createServerFn({ method: 'GET' }).handler(
       locale,
       messages: await loadCatalog(locale),
       hasSession: readCookie(request, 'refresh_token') !== undefined,
-      publicApiUrl: process.env.PUBLIC_API_URL || '',
       umamiWebsiteId: process.env.PUBLIC_UMAMI_WEBSITE_ID || '',
     }
   }

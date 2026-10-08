@@ -3,7 +3,6 @@ WORKDIR /app
 # Bootstrap the pinned manager; all project dependencies are installed with pnpm.
 RUN npm install --global pnpm@12.5.1
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY scripts/copy-vad-models.ts ./scripts/copy-vad-models.ts
 RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm typecheck && pnpm build

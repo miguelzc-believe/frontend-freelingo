@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getLogger, silentLogger } from '@/lib/logger'
+import { getLogger } from '@/lib/logger'
 
 describe('getLogger', () => {
   let debugSpy: ReturnType<typeof vi.spyOn>
@@ -79,14 +79,5 @@ describe('getLogger', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       '[test] circular [unserializable-payload]'
     )
-  })
-})
-
-describe('silentLogger', () => {
-  it('all methods are no-ops', () => {
-    expect(() => silentLogger.debug('x')).not.toThrow()
-    expect(() => silentLogger.info('x')).not.toThrow()
-    expect(() => silentLogger.warn('x')).not.toThrow()
-    expect(() => silentLogger.error('x')).not.toThrow()
   })
 })
