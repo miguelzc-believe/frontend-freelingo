@@ -124,11 +124,23 @@ describe('voice-message HTTP API', () => {
     expect(api).not.toHaveBeenCalled()
   })
 
-  it('closes best-effort with an independent keepalive request', async () => {
-    await closeVoiceSession('id')
-    expect(api).toHaveBeenCalledWith('/api/conversation/sessions/id/close', {
-      method: 'POST',
-      keepalive: true,
-    })
+  it('closes with the original owner token without using the current account or refresh cookie', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetch)
+    try {
+      await closeVoiceSession('id', 'original-owner-token')
+      expect(api).not.toHaveBeenCalled()
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/conversation/sessions/id/close',
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer original-owner-token' },
+          credentials: 'omit',
+          keepalive: true,
+        }
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

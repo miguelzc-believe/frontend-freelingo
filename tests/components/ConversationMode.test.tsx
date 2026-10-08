@@ -77,6 +77,7 @@ let play: ReturnType<typeof vi.spyOn>
 let pause: ReturnType<typeof vi.spyOn>
 let createUrl: ReturnType<typeof vi.fn>
 let revokeUrl: ReturnType<typeof vi.fn>
+let closeFetch: ReturnType<typeof vi.fn>
 
 function response(value: unknown, status = 200) {
   return { ok: status < 400, status, json: async () => value }
@@ -107,6 +108,8 @@ beforeEach(() => {
     (blob: Blob) => `blob:audio-${blob.size}-${createUrl.mock.calls.length}`
   )
   revokeUrl = vi.fn()
+  closeFetch = vi.fn().mockResolvedValue({ ok: true })
+  vi.stubGlobal('fetch', closeFetch)
   vi.stubGlobal(
     'URL',
     Object.assign(URL, {
@@ -254,9 +257,12 @@ describe('explicit voice-message conversation', () => {
     await act(async () =>
       first.resolve(response({ ...session, session_id: 'aborted-session' }))
     )
-    expect(mocks.api).toHaveBeenCalledWith(
+    expect(closeFetch).toHaveBeenCalledWith(
       '/api/conversation/sessions/aborted-session/close',
-      expect.objectContaining({ method: 'POST' })
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer token' },
+      })
     )
     expect(
       mocks.api.mock.calls
@@ -566,9 +572,7 @@ describe('explicit voice-message conversation', () => {
     expect(screen.queryByRole('button', { name: 'cancel' })).toBeNull()
     expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'record' })).toHaveFocus()
-    expect(
-      mocks.api.mock.calls.filter(([url]) => String(url).endsWith('/close'))
-    ).toHaveLength(0)
+    expect(closeFetch).not.toHaveBeenCalled()
 
     act(() => {
       discarded.emit({ type: 'samples', samples: generatedSamples(3200) })
@@ -738,9 +742,14 @@ describe('explicit voice-message conversation', () => {
     expect(screen.getByText('Welcome back')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'play' })).toBeNull()
     expect(screen.getByText('reviewPrompt')).toBeInTheDocument()
-    expect(mocks.api).toHaveBeenCalledWith(
+    expect(closeFetch).toHaveBeenCalledWith(
       '/api/conversation/sessions/session-1/close',
-      expect.objectContaining({ method: 'POST', keepalive: true })
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+        headers: { Authorization: 'Bearer token' },
+        credentials: 'omit',
+      })
     )
   })
 
@@ -772,9 +781,9 @@ describe('explicit voice-message conversation', () => {
     view.unmount()
     expect(signal.aborted).toBe(true)
     await act(async () => pending.resolve(response(session)))
-    expect(mocks.api).toHaveBeenCalledWith(
+    expect(closeFetch).toHaveBeenCalledWith(
       '/api/conversation/sessions/session-1/close',
-      expect.anything()
+      expect.objectContaining({ headers: { Authorization: 'Bearer token' } })
     )
     expect(
       mocks.api.mock.calls.some(([url]) => String(url).endsWith('/greeting'))
@@ -862,9 +871,7 @@ describe('explicit voice-message conversation', () => {
     )
     expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
     expect(screen.queryByText('sessionExpired')).toBeNull()
-    expect(
-      mocks.api.mock.calls.filter(([url]) => String(url).endsWith('/close'))
-    ).toHaveLength(1)
+    expect(closeFetch).toHaveBeenCalledTimes(1)
   })
 
   it('fatal activity error during playback pauses and detaches all players, revokes audio and retains text', async () => {
@@ -910,6 +917,204 @@ describe('explicit voice-message conversation', () => {
     expect(capture.media).not.toHaveBeenCalled()
   })
 
+  it('checks the backend deadline before expiring a slow provider turn and preserves its response', async () => {
+    const now = Date.now()
+    const nearExpiry = new Date(now + 1500).toISOString()
+    const extended = new Date(now + 180_000).toISOString()
+    const turn = deferred<ReturnType<typeof response>>()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url === '/api/conversation/sessions')
+        return Promise.resolve(
+          response({ ...session, inactivity_expires_at: nearExpiry })
+        )
+      if (url.endsWith('/greeting'))
+        return Promise.resolve(
+          response({ ...greeting, inactivity_expires_at: nearExpiry })
+        )
+      if (url.endsWith('/turns')) return turn.promise
+      if (url.endsWith('/activity'))
+        return Promise.resolve(
+          response({
+            ...session,
+            inactivity_expires_at: nearExpiry,
+            remaining_seconds: 600,
+          })
+        )
+      if (url === '/api/conversation/sessions/session-1')
+        return Promise.resolve(
+          response({
+            ...session,
+            inactivity_expires_at: extended,
+            remaining_seconds: 300,
+          })
+        )
+      return original(url, options)
+    })
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    expect(uploads()).toHaveLength(1)
+    expect(screen.getByText('processing')).toBeInTheDocument()
+    await waitFor(
+      () =>
+        expect(
+          mocks.api.mock.calls.some(
+            ([url]) => url === '/api/conversation/sessions/session-1'
+          )
+        ).toBe(true),
+      { timeout: 3000 }
+    )
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'endSession' })
+    ).toBeInTheDocument()
+    await act(async () =>
+      turn.resolve(response({ ...complete, inactivity_expires_at: extended }))
+    )
+    expect(await screen.findByText('Hello there')).toBeInTheDocument()
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+  })
+
+  it('does not shorten the absolute deadline when a slow provider response reports rounded remaining seconds', async () => {
+    const startAt = Date.now()
+    const absolute = new Date(startAt + 5000).toISOString()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url === '/api/conversation/sessions')
+        return Promise.resolve(response({ ...session, expires_at: absolute }))
+      if (url.endsWith('/greeting'))
+        return Promise.resolve(response({ ...greeting, remaining_seconds: 1 }))
+      return original(url, options)
+    })
+    render(<ConversationMode />)
+    await start()
+    // The greeting's rounded remaining_seconds must not replace expires_at
+    // with a new deadline derived from the response arrival time.
+    await new Promise((resolve) => setTimeout(resolve, 1300))
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+  })
+
+  it('uses the latest same-owner token for closing and ignores a delayed failed close', async () => {
+    render(<ConversationMode />)
+    await start()
+    act(() => useAuthStore.setState({ accessToken: 'refreshed-token' }))
+    const close = deferred<{
+      ok: boolean
+      status: number
+      json: () => Promise<unknown>
+    }>()
+    closeFetch.mockReturnValueOnce(close.promise)
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer refreshed-token' },
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startNew' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    await act(async () =>
+      close.resolve({
+        ok: false,
+        status: 401,
+        json: async () => ({ detail: 'unauthorized' }),
+      })
+    )
+    expect(useAuthStore.getState().accessToken).toBe('refreshed-token')
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps a pending provider turn busy if an expiry read temporarily fails', async () => {
+    const turn = deferred<ReturnType<typeof response>>()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url.endsWith('/turns')) return turn.promise
+      if (url === '/api/conversation/sessions/session-1')
+        return Promise.reject(new TypeError('network unavailable'))
+      return original(url, options)
+    })
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'errorConnection'
+    )
+    expect(screen.getByRole('button', { name: 'record' })).toBeDisabled()
+    expect(closeFetch).not.toHaveBeenCalled()
+    await act(async () => turn.resolve(response(complete)))
+    expect(await screen.findByText('Hello there')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+  })
+
+  it('does not overlap expiry checks and ignores a stale expiry response after restarting', async () => {
+    const original = mocks.api.getMockImplementation()!
+    const check = deferred<ReturnType<typeof response>>()
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url === '/api/conversation/sessions/session-1'
+        ? check.promise
+        : original(url, options)
+    )
+    render(<ConversationMode />)
+    await start()
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(
+      mocks.api.mock.calls.filter(
+        ([url]) => url === '/api/conversation/sessions/session-1'
+      )
+    ).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    fireEvent.click(screen.getByRole('button', { name: 'startNew' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    await act(async () =>
+      check.resolve(response({ detail: 'session_expired' }, 410))
+    )
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+  })
+
+  it('expires at the absolute deadline even if the backend has extended inactivity', async () => {
+    const now = Date.now()
+    const soon = new Date(now + 1000).toISOString()
+    const later = new Date(now + 180_000).toISOString()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url === '/api/conversation/sessions')
+        return Promise.resolve(
+          response({
+            ...session,
+            expires_at: soon,
+            inactivity_expires_at: later,
+          })
+        )
+      if (url.endsWith('/greeting'))
+        return Promise.resolve(
+          response({ ...greeting, inactivity_expires_at: later })
+        )
+      return original(url, options)
+    })
+    render(<ConversationMode />)
+    await start()
+    expect(
+      await screen.findByText('sessionExpired', {}, { timeout: 3000 })
+    ).toBeInTheDocument()
+    expect(
+      mocks.api.mock.calls.some(
+        ([url]) => url === '/api/conversation/sessions/session-1'
+      )
+    ).toBe(false)
+  })
+
   it('expires on the server deadline without a polling activity heartbeat', async () => {
     mocks.api.mockImplementation(async (url: string) => {
       if (url === '/api/conversation/sessions')
@@ -922,6 +1127,8 @@ describe('explicit voice-message conversation', () => {
           ...greeting,
           inactivity_expires_at: new Date(Date.now() - 1000).toISOString(),
         })
+      if (url === '/api/conversation/sessions/session-1')
+        return response({ detail: 'session_expired' }, 410)
       return response(null)
     })
     render(<ConversationMode />)
@@ -933,6 +1140,88 @@ describe('explicit voice-message conversation', () => {
       mocks.api.mock.calls.some(([url]) => String(url).endsWith('/activity'))
     ).toBe(false)
     expect(screen.getByRole('button', { name: 'startNew' })).toBeInTheDocument()
+  })
+
+  it('closes a late session start with its original owner token after an account switch', async () => {
+    const pending = deferred<ReturnType<typeof response>>()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url === '/api/conversation/sessions'
+        ? pending.promise
+        : original(url, options)
+    )
+    render(<ConversationMode />)
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    act(() =>
+      useAuthStore.setState({
+        accessToken: 'new-account-token',
+        user: {
+          id: 2,
+          username: 'other',
+          displayName: 'Other',
+          role: 'user',
+          conversation_max_duration: 1800,
+          conversation_inactivity_timeout: 180,
+        },
+      })
+    )
+    await act(async () => pending.resolve(response(session)))
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({ headers: { Authorization: 'Bearer token' } })
+    )
+    expect(
+      mocks.api.mock.calls.some(([url]) => String(url).endsWith('/greeting'))
+    ).toBe(false)
+  })
+
+  it('closes the former owner session after logout and does not send their token to the new account', async () => {
+    const owner = {
+      id: 1,
+      username: 'owner',
+      displayName: 'Owner',
+      role: 'user' as const,
+      conversation_max_duration: 1800,
+      conversation_inactivity_timeout: 180,
+    }
+    useAuthStore.setState({ user: owner, accessToken: 'owner-token' })
+    render(<ConversationMode />)
+    await start()
+    act(() => useAuthStore.getState().logout())
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer owner-token' },
+        credentials: 'omit',
+      })
+    )
+    closeFetch.mockClear()
+    act(() =>
+      useAuthStore.setState({ user: owner, accessToken: 'owner-token' })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    act(() =>
+      useAuthStore.setState({
+        user: { ...owner, id: 2, username: 'other' },
+        accessToken: 'other-token',
+      })
+    )
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer owner-token' },
+        credentials: 'omit',
+      })
+    )
+    expect(closeFetch).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer other-token' },
+      })
+    )
   })
 
   it('clears recording UI and releases capture when the account changes', async () => {

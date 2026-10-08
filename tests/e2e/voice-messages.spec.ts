@@ -188,9 +188,13 @@ async function fixture(
       return route.fulfill({ json: { ...session, remaining_seconds: 600 } })
     }
     if (path.endsWith('/close')) {
+      expect(request.headers()['authorization']).toBe('Bearer fixture-access')
+      expect(request.headers()['cookie']).toBeUndefined()
       closeCount++
       return route.fulfill({ json: { ok: true } })
     }
+    if (path === '/api/conversation/sessions/browser-session')
+      return route.fulfill({ json: { ...session, remaining_seconds: 600 } })
     if (path.endsWith('/turns')) {
       expect(request.headers()['content-type']).toContain(
         'multipart/form-data; boundary='
@@ -396,6 +400,24 @@ test('native capture stops and sends automatically at the server recording limit
     .poll(async () => (await observed(page)).tracksStopped)
     .toBeGreaterThan(0)
   await page.getByRole('button', { name: 'End session', exact: true }).click()
+})
+
+test('logout during capture releases the microphone and closes with the previous owner credentials', async ({
+  page,
+}) => {
+  const data = await fixture(page)
+  await record(page)
+  const menu = page.getByRole('button', { name: 'Open menu', exact: true })
+  if (await menu.isVisible()) await menu.click()
+  await page.getByRole('button', { name: 'Logout', exact: true }).last().click()
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: 'Logout', exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/login$/)
+  await expect.poll(() => data.closeCount()).toBe(1)
+  expect(data.uploads).toHaveLength(0)
+  expect((await observed(page)).tracksStopped).toBeGreaterThan(0)
 })
 
 test('end during native capture discards audio and releases the microphone', async ({

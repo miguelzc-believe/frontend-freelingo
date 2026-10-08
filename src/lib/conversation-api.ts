@@ -117,12 +117,19 @@ export function markVoiceActivity(
   return json(`${sessionPath(id)}/activity`, { method: 'POST', signal })
 }
 
-export async function closeVoiceSession(id: string): Promise<void> {
-  // Independent of the aborted session controller: closing is best-effort and
-  // idempotent. The server TTL covers a lost start response or page termination.
+export async function closeVoiceSession(
+  id: string,
+  token: string
+): Promise<void> {
+  // Use the session owner's bearer captured in memory, not apiFetch's current
+  // account (or its refresh cookie). Logout and account switches can occur
+  // before the effect cleaning up this session runs. A failed close remains
+  // bounded by the server TTL.
   await checked(
-    await apiFetch(`${sessionPath(id)}/close`, {
+    await fetch(`${sessionPath(id)}/close`, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'omit',
       keepalive: true,
     })
   )

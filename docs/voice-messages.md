@@ -61,6 +61,14 @@ The cancellation follow-up passed strict typecheck, targeted ESLint, `git diff -
 
 With explicit user authorization, only the local Compose frontend was rebuilt and recreated. `http://localhost:3000` serves the updated conversation bundle, verified by matching its SHA-256 with the new running container. The unauthenticated conversation URL still redirects to login. The real authenticated/provider conversation was not exercised again; the UI interaction above was validated in the isolated production-build browser suite.
 
+## Session lifecycle review follow-up
+
+- Inactivity expiry now triggers an owner-authenticated status read before local closure, including during a pending provider turn. The backend refreshes inactivity when it accepts the turn, before the buffered reply reaches the browser. The immutable absolute deadline still closes locally without waiting for a status read, and no status read extends activity. Concurrent reconciliation reads are deduplicated; late results from a previous run are ignored. A transient status-read failure cannot unlock or cancel a pending turn.
+- Session closure sends the last same-owner access token retained in memory in an independent keepalive request. It does not use the current account's token, refresh cookies, token rotation or logout-on-401 behavior. The token is used only for the same-origin session-close endpoint, including late start-response cleanup; it is never persisted. Server TTL still bounds best-effort close failure.
+- The page binds consumed chat/trial handoff and study-plan readiness to both owner and language. Render-time scope checks prevent passing old context or auto-start flags to the new owner/language while its plan request is pending. StrictMode retains the once-consumed handoff, and late plan responses cannot replace current data.
+
+Regressions cover slow-turn deadline reconciliation, the hard absolute cap, avoiding a shortened cap from rounded `remaining_seconds`, transient status-read failures, read deduplication, stale responses after restart, owner-token refresh/logout/switch/late-start close, and every child-prop delivery during deferred language/account transitions. The follow-up passed 1,335 tests in 128 files (90.44% lines, 83.87% branches) with coverage; focused tests and Chromium desktop/mobile voice and migration checks were also run. Strict typecheck, lint, both dead-code budgets and CRAP passed. One earlier parallel-sensitive lesson assertion failed only in an initial full run and passed in isolation and on the serial coverage rerun; no lesson code changed.
+
 ## Validation
 
 Run from the frontend root using pnpm:

@@ -64,6 +64,9 @@ interface SessionRun {
   busy: boolean
   startedAt: number
   deadline: number
+  ownerId: number | null
+  ownerToken: string
+  expiryCheckPending: boolean
 }
 
 type Status = 'ready' | 'connecting' | 'live' | 'sending' | 'ended' | 'error'
@@ -100,9 +103,10 @@ export default function ConversationMode({
   const accessToken = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
   const setUser = useAuthStore((state) => state.setUser)
+  const userId = user?.id ?? null
   const language = targetLanguage ?? user?.target_language ?? 'en-GB'
   const scope = JSON.stringify([
-    user?.id ?? null,
+    userId,
     language,
     voiceTrialToken ?? null,
     conversationId ?? null,
@@ -173,7 +177,7 @@ export default function ConversationMode({
     run?.urls.clear()
     run?.turns.clear()
     if (run?.session)
-      void closeVoiceSession(run.session.session_id)
+      void closeVoiceSession(run.session.session_id, run.ownerToken)
         .then(() => {
           if (mountedRef.current) refreshQuota()
         })
@@ -215,8 +219,10 @@ export default function ConversationMode({
   }, [scope, finish, refreshQuota, dismissTooltip])
 
   useEffect(() => {
-    if (!accessToken && runRef.current) finish()
-  }, [accessToken, finish])
+    const run = runRef.current
+    if (run && (!accessToken || userId !== run.ownerId)) finish()
+    else if (run && accessToken) run.ownerToken = accessToken
+  }, [accessToken, userId, finish])
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -281,11 +287,11 @@ export default function ConversationMode({
       Date.parse(run.session.inactivity_expires_at)
     )
       run.session.inactivity_expires_at = result.inactivity_expires_at
-    if (result.remaining_seconds !== undefined)
-      run.deadline = Math.min(
-        run.deadline,
-        Date.now() + result.remaining_seconds * 1000
-      )
+    // expires_at is the authoritative absolute cap. remaining_seconds is
+    // rounded up by the server; subtracting it from this response's arrival
+    // time could otherwise shorten the session during a slow provider call.
+    if (result.remaining_seconds !== undefined && result.remaining_seconds <= 0)
+      run.deadline = Math.min(run.deadline, Date.now())
   }
 
   function activity(run: SessionRun) {
@@ -410,6 +416,9 @@ export default function ConversationMode({
       busy: true,
       startedAt: Date.now(),
       deadline: Infinity,
+      ownerId: userId,
+      ownerToken: accessToken,
+      expiryCheckPending: false,
     }
     runRef.current = run
     playback.blocked = false
@@ -430,7 +439,9 @@ export default function ConversationMode({
       if (!isCurrent(run)) {
         // If the response arrives despite cancellation, close its known ID.
         // If it is lost entirely, request cancellation/server TTL bound lifetime.
-        void closeVoiceSession(session.session_id).catch(() => {})
+        void closeVoiceSession(session.session_id, run.ownerToken).catch(
+          () => {}
+        )
         return
       }
       run.session = session
@@ -465,26 +476,60 @@ export default function ConversationMode({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart, accessToken, scope])
 
+  function expire(run: SessionRun) {
+    if (!isCurrent(run)) return
+    finish()
+    setErrorMsg(v('sessionExpired'))
+    refreshQuota()
+    if (trialMode) void refreshCurrentUser()
+  }
+
+  function reconcileExpiry(run: SessionRun) {
+    if (!run.session || !isCurrent(run) || run.expiryCheckPending) return
+    const session = run.session
+    run.expiryCheckPending = true
+    // GET does not extend inactivity. The backend may have refreshed it as
+    // soon as the upload arrived, before its provider response reaches us.
+    void getVoiceSession(session.session_id, run.abort.signal)
+      .then((result) => {
+        if (!isCurrent(run)) return
+        updateExpiry(run, result)
+        const remaining = Math.ceil(
+          (Math.min(run.deadline, Date.parse(session.inactivity_expires_at)) -
+            Date.now()) /
+            1000
+        )
+        if (remaining <= 0) expire(run)
+        else setWarningSeconds(remaining <= 60 ? remaining : null)
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent(run)) return
+        if (error instanceof ConversationApiError && error.status === 410) {
+          expire(run)
+        } else if (
+          error instanceof ConversationApiError &&
+          [401, 402, 404, 429, 503].includes(error.status)
+        ) {
+          requestFailed(run, error)
+        } else {
+          // A failed read cannot prove inactivity expiry or finish a pending
+          // provider request. The absolute deadline remains the upper bound.
+          setErrorMsg(messageFor(error))
+        }
+      })
+      .finally(() => {
+        run.expiryCheckPending = false
+      })
+  }
+
   // Status reads never extend activity. Reconcile on returning to the tab so
   // suspended/background browser timers cannot preserve expired audio.
   useEffect(() => {
     const reconcile = () => {
       const run = runRef.current
       if (document.hidden || !run?.session || !isCurrent(run)) return
-      const deadline = Math.min(
-        run.deadline,
-        Date.parse(run.session.inactivity_expires_at)
-      )
-      if (deadline <= Date.now()) {
-        finish()
-        setErrorMsg(v('sessionExpired'))
-        refreshQuota()
-        if (trialMode) void refreshCurrentUser()
-        return
-      }
-      void getVoiceSession(run.session.session_id, run.abort.signal)
-        .then((result) => updateExpiry(run, result))
-        .catch((error: unknown) => requestFailed(run, error))
+      if (run.deadline <= Date.now()) expire(run)
+      else reconcileExpiry(run)
     }
     document.addEventListener('visibilitychange', reconcile)
     return () => document.removeEventListener('visibilitychange', reconcile)
@@ -505,13 +550,13 @@ export default function ConversationMode({
           1000
       )
       if (remaining <= 0) {
-        finish()
-        setErrorMsg(v('sessionExpired'))
-        refreshQuota()
-        if (trialMode) void refreshCurrentUser()
+        if (run.deadline <= Date.now()) expire(run)
+        else reconcileExpiry(run)
       } else setWarningSeconds(remaining <= 60 ? remaining : null)
     }, 1000)
     return () => clearInterval(timer)
+    // Both helpers validate the live run; tick reads mutable server deadlines.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, finish, v, refreshQuota, trialMode, refreshCurrentUser])
 
   async function send(run: SessionRun, id: string, retry: boolean) {
@@ -546,6 +591,8 @@ export default function ConversationMode({
     )
     setStatus('sending')
     setErrorMsg(null)
+    // The backend refreshes inactivity when it accepts a turn, before the
+    // provider responds. Check its current deadline once the old one expires.
     try {
       const result = await sendVoiceTurn(
         run.session.session_id,

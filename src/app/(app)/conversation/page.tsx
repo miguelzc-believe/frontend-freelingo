@@ -41,6 +41,32 @@ interface VoiceTrial {
   targetLanguage?: string | undefined
 }
 
+interface ConversationScope {
+  language: string | undefined
+  userId: number | undefined
+}
+
+interface ScopedHandoff {
+  scope: ConversationScope
+  initialContext: ChatContextItem[] | undefined
+  autoStart: boolean
+  voiceTrial: VoiceTrial | null
+}
+
+interface ScopedPlan {
+  scope: ConversationScope
+  cefrLevel: string | null
+  ready: boolean
+}
+
+function matchesScope(
+  scope: ConversationScope,
+  language: string | undefined,
+  userId: number | undefined
+) {
+  return scope.language === language && scope.userId === userId
+}
+
 function parseVoiceContext(
   raw: string
 ): { messages?: ChatContextItem[] } | null {
@@ -113,14 +139,11 @@ export default function ConversationPage() {
     freemiumStatus &&
     freemiumStatus.voice_limit_seconds > 0
 
-  const [initialContext, setInitialContext] = useState<
-    ChatContextItem[] | undefined
-  >(undefined)
-  const [autoStart, setAutoStart] = useState(false)
-  const [cefrLevel, setCefrLevel] = useState<string | null>(null)
-  const [planReady, setPlanReady] = useState(false)
-  const [voiceTrial, setVoiceTrial] = useState<VoiceTrial | null>(null)
-  const handoffScopeRef = useRef<{ language: string | undefined } | null>(null)
+  const languageCode = activeLanguage?.code
+  const userId = user?.id
+  const [handoff, setHandoff] = useState<ScopedHandoff | null>(null)
+  const [plan, setPlan] = useState<ScopedPlan | null>(null)
+  const handoffScopeRef = useRef<ConversationScope | null>(null)
 
   useEffect(() => {
     if (stripeEnabled && !isSubscribed(user, stripeEnabled)) {
@@ -131,25 +154,25 @@ export default function ConversationPage() {
   useEffect(() => {
     let active = true
     const controller = new AbortController()
-    setCefrLevel(null)
-    // Consume a handoff once per language scope, not once per effect setup.
+    const scope = { language: languageCode, userId }
+    // Consume a handoff once per scope, not once per effect setup.
     // StrictMode replays effects; its second setup must retain the consumed
     // context/trial rather than clear a token already removed from storage.
     if (
-      handoffScopeRef.current?.language !== activeLanguage?.code ||
-      !handoffScopeRef.current
+      !handoffScopeRef.current ||
+      !matchesScope(handoffScopeRef.current, languageCode, userId)
     ) {
-      handoffScopeRef.current = { language: activeLanguage?.code }
-      setInitialContext(undefined)
-      setAutoStart(false)
-      setVoiceTrial(null)
+      handoffScopeRef.current = scope
+      let initialContext: ChatContextItem[] | undefined
+      let autoStart = false
+      let voiceTrial: VoiceTrial | null = null
       const raw = sessionStorage.getItem('voice_context')
       if (raw) {
         sessionStorage.removeItem('voice_context')
         const context = parseVoiceContext(raw)
         if (context) {
-          if (context.messages) setInitialContext(context.messages)
-          setAutoStart(true)
+          initialContext = context.messages
+          autoStart = true
         }
       }
       const trialRaw = sessionStorage.getItem('assessment_voice_trial')
@@ -157,37 +180,60 @@ export default function ConversationPage() {
         sessionStorage.removeItem('assessment_voice_trial')
         const trial = parseVoiceTrial(trialRaw)
         if (trial) {
-          setVoiceTrial(trial)
-          setInitialContext([
+          voiceTrial = trial
+          initialContext = [
             {
               role: 'user',
               content:
                 'I just completed the placement assessment. Please start a short, friendly voice conversation adapted to my level.',
             },
-          ])
-          setAutoStart(true)
+          ]
+          autoStart = true
         }
       }
+      setHandoff({ scope, initialContext, autoStart, voiceTrial })
     }
-    setPlanReady(false)
+    setPlan({ scope, cefrLevel: null, ready: false })
     apiFetch('/api/study-plan/today', { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (active && data?.cefr_level) setCefrLevel(data.cefr_level)
+        if (active && data?.cefr_level) {
+          setPlan((current) =>
+            current && matchesScope(current.scope, languageCode, userId)
+              ? { ...current, cefrLevel: data.cefr_level }
+              : current
+          )
+        }
       })
       .catch(() => {
         /* No active plan — the backend resolves the language's default level. */
       })
       .finally(() => {
-        if (active) setPlanReady(true)
+        if (active) {
+          setPlan((current) =>
+            current && matchesScope(current.scope, languageCode, userId)
+              ? { ...current, ready: true }
+              : current
+          )
+        }
       })
     return () => {
       active = false
       controller.abort()
     }
-  }, [activeLanguage?.code])
+  }, [languageCode, userId])
 
-  if (!planReady) return null
+  // Effects run after render. Never pass an old owner's handoff or readiness
+  // to a conversation rendered with the newly selected language/account.
+  if (!plan || !matchesScope(plan.scope, languageCode, userId) || !plan.ready)
+    return null
+  const currentHandoff =
+    handoff && matchesScope(handoff.scope, languageCode, userId)
+      ? handoff
+      : null
+  const initialContext = currentHandoff?.initialContext
+  const autoStart = currentHandoff?.autoStart ?? false
+  const voiceTrial = currentHandoff?.voiceTrial
 
   let content
   if (voiceTrial) {
@@ -195,8 +241,8 @@ export default function ConversationPage() {
       <ConversationMode
         initialContext={initialContext}
         autoStart={autoStart}
-        cefrLevel={voiceTrial.cefrLevel ?? cefrLevel}
-        targetLanguage={voiceTrial.targetLanguage ?? activeLanguage?.code}
+        cefrLevel={voiceTrial.cefrLevel ?? plan.cefrLevel}
+        targetLanguage={voiceTrial.targetLanguage ?? languageCode}
         voiceTrialToken={voiceTrial.token}
         voiceTrialDurationSeconds={voiceTrial.durationSeconds}
         trialMode
@@ -214,8 +260,8 @@ export default function ConversationPage() {
       <ConversationMode
         initialContext={initialContext}
         autoStart={autoStart}
-        cefrLevel={cefrLevel}
-        targetLanguage={activeLanguage?.code}
+        cefrLevel={plan.cefrLevel}
+        targetLanguage={languageCode}
         freemiumVoiceRemaining={
           showFreemiumVoicePill ? freemiumVoiceRemaining : undefined
         }
