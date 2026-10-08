@@ -14,6 +14,9 @@ vi.mock('@/components/ui/app-link', () => ({
     children: React.ReactNode
   }) => <a href={href}>{children}</a>,
 }))
+vi.mock('@/components/settings/VoiceProviderSettings', () => ({
+  VoiceProviderSettings: () => null,
+}))
 
 import { AiSection } from '@/components/settings/AiSection'
 import { AiConfigurationBanner } from '@/components/AiConfigurationBanner'
@@ -448,7 +451,7 @@ describe('AI settings', () => {
     })
   })
 
-  it('shows the missing-config banner with an AI anchor and removes it after save refresh', async () => {
+  it('shows missing voice configuration after the LLM is saved', async () => {
     setup(empty)
     render(<AiConfigurationBanner />)
     const link = await screen.findByRole('link', { name: 'openSettings' })
@@ -465,9 +468,7 @@ describe('AI settings', () => {
     save()
     await screen.findByText('saveSuccess')
     await waitFor(() =>
-      expect(
-        screen.queryByRole('link', { name: 'openSettings' })
-      ).not.toBeInTheDocument()
+      expect(screen.getByText('voice.bannerMissingTts')).toBeInTheDocument()
     )
     expect(
       mocks.apiFetch.mock.calls.filter(

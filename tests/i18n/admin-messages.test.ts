@@ -55,9 +55,15 @@ describe('global AI settings messages', () => {
         messages,
         onError: (error) => errors.push(error.message),
       })
-      for (const key of Object.keys(
-        en.settings.ai
-      ) as (keyof typeof en.settings.ai)[]) {
+      type AiStringMessageKey = {
+        [
+          Key in keyof typeof en.settings.ai
+        ]: (typeof en.settings.ai)[Key] extends string ? Key : never
+      }[keyof typeof en.settings.ai]
+      const aiMessageKeys = Object.entries(en.settings.ai)
+        .filter(([, value]) => typeof value === 'string')
+        .map(([key]) => key as AiStringMessageKey)
+      for (const key of aiMessageKeys) {
         expect(t(`settings.ai.${key}`), locale).not.toBe(`settings.ai.${key}`)
       }
       expect(t('settings.sectionAi'), locale).toBeTruthy()
@@ -69,6 +75,33 @@ describe('global AI settings messages', () => {
       expect(JSON.stringify(messages.faq), locale).not.toMatch(
         /LLM_PROVIDER|OPENAI_API_KEY|ANTHROPIC_API_KEY|DEEPSEEK_API_KEY/
       )
+      expect(errors, locale).toEqual([])
+    }
+  })
+})
+
+describe('voice settings messages', () => {
+  it('keeps voice settings keys localized and in sync across all fifteen locales', () => {
+    const expectedKeys = Object.keys(en.settings.ai.voice).sort()
+
+    for (const [locale, messages] of Object.entries({ en, ...locales })) {
+      expect(Object.keys(messages.settings.ai.voice).sort(), locale).toEqual(
+        expectedKeys
+      )
+      const errors: string[] = []
+      const t = createTranslator({
+        locale,
+        messages,
+        onError: (error) => errors.push(error.message),
+      })
+
+      for (const key of Object.keys(
+        en.settings.ai.voice
+      ) as (keyof typeof en.settings.ai.voice)[]) {
+        expect(t(`settings.ai.voice.${key}`), locale).not.toBe(
+          `settings.ai.voice.${key}`
+        )
+      }
       expect(errors, locale).toEqual([])
     }
   })

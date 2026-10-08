@@ -16,10 +16,10 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useLogout } from '@/hooks/useLogout'
 import { ProfileSection } from '@/components/settings/ProfileSection'
 import { ConversationSection } from '@/components/settings/ConversationSection'
-import { VoiceSection } from '@/components/settings/VoiceSection'
 import { UsageLimitsSection } from '@/components/settings/UsageLimitsSection'
 import { AppearanceSection } from '@/components/settings/AppearanceSection'
 import { AiSection } from '@/components/settings/AiSection'
+import { VoiceProviderSettings } from '@/components/settings/VoiceProviderSettings'
 import { BillingSection } from '@/components/settings/BillingSection'
 import { ReviewSection } from '@/components/settings/ReviewSection'
 import {
@@ -119,7 +119,10 @@ export default function SettingsPage() {
         </SettingsPanel>
 
         <SettingsPanel id="ai" title={t('sectionAi')}>
-          <AiSection />
+          <div className="space-y-4">
+            <AiSection />
+            <VoiceProviderSettings />
+          </div>
         </SettingsPanel>
 
         <SettingsPanel id="preferences" title={t('sectionAppearance')}>
@@ -129,7 +132,6 @@ export default function SettingsPage() {
         <SettingsPanel id="voice" title={t('sectionConversation')}>
           <div className="grid gap-4 xl:grid-cols-2">
             <ConversationSection title={t('cardConversationTiming')} />
-            <VoiceSection title={t('cardTutorVoice')} />
           </div>
         </SettingsPanel>
 

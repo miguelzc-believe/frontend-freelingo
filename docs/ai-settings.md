@@ -1,10 +1,12 @@
 # Global AI settings
 
-AI generation uses the instance-wide configuration saved by an administrator at
-`/settings#ai`. This is not a per-user preference and is not set through frontend
-or provider environment variables. A fresh instance has no AI configuration;
-AI learning features are unavailable until an administrator saves one. Voice
-STT/TTS configuration remains separate and is unchanged by this screen.
+Chat, text-to-speech (TTS) and speech-to-text (STT) use independent instance-wide
+configurations saved by an administrator at `/settings#ai`. They are not
+per-user preferences and are not set through frontend/provider environment
+variables. A fresh instance has no AI or speech configuration. Missing chat
+configuration blocks AI learning features; missing TTS/STT respectively disables
+voice playback/microphone input, and voice conversations require all three.
+Static material, history and previously saved media remain available.
 
 ## Configure
 
@@ -23,6 +25,34 @@ STT/TTS configuration remains separate and is unchanged by this screen.
 6. **Test connection** sends the draft for a bounded small generation. It does
    not save, and may incur a small provider token charge.
 7. **Save changes** applies the global configuration immediately.
+
+## OmniRoute voice (TTS and STT)
+
+In the same **Settings → AI** page, configure separate Text to speech and Speech
+to text panels. Both use the OpenAI-compatible OmniRoute API:
+
+- Base URL: `https://omniroute.miguel-zapata.com/v1` (or the corresponding URL
+  for your own OmniRoute deployment).
+- TTS model: full routed audio model ID, e.g. `openai/gpt-4o-mini-tts`.
+- STT model: full routed audio model ID, e.g. `openai/whisper-1` or
+  `groq/whisper-large-v3-turbo`.
+- Enter the API key required by the OmniRoute instance **separately in each
+  panel**. It may be the same key if that key is authorized for both routes.
+- TTS also needs the provider voice name and speed; the default voice is `alloy`.
+
+The route model IDs must be available and have their upstream provider
+credentials/connections configured in OmniRoute; depending on the enabled
+connections, `openai/tts-1` or `openrouter/deepgram/nova-3` may be available, but
+these IDs must be verified against the instance's configured audio providers.
+The local FreeLingo API key alone cannot grant access to a disabled audio
+provider. **Test TTS** makes a
+short synthetic preview and plays it in the browser; **Test STT** sends a
+generated one-second silent WAV and discards the returned transcript. Neither
+test saves the draft or uploads learner audio. Both may incur provider charges.
+Speech settings live in separate PostgreSQL rows from the chat LLM, are encrypted
+with service-specific credential keys derived from `SECRET_KEY`, and are applied
+without restarting the backend. These speech forms currently support OmniRoute's
+OpenAI-compatible `/audio/speech` and `/audio/transcriptions` routes.
 
 Regular users can view only configured status, provider and model, and are told
 to contact their administrator. The authenticated layout displays a prominent
@@ -66,7 +96,7 @@ canonical reload/persistence, errors, draft testing, and status refresh. Browser
 fixtures are not evidence that a real external AI provider works; live provider
 and deployment acceptance must be performed independently by the operator.
 
-### Frontend acceptance (6 October 2026)
+### Original LLM-settings acceptance (6 October 2026, before TTS/STT settings)
 
 Validated with Node 24.16.0 and pnpm 12.5.1 after `pnpm install --frozen-lockfile`:
 
@@ -85,10 +115,10 @@ Validated with Node 24.16.0 and pnpm 12.5.1 after `pnpm install --frozen-lockfil
 - Both dead-code commands completed against the existing reviewed legacy budget;
   their reported unused files/exports are outside the AI settings implementation.
 
-The default full-suite run passed 123 files / 1323 tests but the existing
+The default full-suite run at that time passed 123 files / 1323 tests but the existing
 `tests/scripts/quality-gates.test.ts` CRAP subprocess test exceeded its 5-second
 limit on this host. The isolated CRAP test passed with `--testTimeout=15000`.
 A full run with that timeout passed 123 files / 1324 tests but encountered two
 unrelated async fixture races in `admin-system-banner.test.tsx` and
 `lesson-word-tooltip.test.tsx`; both passed on isolated rerun (8 tests). These
-reruns are environment checks, not changes to the committed test configuration. Final complete validation with bounded worker concurrency (`pnpm exec vitest run --maxWorkers=2 --testTimeout=15000`) passed all 125 files / 1327 tests; the desktop/mobile Playwright checks were then rerun and all 4 passed.
+reruns were environment checks, not changes to the committed test configuration. The voice-settings follow-up has separate final validation documented after its integration.

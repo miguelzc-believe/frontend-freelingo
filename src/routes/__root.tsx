@@ -124,6 +124,7 @@ function Document({ children }: { readonly children: React.ReactNode }) {
     >
       <head>
         <HeadContent />
+        <meta name="fl-public-api-url" content={runtime.publicApiUrl} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
         {runtime.umamiWebsiteId && (

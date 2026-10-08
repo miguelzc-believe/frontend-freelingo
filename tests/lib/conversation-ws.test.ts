@@ -15,6 +15,7 @@ describe('buildConversationWsUrl', () => {
   })
 
   afterEach(() => {
+    document.querySelector('meta[name="fl-public-api-url"]')?.remove()
     setPublicConfig({ publicApiUrl: originalEnv ?? '', umamiWebsiteId: '' })
     vi.unstubAllGlobals()
   })
@@ -61,6 +62,22 @@ describe('buildConversationWsUrl', () => {
     })
     const url = buildConversationWsUrl()
     expect(url).toBe('wss://api.example.com/ws/conversation')
+  })
+
+  it('uses the public API URL rendered by the server', () => {
+    setPublicConfig({ publicApiUrl: '', umamiWebsiteId: '' })
+    const meta = document.createElement('meta')
+    meta.name = 'fl-public-api-url'
+    meta.content = 'http://localhost:8000'
+    document.head.append(meta)
+
+    try {
+      expect(buildConversationWsUrl()).toBe(
+        'ws://localhost:8000/ws/conversation'
+      )
+    } finally {
+      meta.remove()
+    }
   })
 
   it.each([
