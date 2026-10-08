@@ -542,6 +542,125 @@ describe('explicit voice-message conversation', () => {
     expect(form.get('retry')).toBe('false')
   })
 
+  it('cancels capture without uploading or ending the session and sends only the new recording', async () => {
+    render(<ConversationMode />)
+    await start()
+    expect(screen.queryByRole('button', { name: 'cancel' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    const discarded = capture.nodes[0]!
+    act(() =>
+      discarded.emit({ type: 'samples', samples: generatedSamples(3200) })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
+    expect(discarded.port.close).toHaveBeenCalledOnce()
+    expect(discarded.disconnect).toHaveBeenCalledOnce()
+    expect(uploads()).toHaveLength(0)
+    expect(createUrl).not.toHaveBeenCalled()
+    expect(screen.getByText('Hello learner')).toBeInTheDocument()
+    expect(screen.queryByText('processing')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'cancel' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'record' })).toHaveFocus()
+    expect(
+      mocks.api.mock.calls.filter(([url]) => String(url).endsWith('/close'))
+    ).toHaveLength(0)
+
+    act(() => {
+      discarded.emit({ type: 'samples', samples: generatedSamples(3200) })
+      discarded.emit({ type: 'stopped' })
+    })
+    await recordAndStop()
+    await screen.findByText('Hello there')
+    expect(uploads()).toHaveLength(1)
+    const form = uploads()[0]?.[1].body as FormData
+    const bytes = new DataView(await blobBytes(form.get('audio') as Blob))
+    expect(bytes.getUint32(40, true)).toBe(1600 * 2)
+    expect(capture.media).toHaveBeenCalledTimes(2)
+    expect(capture.stopTrack).toHaveBeenCalledTimes(2)
+    expect(capture.close).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels while permission is pending and ignores the late grant after recording again', async () => {
+    const permission = deferred<MediaStream>()
+    const lateStop = vi.fn()
+    const lateStream = {
+      getTracks: () => [{ stop: lateStop }],
+    } as unknown as MediaStream
+    capture.media.mockReturnValueOnce(permission.promise)
+    render(<ConversationMode />)
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(capture.close).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    await act(async () => permission.resolve(lateStream))
+    expect(lateStop).toHaveBeenCalledOnce()
+    expect(capture.stopTrack).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'stopAndSend' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'cancel' })).toBeEnabled()
+    expect(uploads()).toHaveLength(0)
+
+    act(() =>
+      capture.nodes[0]!.emit({ type: 'samples', samples: generatedSamples() })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'stopAndSend' }))
+    await act(async () => capture.nodes[0]!.emit({ type: 'stopped' }))
+    await screen.findByText('Hello there')
+    expect(uploads()).toHaveLength(1)
+  })
+
+  it('ignores a cancelled initialization failure without disrupting the next recording', async () => {
+    const module = deferred<void>()
+    capture.addModule.mockReturnValueOnce(module.promise)
+    render(<ConversationMode />)
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.addModule).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    await act(async () => module.reject(new Error('cancelled module load')))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: 'stopAndSend' })).toBeEnabled()
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(capture.stopTrack).toHaveBeenCalledTimes(2)
+    expect(uploads()).toHaveLength(0)
+  })
+
+  it('preserves previous messages and restores their playback after cancelling', async () => {
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    await screen.findByRole('button', { name: 'pause' })
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(2))
+    screen
+      .getAllByRole('button', { name: 'play' })
+      .forEach((button) => expect(button).toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(screen.getByText('Hello there')).toBeInTheDocument()
+    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    expect(createUrl).toHaveBeenCalledTimes(2)
+    expect(revokeUrl).not.toHaveBeenCalled()
+    const players = screen.getAllByRole('button', { name: 'play' })
+    expect(players).toHaveLength(2)
+    players.forEach((button) => expect(button).toBeEnabled())
+    fireEvent.click(players[0]!)
+    await screen.findByRole('button', { name: 'pause' })
+    expect(play).toHaveBeenCalledTimes(2)
+    expect(uploads()).toHaveLength(1)
+  })
+
   it('permits exactly two manual STT retries using the stable UUID and byte-identical audio', async () => {
     result = {
       ...complete,

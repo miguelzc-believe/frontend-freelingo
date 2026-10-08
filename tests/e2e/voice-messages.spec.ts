@@ -305,6 +305,50 @@ test('explicit capture, valid WAV upload, authenticated per-message players and 
   ).toEqual([])
 })
 
+test('cancel discards native capture, keeps the session and allows a fresh recording', async ({
+  page,
+}) => {
+  const data = await fixture(page)
+  const cancel = page.getByRole('button', { name: 'Cancel', exact: true })
+  const recordButton = page.getByRole('button', { name: 'Record', exact: true })
+  await expect(cancel).toHaveCount(0)
+  await record(page)
+  await expect(cancel).toBeVisible()
+  await cancel.focus()
+  await page.keyboard.press('Enter')
+  await expect(cancel).toHaveCount(0)
+  await expect(recordButton).toBeEnabled()
+  await expect(recordButton).toBeFocused()
+  await expect.poll(async () => (await observed(page)).contextsClosed).toBe(1)
+  expect((await observed(page)).tracksStopped).toBeGreaterThan(0)
+  expect((await observed(page)).urls).toBe(0)
+  expect(data.uploads).toHaveLength(0)
+  expect(data.closeCount()).toBe(0)
+  await expect(page.locator('audio')).toHaveCount(0)
+  await expect(
+    page.getByText('Hello browser learner', { exact: true })
+  ).toBeVisible()
+
+  const previousPcm = (await observed(page)).pcm
+  await recordButton.click()
+  await expect
+    .poll(async () => (await observed(page)).pcm)
+    .toBeGreaterThan(previousPcm)
+  expect((await observed(page)).micRequests).toBe(2)
+  await page.getByRole('button', { name: 'Stop and send', exact: true }).click()
+  await expect(cancel).toHaveCount(0)
+  await expect.poll(() => data.uploads.length).toBe(1)
+  extractAudio(data.uploads[0]!)
+  await expect(
+    page.getByText('Generated input transcript', { exact: true })
+  ).toBeVisible()
+  await expect.poll(async () => (await observed(page)).contextsClosed).toBe(2)
+  await expect(page.locator('audio')).toHaveCount(2)
+  expect(data.closeCount()).toBe(0)
+  await page.getByRole('button', { name: 'End session', exact: true }).click()
+  await expect.poll(() => data.closeCount()).toBe(1)
+})
+
 test('STT failure exposes only two manual retries using byte-identical WAV and UUID', async ({
   page,
 }) => {

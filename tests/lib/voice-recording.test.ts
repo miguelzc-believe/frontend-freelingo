@@ -73,6 +73,23 @@ describe('one-shot voice capture', () => {
     expect((await stopped)!.size).toBe(44 + 16000 * 2)
   })
 
+  it('discards active capture and clears its automatic send timer on cancel', async () => {
+    const limit = vi.fn()
+    const recording = createVoiceRecording(1, limit)
+    await recording.start()
+    const node = capture.nodes[0]!
+    node.emit({ type: 'samples', samples: generatedSamples() })
+    recording.cancel()
+    await vi.advanceTimersByTimeAsync(2000)
+    node.emit({ type: 'stopped' })
+    expect(limit).not.toHaveBeenCalled()
+    expect(await recording.stop()).toBeNull()
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
+    expect(node.port.close).toHaveBeenCalledOnce()
+    expect(capture.offline).not.toHaveBeenCalled()
+  })
+
   it('cleans empty recording without uploadable data', async () => {
     const recording = createVoiceRecording(120, vi.fn())
     await recording.start()

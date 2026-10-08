@@ -119,6 +119,7 @@ export default function ConversationMode({
   const runRef = useRef<SessionRun | null>(null)
   const autoStartedScopeRef = useRef<string | null>(null)
   const recorderRef = useRef<VoiceRecording | null>(null)
+  const recordButtonRef = useRef<HTMLButtonElement | null>(null)
   const mountedRef = useRef(true)
   const transcriptEndRef = useRef<HTMLDivElement | null>(null)
   const {
@@ -629,6 +630,20 @@ export default function ConversationMode({
     }
   }
 
+  function cancelRecording() {
+    const run = runRef.current
+    const recorder = recorderRef.current
+    if (!run || !isCurrent(run) || run.busy || !recorder) return
+    // Invalidate this capture before cleanup so late initialization/limit work
+    // cannot send it or interfere with the next recording in the same session.
+    recorderRef.current = null
+    recorder.cancel()
+    playback.blocked = false
+    setRecording(false)
+    setErrorMsg(null)
+    recordButtonRef.current?.focus()
+  }
+
   async function record() {
     const run = runRef.current
     if (!run?.session || !isCurrent(run) || run.busy || recorderRef.current)
@@ -870,18 +885,30 @@ export default function ConversationMode({
         </p>
         {active ? (
           <>
-            <button
-              disabled={busy}
-              onClick={() => {
-                const run = runRef.current
-                const recorder = recorderRef.current
-                if (run && recorder) void stopRecording(run, recorder)
-                else void record()
-              }}
-              className="border-fl-border text-fl-fg hover:border-fl-border-2 border px-5 py-3 font-mono text-sm tracking-widest uppercase disabled:opacity-40"
-            >
-              {recording ? v('stopAndSend') : v('record')}
-            </button>
+            <div className="flex flex-wrap justify-center gap-3">
+              <button
+                ref={recordButtonRef}
+                disabled={busy}
+                onClick={() => {
+                  const run = runRef.current
+                  const recorder = recorderRef.current
+                  if (run && recorder) void stopRecording(run, recorder)
+                  else void record()
+                }}
+                className="border-fl-border text-fl-fg hover:border-fl-border-2 border px-5 py-3 font-mono text-sm tracking-widest uppercase disabled:opacity-40"
+              >
+                {recording ? v('stopAndSend') : v('record')}
+              </button>
+              {recording && (
+                <button
+                  disabled={busy}
+                  onClick={cancelRecording}
+                  className="border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg border px-5 py-3 font-mono text-sm tracking-widest uppercase disabled:opacity-40"
+                >
+                  {tCommon('cancel')}
+                </button>
+              )}
+            </div>
             {runRef.current?.session && (
               <p className="text-fl-muted-3 font-mono text-xs">
                 {v('recordingLimit', {
