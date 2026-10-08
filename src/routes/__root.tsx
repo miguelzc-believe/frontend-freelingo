@@ -12,7 +12,6 @@ import { CookieBanner } from '@/components/CookieBanner'
 import NotFound from '@/app/not-found'
 import ErrorPage from '@/app/error'
 import { getRuntime } from '@/server/runtime'
-import { setPublicConfig } from '@/lib/public-config'
 import styles from '@/app/globals.css?url'
 
 const themeScript = `(function(){try{var t='system';var s=localStorage.getItem('fl-theme');if(s){var p=JSON.parse(s);t=p&&p.state&&p.state.theme?p.state.theme:t}var l=t==='light'||(t==='system'&&window.matchMedia('(prefers-color-scheme: light)').matches);if(l){document.documentElement.setAttribute('data-theme','light')}else{document.documentElement.removeAttribute('data-theme')}}catch(e){}})();`
@@ -110,12 +109,6 @@ function Document({ children }: { readonly children: React.ReactNode }) {
         </body>
       </html>
     )
-  // Media configuration is browser-only; no user state is written on the server.
-  if (typeof window !== 'undefined')
-    setPublicConfig({
-      publicApiUrl: runtime.publicApiUrl,
-      umamiWebsiteId: runtime.umamiWebsiteId,
-    })
   return (
     <html
       lang={runtime.locale}
@@ -124,7 +117,6 @@ function Document({ children }: { readonly children: React.ReactNode }) {
     >
       <head>
         <HeadContent />
-        <meta name="fl-public-api-url" content={runtime.publicApiUrl} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
         {runtime.umamiWebsiteId && (

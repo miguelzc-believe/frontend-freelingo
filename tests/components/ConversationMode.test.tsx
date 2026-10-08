@@ -6,152 +6,158 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RealTimeVADOptions } from '@ricky0123/vad-web'
+import ConversationMode from '@/components/conversation/ConversationMode'
+import { useAuthStore } from '@/store/auth'
+import type { VoiceSession, VoiceTurnResult } from '@/lib/conversation-api'
+import {
+  blobBytes,
+  captureFixture,
+  deferred,
+  generatedSamples,
+} from '../helpers/voice-capture'
+import { float32ToWav } from '@/lib/audio'
 
 const mocks = vi.hoisted(() => ({
-  options: {} as Partial<RealTimeVADOptions>,
-  create: vi.fn(),
-  start: vi.fn(),
-  destroy: vi.fn(),
-  startedStream: null as MediaStream | null,
-  getUserMedia: vi.fn(),
-  apiFetch: vi.fn(),
-  enqueue: vi.fn(),
-  cancel: vi.fn(),
-  closeAudio: vi.fn(),
-  push: vi.fn(),
+  api: vi.fn(),
   starters: [] as string[],
-}))
-
-vi.mock('@ricky0123/vad-web', () => ({
-  MicVAD: {
-    new: (options: Partial<RealTimeVADOptions>) => mocks.create(options),
-  },
+  push: vi.fn(),
+  review: vi.fn(),
 }))
 vi.mock('use-intl', () => ({
   useLocale: () => 'en',
   useTranslations: () =>
     Object.assign((key: string) => key, { raw: () => mocks.starters }),
 }))
-vi.mock('@/lib/navigation', () => ({
-  useRouter: () => ({ push: mocks.push }),
-}))
-vi.mock('@/lib/api', () => ({ apiFetch: mocks.apiFetch }))
-vi.mock('@/lib/audio', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/audio')>()),
-  createAudioQueue: () => ({ enqueue: mocks.enqueue, cancel: mocks.cancel }),
-}))
+vi.mock('@/lib/api', () => ({ apiFetch: mocks.api }))
+vi.mock('@/lib/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }))
 vi.mock('@/components/reviews/ReviewPrompt', () => ({
-  ReviewPrompt: () => null,
+  ReviewPrompt: ({ open }: { open: boolean }) =>
+    open ? <div>reviewPrompt</div> : null,
   getReviewPromptDismissal: () => null,
 }))
 vi.mock('@/lib/review-prompt-triggers', () => ({
-  shouldShowVoiceReviewPrompt: () => false,
-}))
-vi.mock('@/components/conversation/StatusIndicator', () => ({
-  default: ({ userSpeaking }: { userSpeaking: boolean }) => (
-    <div data-testid="speaking">{String(userSpeaking)}</div>
-  ),
+  shouldShowVoiceReviewPrompt: (...args: unknown[]) => mocks.review(...args),
 }))
 
-import ConversationMode from '@/components/conversation/ConversationMode'
-import { useAuthStore } from '@/store/auth'
-import { useConfigStore } from '@/store/config'
-
-const originalLocationDescriptor = Object.getOwnPropertyDescriptor(
-  window,
-  'location'
-)
-
-class MockWebSocket {
-  static OPEN = 1
-  static instances: MockWebSocket[] = []
-  readyState = 1
-  binaryType = ''
-  onopen: (() => void) | null = null
-  onmessage: ((event: { data: unknown }) => void) | null = null
-  onerror: (() => void) | null = null
-  onclose: ((event: { code: number; reason: string }) => void) | null = null
-  send = vi.fn()
-  close = vi.fn(() => {
-    this.readyState = 3
-  })
-
-  constructor() {
-    MockWebSocket.instances.push(this)
-  }
-
-  message(message: unknown) {
-    this.onmessage?.({ data: JSON.stringify(message) })
-  }
+const session: VoiceSession = {
+  session_id: 'session-1',
+  conversation_id: 7,
+  target_language: 'en-GB',
+  cefr_level: 'B1',
+  expires_at: new Date(Date.now() + 600_000).toISOString(),
+  inactivity_expires_at: new Date(Date.now() + 180_000).toISOString(),
+  max_recording_seconds: 120,
 }
-
-function microphone() {
-  const stop = vi.fn()
-  return {
-    stream: { getTracks: () => [{ stop }] } as unknown as MediaStream,
-    stop,
-  }
+const complete: VoiceTurnResult = {
+  turn_id: 'turn-1',
+  user_text: 'Hello there',
+  assistant_text: 'Welcome back',
+  user_audio_url:
+    '/api/conversation/sessions/session-1/turns/turn-1/audio/user',
+  assistant_audio_url:
+    '/api/conversation/sessions/session-1/turns/turn-1/audio/assistant',
+  status: 'complete',
+  stt_attempts: 1,
+  memory_updated: false,
+  remaining_seconds: 600,
+  inactivity_expires_at: session.inactivity_expires_at,
 }
-
-async function start(label = 'start') {
-  const count = MockWebSocket.instances.length
-  fireEvent.click(screen.getByRole('button', { name: label }))
-  await waitFor(() => expect(MockWebSocket.instances).toHaveLength(count + 1))
-  const ws = MockWebSocket.instances[count]
-  act(() => ws!.onopen?.())
-  ws!.send.mockClear()
-  return ws
+const greeting: VoiceTurnResult = {
+  ...complete,
+  turn_id: 'greeting',
+  user_text: null,
+  assistant_text: 'Hello learner',
+  assistant_audio_url: null,
 }
+let capture: ReturnType<typeof captureFixture>
+let result: VoiceTurnResult
+let play: ReturnType<typeof vi.spyOn>
+let pause: ReturnType<typeof vi.spyOn>
+let createUrl: ReturnType<typeof vi.fn>
+let revokeUrl: ReturnType<typeof vi.fn>
+let closeFetch: ReturnType<typeof vi.fn>
 
-function speak() {
-  mocks.options.onSpeechStart?.()
-  mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.05))
+function response(value: unknown, status = 200) {
+  return { ok: status < 400, status, json: async () => value }
+}
+function uploads() {
+  return mocks.api.mock.calls.filter(([url]) => String(url).endsWith('/turns'))
+}
+async function start() {
+  fireEvent.click(screen.getByRole('button', { name: 'start' }))
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+  )
+}
+async function recordAndStop() {
+  fireEvent.click(screen.getByRole('button', { name: 'record' }))
+  await waitFor(() => expect(capture.nodes.length).toBeGreaterThan(0))
+  const node = capture.nodes.at(-1)!
+  act(() => node.emit({ type: 'samples', samples: generatedSamples() }))
+  fireEvent.click(screen.getByRole('button', { name: 'stopAndSend' }))
+  await act(async () => node.emit({ type: 'stopped' }))
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  MockWebSocket.instances = []
-  mocks.startedStream = null
-  mocks.getUserMedia.mockReset().mockResolvedValue(microphone().stream)
-  mocks.create.mockImplementation(async (options) => {
-    mocks.options = options
-    return { start: mocks.start, destroy: mocks.destroy }
-  })
-  mocks.start.mockImplementation(async () => {
-    mocks.startedStream = (await mocks.options.getStream?.()) ?? null
-  })
-  mocks.destroy.mockResolvedValue(undefined)
-  mocks.closeAudio.mockResolvedValue(undefined)
-  mocks.enqueue.mockResolvedValue(undefined)
-  mocks.apiFetch.mockResolvedValue({ ok: true, json: async () => null })
-  mocks.starters = []
-  vi.stubGlobal('WebSocket', MockWebSocket)
-  vi.stubGlobal(
-    'AudioContext',
-    class {
-      state = 'running'
-      close = mocks.closeAudio
-    }
+  result = { ...complete }
+  capture = captureFixture()
+  createUrl = vi.fn(
+    (blob: Blob) => `blob:audio-${blob.size}-${createUrl.mock.calls.length}`
   )
-  vi.stubGlobal('navigator', {
-    mediaDevices: { getUserMedia: mocks.getUserMedia },
+  revokeUrl = vi.fn()
+  closeFetch = vi.fn().mockResolvedValue({ ok: true })
+  vi.stubGlobal('fetch', closeFetch)
+  vi.stubGlobal(
+    'URL',
+    Object.assign(URL, {
+      createObjectURL: createUrl,
+      revokeObjectURL: revokeUrl,
+    })
+  )
+  play = vi
+    .spyOn(HTMLMediaElement.prototype, 'play')
+    .mockImplementation(function (this: HTMLMediaElement) {
+      this.dispatchEvent(new Event('play'))
+      return Promise.resolve()
+    })
+  pause = vi
+    .spyOn(HTMLMediaElement.prototype, 'pause')
+    .mockImplementation(function (this: HTMLMediaElement) {
+      this.dispatchEvent(new Event('pause'))
+    })
+  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
+  mocks.starters = []
+  mocks.review.mockReturnValue(false)
+  mocks.api.mockImplementation(async (url: string) => {
+    if (url === '/api/conversation/sessions') return response(session)
+    if (url.endsWith('/greeting')) return response(greeting)
+    if (url.endsWith('/turns')) return response(result)
+    if (url.endsWith('/activity'))
+      return response({ ...session, remaining_seconds: 600 })
+    if (url.includes('/audio/'))
+      return {
+        ok: true,
+        blob: async () =>
+          new Blob([float32ToWav(generatedSamples(), 16000)], {
+            type: 'audio/wav',
+          }),
+      }
+    return response(null)
   })
-  Element.prototype.scrollIntoView = vi.fn()
   useAuthStore.setState({ accessToken: 'token', user: null })
-  localStorage.removeItem('tts_voice')
+  Element.prototype.scrollIntoView = vi.fn()
 })
-
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  if (originalLocationDescriptor)
-    Object.defineProperty(window, 'location', originalLocationDescriptor)
 })
 
-describe('ConversationMode session lifecycle', () => {
-  it('shows the first six translated starters in a stable alphabetical order', () => {
+describe('explicit voice-message conversation', () => {
+  it('orders the first six starters deterministically', () => {
     mocks.starters = [
       'Zulu',
       'Alpha',
@@ -161,918 +167,1107 @@ describe('ConversationMode session lifecycle', () => {
       'Charlie',
       'Extra',
     ]
-
     render(<ConversationMode />)
-
-    const starterButtons = screen
-      .getByText('startersHint')
-      .parentElement?.querySelectorAll('button')
     expect(
-      Array.from(starterButtons ?? [], (button) => button.textContent)
+      Array.from(
+        screen
+          .getByText('startersHint')
+          .parentElement!.querySelectorAll('button'),
+        (button) => button.textContent
+      )
     ).toEqual(['Alpha', 'Bravo', 'Charlie', 'Xray', 'Yankee', 'Zulu'])
   })
 
-  it('does not request the microphone or create VAD until start is pressed', () => {
-    render(<ConversationMode />)
-
-    expect(mocks.getUserMedia).not.toHaveBeenCalled()
-    expect(mocks.create).not.toHaveBeenCalled()
-  })
-
-  it('auto-starts when opened from the chat overlay', async () => {
-    render(<ConversationMode autoStart />)
-
-    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
-    expect(mocks.getUserMedia).toHaveBeenCalledTimes(1)
-    act(() => MockWebSocket.instances[0]!.onopen?.())
-    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
-  })
-
-  it('does not acquire resources when started without an access token', () => {
-    useAuthStore.setState({ accessToken: null, user: null })
-    render(<ConversationMode />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-
-    expect(mocks.getUserMedia).not.toHaveBeenCalled()
-    expect(mocks.create).not.toHaveBeenCalled()
-    expect(
-      mocks.apiFetch.mock.calls.some(
-        ([url]) => url === '/api/conversation/warmup'
-      )
-    ).toBe(false)
-    expect(MockWebSocket.instances).toHaveLength(0)
-  })
-
-  it('reports AudioContext construction failure without acquiring other resources', async () => {
-    vi.stubGlobal(
-      'AudioContext',
-      class {
-        constructor() {
-          throw new Error('AudioContext unavailable')
-        }
-      }
-    )
-    render(<ConversationMode />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-
-    expect(await screen.findByText('✕ errorConnection')).toBeInTheDocument()
-    expect(mocks.getUserMedia).not.toHaveBeenCalled()
-    expect(mocks.create).not.toHaveBeenCalled()
-    expect(
-      mocks.apiFetch.mock.calls.some(
-        ([url]) => url === '/api/conversation/warmup'
-      )
-    ).toBe(false)
-    expect(MockWebSocket.instances).toHaveLength(0)
-  })
-
-  it('constructs AudioContext synchronously in the start action before pending resume', async () => {
-    let finishResume!: () => void
-    const resume = new Promise<void>((resolve) => {
-      finishResume = resolve
-    })
-    const construct = vi.fn(function () {
-      return {
-        state: 'suspended',
-        resume: () => resume,
-        close: mocks.closeAudio,
-      }
-    })
-    vi.stubGlobal('AudioContext', construct)
-    render(<ConversationMode />)
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    expect(construct).toHaveBeenCalledOnce()
-    expect(mocks.getUserMedia).not.toHaveBeenCalled()
-    expect(mocks.create).not.toHaveBeenCalled()
-    await act(async () => finishResume())
-    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
-    expect(mocks.getUserMedia).toHaveBeenCalledOnce()
-  })
-
-  it('continues starting after a suspended audio context cannot resume', async () => {
-    vi.stubGlobal(
-      'AudioContext',
-      class {
-        state = 'suspended'
-        resume = vi.fn().mockRejectedValue(new Error('resume denied'))
-        close = mocks.closeAudio
-      }
-    )
-    render(<ConversationMode />)
-
-    const ws = await start()
-
-    expect(MockWebSocket.instances).toHaveLength(1)
-    expect(ws!.close).not.toHaveBeenCalled()
-  })
-
-  it('disables another start while warmup is pending', async () => {
-    let finishWarmup!: (response: {
-      ok: boolean
-      json: () => Promise<{ detail?: string }>
-    }) => void
-    mocks.apiFetch.mockImplementation((url: string) =>
-      url === '/api/conversation/warmup'
-        ? new Promise((resolve) => {
-            finishWarmup = resolve
-          })
-        : Promise.resolve({ ok: true, json: async () => null })
-    )
-    render(<ConversationMode />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    const warming = await screen.findByRole('button', { name: 'statusWarming' })
-    expect(warming).toBeDisabled()
-    fireEvent.click(warming)
-
-    expect(mocks.getUserMedia).toHaveBeenCalledTimes(1)
-    expect(
-      mocks.apiFetch.mock.calls.filter(
-        ([url]) => url === '/api/conversation/warmup'
-      )
-    ).toHaveLength(1)
-    await act(async () => finishWarmup({ ok: false, json: async () => ({}) }))
-  })
-
-  it('retries denied permission without poisoning VAD', async () => {
-    mocks.getUserMedia.mockRejectedValueOnce(
-      new DOMException('Denied', 'NotAllowedError')
-    )
-    render(<ConversationMode />)
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    await screen.findByText(/errorMic/)
-    expect(mocks.start).not.toHaveBeenCalled()
-    expect(mocks.create).not.toHaveBeenCalled()
-    await start('startNew')
-    expect(mocks.start).toHaveBeenCalledTimes(1)
-    expect(mocks.startedStream).not.toBeNull()
-  })
-
-  it('shows a localized message when a local voice service is unavailable', async () => {
-    mocks.apiFetch.mockImplementation((url: string) =>
-      url === '/api/conversation/warmup'
-        ? Promise.resolve({
-            ok: false,
-            status: 503,
-            json: async () => ({ detail: 'voice_services_unavailable' }),
-          })
-        : Promise.resolve({ ok: true, json: async () => null })
-    )
-    render(<ConversationMode />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-
-    expect(
-      await screen.findByText('✕ errorVoiceServicesUnavailable')
-    ).toBeInTheDocument()
-    expect(MockWebSocket.instances).toHaveLength(0)
-  })
-
-  it('stops a microphone granted after unmount without starting VAD or WS', async () => {
-    const mic = microphone()
-    let grant!: (stream: MediaStream) => void
-    mocks.getUserMedia.mockReturnValue(
-      new Promise<MediaStream>((resolve) => {
-        grant = resolve
-      })
-    )
-    const view = render(<ConversationMode />)
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    view.unmount()
-    await act(async () => {
-      grant(mic.stream)
-    })
-    expect(mic.stop).toHaveBeenCalledTimes(1)
-    expect(mocks.start).not.toHaveBeenCalled()
-    expect(mocks.create).not.toHaveBeenCalled()
-    expect(MockWebSocket.instances).toHaveLength(0)
-  })
-
-  it('releases the VAD instance and microphone when the session ends', async () => {
-    const mic = microphone()
-    mocks.getUserMedia.mockResolvedValueOnce(mic.stream)
-    render(<ConversationMode />)
-    const ws = await start()
-
-    fireEvent.click(screen.getByRole('button', { name: 'stop' }))
-
-    await waitFor(() => expect(mocks.destroy).toHaveBeenCalledTimes(1))
-    expect(mic.stop).toHaveBeenCalledTimes(1)
-    expect(ws!.close).toHaveBeenCalledTimes(1)
-    expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
-  })
-
-  it.each(['json', 'onerror', 'onclose'])(
-    'cleans up %s once and ignores obsolete callbacks after restart',
-    async (kind) => {
-      const mic = microphone()
-      mocks.getUserMedia.mockResolvedValueOnce(mic.stream)
-      render(<ConversationMode />)
-      const ws = await start()
-      const oldOpen = ws!.onopen!
-      const oldMessage = ws!.onmessage!
-      const oldError = ws!.onerror!
-      const oldClose = ws!.onclose!
-      act(() => {
-        if (kind === 'json')
-          ws!.message({ type: 'error', code: 'unauthorized' })
-        else if (kind === 'onerror') oldError()
-        else oldClose({ code: 1006, reason: '' })
-        oldError()
-        oldClose({ code: 1006, reason: '' })
-      })
-      await waitFor(() => expect(mocks.destroy).toHaveBeenCalledTimes(1))
-      expect(mic.stop).toHaveBeenCalledTimes(1)
-      expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
-      expect(ws!.close).toHaveBeenCalledTimes(1)
-      const current = await start('startNew')
-      act(() => {
-        oldOpen()
-        oldMessage({
-          data: JSON.stringify({ type: 'session_end', reason: 'inactivity' }),
-        })
-        oldError()
-        oldClose({ code: 1006, reason: '' })
-      })
-      expect(current!.close).not.toHaveBeenCalled()
-      expect(screen.getByRole('button', { name: 'stop' })).toBeDefined()
-    }
-  )
-
-  it.each([
-    { type: 'status', value: 'listening' },
-    { type: 'turn_complete' },
-    ...['stt_failed', 'llm_failed', 'tts_failed'].map((code) => ({
-      type: 'error',
-      code,
-    })),
-  ])(
-    'blocks immediately and releases on $type $value $code',
-    async (outcome) => {
-      render(<ConversationMode />)
-      const ws = await start()
-      act(() => {
-        speak()
-        speak()
-      })
-      expect(ws!.send).toHaveBeenCalledTimes(1)
-      act(() => ws!.message({ type: 'status', value: 'transcribing' }))
-      act(() => speak())
-      expect(ws!.send).toHaveBeenCalledTimes(1)
-      act(() => ws!.message(outcome))
-      expect(screen.getByRole('button', { name: 'stop' })).toBeDefined()
-      act(() => speak())
-      expect(ws!.send).toHaveBeenCalledTimes(2)
-      expect(ws!.close).not.toHaveBeenCalled()
-    }
-  )
-
-  it.each([
-    ['stt_failed', 'errorTranscription'],
-    ['llm_failed', 'errorResponse'],
-    ['tts_failed', 'errorSpeech'],
-    ['auth_failed', 'errorUnauthorized'],
-    ['services_disabled', 'errorServicesDisabled'],
-    ['quota_exceeded_sessions', 'quotaExceededSessions'],
-    ['quota_exceeded_time', 'quotaExceededTime'],
-    ['quota_exceeded_tokens', 'quotaExceededTokens'],
-    ['no_active_plan', 'noActivePlan'],
-    ['unknown_server_error', 'errorMessage'],
-  ])(
-    'localizes %s without displaying the backend message',
-    async (code, key) => {
-      render(<ConversationMode />)
-      const ws = await start()
-
-      act(() =>
-        ws!.message({
-          type: 'error',
-          code,
-          message: 'Untranslated backend failure',
-        })
-      )
-
-      expect(screen.getByText(new RegExp(key))).toBeInTheDocument()
-      expect(screen.queryByText(/Untranslated backend failure/)).toBeNull()
-    }
-  )
-
-  it.each(['onerror', 'onclose'])(
-    'localizes %s without displaying transport diagnostics',
-    async (event) => {
-      render(<ConversationMode />)
-      const ws = await start()
-
-      act(() => {
-        if (event === 'onerror') ws!.onerror?.()
-        else ws!.onclose?.({ code: 1011, reason: 'Untranslated close reason' })
-      })
-
-      expect(screen.getByText('✕ errorConnection')).toBeInTheDocument()
-      expect(
-        screen.queryByText(/Untranslated close reason|\[onerror|\[code/)
-      ).toBeNull()
-    }
-  )
-
-  it('ignores malformed text frames without interrupting the live session', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-
-    act(() => ws!.onmessage?.({ data: '{invalid json' }))
-
-    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
-    expect(screen.queryByText('errorMessage')).not.toBeInTheDocument()
-  })
-
-  it('clears visual speech and discards the unfinished segment on misfire', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-    act(() => {
-      mocks.options.onSpeechStart?.()
-    })
-    expect(screen.getByTestId('speaking').textContent).toBe('true')
-    act(() => {
-      mocks.options.onVADMisfire?.()
-    })
-    expect(screen.getByTestId('speaking').textContent).toBe('false')
-    act(() => {
-      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.05))
-    })
-    expect(ws!.send).not.toHaveBeenCalled()
-  })
-
-  it('clears speaking and sends nothing when VAD ends with empty audio', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-
-    act(() => mocks.options.onSpeechStart?.())
-    expect(screen.getByTestId('speaking').textContent).toBe('true')
-    act(() => mocks.options.onSpeechEnd?.(new Float32Array()))
-
-    expect(screen.getByTestId('speaking').textContent).toBe('false')
-    expect(ws!.send).not.toHaveBeenCalled()
-  })
-
-  it('discards short high-volume audio that does not meet the speech duration', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-
-    act(() => {
-      mocks.options.onSpeechStart?.()
-      mocks.options.onSpeechEnd?.(new Float32Array(8000).fill(0.2))
-    })
-
-    expect(screen.getByTestId('speaking').textContent).toBe('false')
-    expect(ws!.send).not.toHaveBeenCalled()
-  })
-
-  it('does not send speech when the websocket is no longer open', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-    ws!.readyState = 3
-
-    act(() => {
-      mocks.options.onSpeechStart?.()
-      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.05))
-    })
-
-    expect(ws!.send).not.toHaveBeenCalled()
-  })
-
-  it('discards a full-length short-noise segment without sending it', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-
-    act(() => {
-      mocks.options.onSpeechStart?.()
-      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.005))
-    })
-
-    expect(screen.getByTestId('speaking').textContent).toBe('false')
-    expect(ws!.send).not.toHaveBeenCalled()
-  })
-
-  it('ignores an utterance that ends after the server ends the session', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-    act(() => ws!.message({ type: 'session_end', reason: 'inactivity' }))
-    await waitFor(() => expect(mocks.destroy).toHaveBeenCalledTimes(1))
-    ws!.send.mockClear()
-
-    act(() => {
-      mocks.options.onSpeechStart?.()
-      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.05))
-    })
-
-    expect(screen.getByTestId('speaking').textContent).toBe('false')
-    expect(ws!.send).not.toHaveBeenCalled()
-  })
-
-  it('ignores low-RMS microphone leakage while the assistant is speaking', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-    act(() => ws!.message({ type: 'status', value: 'speaking' }))
-
-    act(() => {
-      mocks.options.onSpeechStart?.()
-      mocks.options.onSpeechEnd?.(new Float32Array(24000).fill(0.02))
-    })
-
-    expect(screen.getByTestId('speaking').textContent).toBe('false')
-    expect(ws!.send).not.toHaveBeenCalled()
-  })
-
-  it('ignores a Blob decoded after a new session has started', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-    let decode!: (buffer: ArrayBuffer) => void
-    const blob = new Blob()
-    blob.arrayBuffer = vi.fn(
-      () =>
-        new Promise<ArrayBuffer>((resolve) => {
-          decode = resolve
-        })
-    )
-    act(() => ws!.onmessage?.({ data: blob }))
-    act(() => ws!.onerror?.())
-    const current = await start('startNew')
-    await act(async () => {
-      decode(new ArrayBuffer(8))
-    })
-    expect(mocks.enqueue).not.toHaveBeenCalled()
-    expect(current!.close).not.toHaveBeenCalled()
-    act(() => speak())
-    expect(current!.send).toHaveBeenCalledTimes(1)
-  })
-
-  it('releases resources after a WAV send throws and allows restart', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-    ws!.send.mockImplementationOnce(() => {
-      throw new Error('Transport closed')
-    })
-    act(() => speak())
-    expect(ws!.close).toHaveBeenCalledTimes(1)
-    const current = await start('startNew')
-    act(() => speak())
-    expect(current!.send).toHaveBeenCalledTimes(1)
-  })
-
-  it.each(['creation', 'start'])(
-    'reports VAD %s failures, releases the microphone, and allows retry',
-    async (failure) => {
-      const mic = microphone()
-      mocks.getUserMedia.mockResolvedValue(mic.stream)
-      if (failure === 'creation') {
-        mocks.create.mockRejectedValueOnce(new Error('VAD unavailable'))
-      } else {
-        mocks.start.mockRejectedValueOnce(new Error('VAD failed to start'))
-      }
-      render(<ConversationMode />)
-
-      fireEvent.click(screen.getByRole('button', { name: 'start' }))
-      expect(await screen.findByText('✕ errorVadInit')).toBeInTheDocument()
-      expect(mic.stop).toHaveBeenCalledTimes(1)
-      expect(MockWebSocket.instances).toHaveLength(0)
-
-      await start('startNew')
-      expect(MockWebSocket.instances).toHaveLength(1)
-    }
-  )
-
-  it('reports a rejected warmup and does not open the websocket', async () => {
-    mocks.apiFetch.mockImplementation((url: string) =>
-      url === '/api/conversation/warmup'
-        ? Promise.reject(new Error('network failure'))
-        : Promise.resolve({ ok: true, json: async () => null })
-    )
-    render(<ConversationMode />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-
-    expect(
-      await screen.findByText('✕ errorConnection [warmup request failed]')
-    ).toBeInTheDocument()
-    expect(MockWebSocket.instances).toHaveLength(0)
-    expect(mocks.destroy).toHaveBeenCalledTimes(1)
-  })
-
-  it('reports a generic non-OK warmup and releases the session without opening WS', async () => {
-    const mic = microphone()
-    mocks.getUserMedia.mockResolvedValueOnce(mic.stream)
-    mocks.apiFetch.mockImplementation((url: string) =>
-      url === '/api/conversation/warmup'
-        ? Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
-        : Promise.resolve({ ok: true, json: async () => null })
-    )
-    render(<ConversationMode />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-
-    expect(await screen.findByText('✕ errorConnection')).toBeInTheDocument()
-    expect(MockWebSocket.instances).toHaveLength(0)
-    expect(mocks.destroy).toHaveBeenCalledTimes(1)
-    expect(mic.stop).toHaveBeenCalledTimes(1)
-    expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
-  })
-
-  it('rechecks auth after warmup and releases resources if the token disappears', async () => {
-    const mic = microphone()
-    let finishWarmup!: (response: { ok: boolean }) => void
-    mocks.getUserMedia.mockResolvedValueOnce(mic.stream)
-    mocks.apiFetch.mockImplementation((url: string) =>
-      url === '/api/conversation/warmup'
-        ? new Promise((resolve) => {
-            finishWarmup = resolve
-          })
-        : Promise.resolve({ ok: true, json: async () => null })
-    )
-    render(<ConversationMode />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    await waitFor(() => expect(finishWarmup).toBeDefined())
-    useAuthStore.setState({ accessToken: null, user: null })
-    await act(async () => finishWarmup({ ok: true }))
-
-    expect(await screen.findByText('✕ errorUnauthorized')).toBeInTheDocument()
-    expect(MockWebSocket.instances).toHaveLength(0)
-    expect(mocks.destroy).toHaveBeenCalledTimes(1)
-    expect(mic.stop).toHaveBeenCalledTimes(1)
-    expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
-  })
-
-  it('authenticates with the latest token when warmup completes after refresh', async () => {
-    let finishWarmup!: (response: { ok: boolean }) => void
-    mocks.apiFetch.mockImplementation((url: string) =>
-      url === '/api/conversation/warmup'
-        ? new Promise((resolve) => {
-            finishWarmup = resolve
-          })
-        : Promise.resolve({ ok: true, json: async () => null })
-    )
-    render(<ConversationMode />)
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    await waitFor(() => expect(finishWarmup).toBeDefined())
-    act(() => useAuthStore.setState({ accessToken: 'refreshed-token' }))
-    await act(async () => finishWarmup({ ok: true }))
-    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
-    const ws = MockWebSocket.instances[0]!
-    act(() => ws.onopen?.())
-    expect(ws.send).toHaveBeenCalledWith(
-      JSON.stringify({ type: 'auth', token: 'refreshed-token' })
-    )
-  })
-
-  it('does not connect if unmounted while warmup is pending', async () => {
-    const mic = microphone()
-    let finishWarmup!: (response: {
-      ok: boolean
-      json: () => Promise<{ detail?: string }>
-    }) => void
-    mocks.getUserMedia.mockResolvedValueOnce(mic.stream)
-    mocks.apiFetch.mockImplementation((url: string) =>
-      url === '/api/conversation/warmup'
-        ? new Promise((resolve) => {
-            finishWarmup = resolve
-          })
-        : Promise.resolve({ ok: true, json: async () => null })
-    )
-    const view = render(<ConversationMode />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    await waitFor(() => expect(finishWarmup).toBeDefined())
-    view.unmount()
-    await act(async () => finishWarmup({ ok: true, json: async () => ({}) }))
-
-    expect(MockWebSocket.instances).toHaveLength(0)
-    expect(mocks.destroy).toHaveBeenCalledTimes(1)
-    expect(mic.stop).toHaveBeenCalledTimes(1)
-    expect(mocks.closeAudio).toHaveBeenCalledTimes(1)
-  })
-
-  it('sends the trial token in the warmup request body', async () => {
-    render(<ConversationMode voiceTrialToken="trial-token" />)
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
-
-    const warmupCall = mocks.apiFetch.mock.calls.find(
-      ([url]) => url === '/api/conversation/warmup'
-    )
-    expect(warmupCall?.[1]).toMatchObject({
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trial_token: 'trial-token' }),
-    })
-  })
-
-  it('uses trial credentials and the selected voice in the websocket auth payload', async () => {
-    localStorage.setItem('tts_voice', 'voice-test')
+  it('does not acquire a microphone on mount, start or autoStart; uses HTTP context and trial token', async () => {
     render(
-      <ConversationMode targetLanguage="ja" voiceTrialToken="trial-token" />
+      <ConversationMode
+        autoStart
+        targetLanguage="ja"
+        voiceTrialToken="trial"
+        conversationId={9}
+        initialContext={[{ role: 'user', content: 'chat context' }]}
+      />
     )
-    fireEvent.click(screen.getByRole('button', { name: 'start' }))
-    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
-    const ws = MockWebSocket.instances[0]
-    act(() => ws!.onopen?.())
-
-    expect(ws!.send).toHaveBeenCalledWith(
-      JSON.stringify({
-        type: 'auth',
-        token: 'token',
-        voice: 'voice-test',
-        target_language: 'ja',
-        voice_trial_token: 'trial-token',
-      })
+    await screen.findByText('Hello learner')
+    expect(capture.media).not.toHaveBeenCalled()
+    expect(capture.context).not.toHaveBeenCalled()
+    const call = mocks.api.mock.calls.find(
+      ([url]) => url === '/api/conversation/sessions'
     )
-    localStorage.removeItem('tts_voice')
+    expect(JSON.parse(call?.[1].body)).toEqual({
+      target_language: 'ja',
+      voice_trial_token: 'trial',
+      conversation_id: 9,
+      context: [{ role: 'user', content: 'chat context' }],
+    })
+    expect(
+      mocks.api.mock.calls.some(([url]) => String(url).includes('warmup'))
+    ).toBe(false)
   })
 
-  it('renders user, streaming assistant, and finalized assistant transcript transitions', async () => {
-    render(<ConversationMode targetLanguage="ja" />)
-    const ws = await start()
+  it('restarts autoStart after StrictMode cleanup, closes the late aborted session and greets only the live run', async () => {
+    const first = deferred<ReturnType<typeof response>>()
+    const second = deferred<ReturnType<typeof response>>()
+    const original = mocks.api.getMockImplementation()!
+    const starts = () =>
+      mocks.api.mock.calls.filter(
+        ([url]) => url === '/api/conversation/sessions'
+      )
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url === '/api/conversation/sessions')
+        return starts().length === 1 ? first.promise : second.promise
+      return original(url, options)
+    })
+    const props = {
+      autoStart: true,
+      targetLanguage: 'ja',
+      voiceTrialToken: 'trial',
+      conversationId: 9,
+    }
+    const view = render(
+      <StrictMode>
+        <ConversationMode {...props} />
+      </StrictMode>
+    )
+    await waitFor(() => expect(starts()).toHaveLength(2))
+    const [firstCall, secondCall] = starts()
+    const firstSignal = firstCall?.[1].signal as AbortSignal
+    const secondSignal = secondCall?.[1].signal as AbortSignal
+    expect(firstSignal.aborted).toBe(true)
+    expect(secondSignal.aborted).toBe(false)
+    expect(JSON.parse(secondCall?.[1].body)).toEqual({
+      target_language: 'ja',
+      voice_trial_token: 'trial',
+      conversation_id: 9,
+    })
+    view.rerender(
+      <StrictMode>
+        <ConversationMode {...props} cefrLevel="C1" />
+      </StrictMode>
+    )
+    act(() => useAuthStore.setState({ accessToken: 'refreshed-token' }))
+    expect(starts()).toHaveLength(2)
+
+    await act(async () =>
+      second.resolve(response({ ...session, session_id: 'live-session' }))
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    await act(async () =>
+      first.resolve(response({ ...session, session_id: 'aborted-session' }))
+    )
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/aborted-session/close',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer token' },
+      })
+    )
+    expect(
+      mocks.api.mock.calls
+        .filter(([url]) => String(url).endsWith('/greeting'))
+        .map(([url]) => url)
+    ).toEqual(['/api/conversation/sessions/live-session/greeting'])
+    expect(screen.getAllByText('Hello learner')).toHaveLength(1)
+    expect(secondSignal.aborted).toBe(false)
+    expect(capture.media).not.toHaveBeenCalled()
+    expect(capture.context).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    view.rerender(
+      <StrictMode>
+        <ConversationMode {...props} cefrLevel="B2" />
+      </StrictMode>
+    )
+    act(() => useAuthStore.setState({ accessToken: 'another-refresh' }))
+    expect(starts()).toHaveLength(2)
+    expect(secondSignal.aborted).toBe(true)
+  })
+
+  it('auto-starts once per account/language/trial/conversation scope, never on token refresh', async () => {
+    const view = render(
+      <ConversationMode
+        autoStart
+        targetLanguage="es"
+        voiceTrialToken="trial-1"
+        conversationId={1}
+      />
+    )
+    const starts = () =>
+      mocks.api.mock.calls.filter(
+        ([url]) => url === '/api/conversation/sessions'
+      )
+    await waitFor(() => expect(starts()).toHaveLength(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    act(() => useAuthStore.setState({ accessToken: 'refreshed-token' }))
+    view.rerender(
+      <ConversationMode
+        autoStart
+        targetLanguage="es"
+        voiceTrialToken="trial-1"
+        conversationId={1}
+      />
+    )
+    expect(starts()).toHaveLength(1)
+    view.rerender(
+      <ConversationMode
+        autoStart
+        targetLanguage="ja"
+        voiceTrialToken="trial-1"
+        conversationId={1}
+      />
+    )
+    await waitFor(() => expect(starts()).toHaveLength(2))
+    view.rerender(
+      <ConversationMode
+        autoStart
+        targetLanguage="ja"
+        voiceTrialToken="trial-2"
+        conversationId={1}
+      />
+    )
+    await waitFor(() => expect(starts()).toHaveLength(3))
+    view.rerender(
+      <ConversationMode
+        autoStart
+        targetLanguage="ja"
+        voiceTrialToken="trial-2"
+        conversationId={2}
+      />
+    )
+    await waitFor(() => expect(starts()).toHaveLength(4))
+    act(() =>
+      useAuthStore.setState({
+        user: {
+          id: 2,
+          username: 'other',
+          displayName: 'Other',
+          role: 'user',
+          conversation_max_duration: 1800,
+          conversation_inactivity_timeout: 180,
+        },
+      })
+    )
+    await waitFor(() => expect(starts()).toHaveLength(5))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    expect(
+      starts().map((call) => JSON.parse(call[1].body).target_language)
+    ).toEqual(['es', 'ja', 'ja', 'ja', 'ja'])
+    expect(capture.media).not.toHaveBeenCalled()
+    expect(capture.context).not.toHaveBeenCalled()
+  })
+
+  it.each(['network', '500', '409'] as const)(
+    'allows only manual idempotent resend after %s without spending an STT retry',
+    async (failure) => {
+      const original = mocks.api.getMockImplementation()!
+      mocks.api.mockImplementation((url: string, options: RequestInit) => {
+        if (url.endsWith('/turns') && uploads().length === 1) {
+          return failure === 'network'
+            ? Promise.reject(new TypeError('lost response'))
+            : Promise.resolve(
+                response(
+                  {
+                    detail:
+                      failure === '409' ? 'session_busy' : 'private diagnostic',
+                  },
+                  Number(failure)
+                )
+              )
+        }
+        return original(url, options)
+      })
+      render(<ConversationMode />)
+      await start()
+      await recordAndStop()
+      const retry = await screen.findByRole('button', { name: 'retry' })
+      expect(screen.queryByText('processing')).toBeNull()
+      expect(screen.queryByRole('button', { name: /retry ·/ })).toBeNull()
+      expect(uploads()).toHaveLength(1)
+      result = {
+        ...complete,
+        user_text: null,
+        assistant_text: null,
+        assistant_audio_url: null,
+        status: 'stt_failed',
+        stt_attempts: 1,
+      }
+      const pending = deferred<ReturnType<typeof response>>()
+      mocks.api.mockImplementation((url: string, options: RequestInit) =>
+        url.endsWith('/turns') ? pending.promise : original(url, options)
+      )
+      fireEvent.click(retry)
+      fireEvent.click(retry)
+      expect(uploads()).toHaveLength(2)
+      await act(async () => pending.resolve(response(result)))
+      await screen.findByRole('button', { name: /retry ·/ })
+      mocks.api.mockImplementation((url: string, options: RequestInit) =>
+        url.endsWith('/turns')
+          ? Promise.resolve(response({ ...result, stt_attempts: 2 }))
+          : original(url, options)
+      )
+      fireEvent.click(screen.getByRole('button', { name: /retry ·/ }))
+      await waitFor(() => expect(uploads()).toHaveLength(3))
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /retry ·/ })).toBeEnabled()
+      )
+      mocks.api.mockImplementation((url: string, options: RequestInit) =>
+        url.endsWith('/turns')
+          ? Promise.resolve(response({ ...result, stt_attempts: 3 }))
+          : original(url, options)
+      )
+      fireEvent.click(screen.getByRole('button', { name: /retry ·/ }))
+      await screen.findByText('retryLimit')
+      const forms = uploads().map((call) => call[1].body as FormData)
+      expect(forms.map((form) => form.get('retry'))).toEqual([
+        'false',
+        'false',
+        'true',
+        'true',
+      ])
+      expect(
+        new Set(forms.map((form) => form.get('client_turn_id'))).size
+      ).toBe(1)
+      const bytes = await Promise.all(
+        forms.map((form) => blobBytes(form.get('audio') as Blob))
+      )
+      bytes.forEach((value) =>
+        expect(new Uint8Array(value)).toEqual(new Uint8Array(bytes[0]!))
+      )
+      expect(capture.media).toHaveBeenCalledOnce()
+    }
+  )
+
+  it('manually recovers a cached completed turn after a lost response without retranscribing', async () => {
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.endsWith('/turns') && uploads().length === 1
+        ? Promise.reject(new TypeError('response lost after completion'))
+        : original(url, options)
+    )
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    fireEvent.click(await screen.findByRole('button', { name: 'retry' }))
+    await screen.findByText('Welcome back')
+    await screen.findByRole('button', { name: 'pause' })
+    expect(
+      uploads().map((call) => (call[1].body as FormData).get('retry'))
+    ).toEqual(['false', 'false'])
+    expect(screen.queryByRole('button', { name: 'retry' })).toBeNull()
+    expect(screen.queryByText('processing')).toBeNull()
+    expect(screen.getAllByText('Welcome back')).toHaveLength(1)
+    expect(capture.media).toHaveBeenCalledOnce()
+  })
+
+  it('recovers a lost confirmed STT-retry response with retry=false before permitting further STT retry', async () => {
+    result = {
+      ...complete,
+      user_text: null,
+      assistant_text: null,
+      assistant_audio_url: null,
+      status: 'stt_failed',
+    }
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    await screen.findByRole('button', { name: /retry ·/ })
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.endsWith('/turns')
+        ? Promise.reject(new TypeError('lost retry response'))
+        : original(url, options)
+    )
+    fireEvent.click(screen.getByRole('button', { name: /retry ·/ }))
+    const resend = await screen.findByRole('button', { name: 'retry' })
+    expect(screen.queryByRole('button', { name: /retry ·/ })).toBeNull()
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.endsWith('/turns')
+        ? Promise.resolve(response({ ...result, stt_attempts: 3 }))
+        : original(url, options)
+    )
+    fireEvent.click(resend)
+    await screen.findByText('retryLimit')
+    expect(
+      uploads().map((call) => (call[1].body as FormData).get('retry'))
+    ).toEqual(['false', 'true', 'false'])
+    expect(screen.queryByRole('button', { name: /retry ·/ })).toBeNull()
+  })
+
+  it('marks invalid 422 recording terminal without stranding processing or ending the session', async () => {
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.endsWith('/turns')
+        ? Promise.resolve(response({ detail: 'invalid_recording' }, 422))
+        : original(url, options)
+    )
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'errorTranscription'
+    )
+    expect(screen.queryByText('processing')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'retry' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'play' })).toBeInTheDocument()
+    expect(uploads()).toHaveLength(1)
+  })
+
+  it('captures explicitly, releases mic before upload, retains text and local user audio', async () => {
+    result.memory_updated = true
+    render(<ConversationMode />)
+    await start()
+    const pending = deferred<ReturnType<typeof response>>()
+    mocks.api.mockImplementationOnce(async () =>
+      response({ ...session, remaining_seconds: 600 })
+    ) // record activity
+    mocks.api.mockImplementationOnce(() => pending.promise) // turn
+    await recordAndStop()
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
+    expect(screen.getAllByRole('button', { name: 'play' })).toHaveLength(1)
+    expect(screen.getByText('processing')).toBeInTheDocument()
+    await act(async () => pending.resolve(response(result)))
+    expect(await screen.findByText('Hello there')).toBeInTheDocument()
+    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    expect(await screen.findByText('memorySavedToast')).toBeInTheDocument()
+    await waitFor(() => expect(play).toHaveBeenCalledOnce())
+    expect(uploads()).toHaveLength(1)
+    const form = uploads()[0]?.[1].body as FormData
+    const bytes = new DataView(await blobBytes(form.get('audio') as Blob))
+    expect(bytes.getUint16(22, true)).toBe(1)
+    expect(bytes.getUint32(24, true)).toBe(16000)
+    expect(bytes.getUint16(34, true)).toBe(16)
+    expect(form.get('client_turn_id')).toMatch(/^[\da-f-]{36}$/)
+    expect(form.get('retry')).toBe('false')
+  })
+
+  it('cancels capture without uploading or ending the session and sends only the new recording', async () => {
+    render(<ConversationMode />)
+    await start()
+    expect(screen.queryByRole('button', { name: 'cancel' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    const discarded = capture.nodes[0]!
+    act(() =>
+      discarded.emit({ type: 'samples', samples: generatedSamples(3200) })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
+    expect(discarded.port.close).toHaveBeenCalledOnce()
+    expect(discarded.disconnect).toHaveBeenCalledOnce()
+    expect(uploads()).toHaveLength(0)
+    expect(createUrl).not.toHaveBeenCalled()
+    expect(screen.getByText('Hello learner')).toBeInTheDocument()
+    expect(screen.queryByText('processing')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'cancel' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'record' })).toHaveFocus()
+    expect(closeFetch).not.toHaveBeenCalled()
 
     act(() => {
-      ws!.message({
-        type: 'transcript',
-        role: 'user',
-        text: 'こんにちは',
-        final: true,
-      })
-      ws!.message({
-        type: 'transcript',
-        role: 'assistant',
-        text: 'Streaming reply',
-        final: false,
-      })
+      discarded.emit({ type: 'samples', samples: generatedSamples(3200) })
+      discarded.emit({ type: 'stopped' })
     })
-    expect(screen.getByText('こんにちは')).toBeInTheDocument()
-    expect(screen.getByText('Streaming reply')).toBeInTheDocument()
+    await recordAndStop()
+    await screen.findByText('Hello there')
+    expect(uploads()).toHaveLength(1)
+    const form = uploads()[0]?.[1].body as FormData
+    const bytes = new DataView(await blobBytes(form.get('audio') as Blob))
+    expect(bytes.getUint32(40, true)).toBe(1600 * 2)
+    expect(capture.media).toHaveBeenCalledTimes(2)
+    expect(capture.stopTrack).toHaveBeenCalledTimes(2)
+    expect(capture.close).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels while permission is pending and ignores the late grant after recording again', async () => {
+    const permission = deferred<MediaStream>()
+    const lateStop = vi.fn()
+    const lateStream = {
+      getTracks: () => [{ stop: lateStop }],
+    } as unknown as MediaStream
+    capture.media.mockReturnValueOnce(permission.promise)
+    render(<ConversationMode />)
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(capture.close).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    await act(async () => permission.resolve(lateStream))
+    expect(lateStop).toHaveBeenCalledOnce()
+    expect(capture.stopTrack).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'stopAndSend' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'cancel' })).toBeEnabled()
+    expect(uploads()).toHaveLength(0)
 
     act(() =>
-      ws!.message({
-        type: 'transcript',
-        role: 'assistant',
-        text: 'Final reply',
-        final: true,
+      capture.nodes[0]!.emit({ type: 'samples', samples: generatedSamples() })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'stopAndSend' }))
+    await act(async () => capture.nodes[0]!.emit({ type: 'stopped' }))
+    await screen.findByText('Hello there')
+    expect(uploads()).toHaveLength(1)
+  })
+
+  it('ignores a cancelled initialization failure without disrupting the next recording', async () => {
+    const module = deferred<void>()
+    capture.addModule.mockReturnValueOnce(module.promise)
+    render(<ConversationMode />)
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.addModule).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    await act(async () => module.reject(new Error('cancelled module load')))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: 'stopAndSend' })).toBeEnabled()
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(capture.stopTrack).toHaveBeenCalledTimes(2)
+    expect(uploads()).toHaveLength(0)
+  })
+
+  it('preserves previous messages and restores their playback after cancelling', async () => {
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    await screen.findByRole('button', { name: 'pause' })
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(2))
+    screen
+      .getAllByRole('button', { name: 'play' })
+      .forEach((button) => expect(button).toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(screen.getByText('Hello there')).toBeInTheDocument()
+    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    expect(createUrl).toHaveBeenCalledTimes(2)
+    expect(revokeUrl).not.toHaveBeenCalled()
+    const players = screen.getAllByRole('button', { name: 'play' })
+    expect(players).toHaveLength(2)
+    players.forEach((button) => expect(button).toBeEnabled())
+    fireEvent.click(players[0]!)
+    await screen.findByRole('button', { name: 'pause' })
+    expect(play).toHaveBeenCalledTimes(2)
+    expect(uploads()).toHaveLength(1)
+  })
+
+  it('permits exactly two manual STT retries using the stable UUID and byte-identical audio', async () => {
+    result = {
+      ...complete,
+      user_text: null,
+      assistant_text: null,
+      assistant_audio_url: null,
+      status: 'stt_failed',
+    }
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    await screen.findByText('transcriptionFailed')
+    expect(uploads()).toHaveLength(1)
+    result.stt_attempts = 2
+    fireEvent.click(screen.getByRole('button', { name: /retry ·/ }))
+    await waitFor(() => expect(uploads()).toHaveLength(2))
+    await screen.findByRole('button', { name: /retry ·/ })
+    result.stt_attempts = 3
+    fireEvent.click(screen.getByRole('button', { name: /retry ·/ }))
+    await screen.findByText('retryLimit')
+    expect(screen.queryByRole('button', { name: /retry ·/ })).toBeNull()
+    const forms = uploads().map((call) => call[1].body as FormData)
+    const bytes = await Promise.all(
+      forms.map((form) => blobBytes(form.get('audio') as Blob))
+    )
+    expect(new Uint8Array(bytes[1]!)).toEqual(new Uint8Array(bytes[0]!))
+    expect(new Uint8Array(bytes[2]!)).toEqual(new Uint8Array(bytes[0]!))
+    expect(new Set(forms.map((form) => form.get('client_turn_id'))).size).toBe(
+      1
+    )
+    expect(forms.map((form) => form.get('retry'))).toEqual([
+      'false',
+      'true',
+      'true',
+    ])
+    expect(uploads()).toHaveLength(3)
+  })
+
+  it.each(['llm_failed', 'tts_failed'] as const)(
+    'retains transcripts without an STT retry for %s',
+    async (status) => {
+      result = { ...complete, status, assistant_audio_url: null }
+      render(<ConversationMode />)
+      await start()
+      await recordAndStop()
+      expect(await screen.findByText('replyFailed')).toBeInTheDocument()
+      expect(screen.getByText('Hello there')).toBeInTheDocument()
+      expect(screen.getByText('Welcome back')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /retry ·/ })).toBeNull()
+    }
+  )
+
+  it('shows localized autoplay fallback and stops playback on record', async () => {
+    play.mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'))
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    expect(await screen.findByText('playbackBlocked')).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'play' })[1]!)
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2))
+    pause.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    expect(pause).toHaveBeenCalled()
+  })
+
+  it('ends separately, revokes all URLs, retains text and closes best-effort', async () => {
+    mocks.review.mockReturnValue(true)
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    await screen.findByText('Welcome back')
+    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    expect(revokeUrl).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'play' })).toBeNull()
+    expect(screen.getByText('reviewPrompt')).toBeInTheDocument()
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+        headers: { Authorization: 'Bearer token' },
+        credentials: 'omit',
       })
     )
-    expect(screen.getByText('Final reply')).toBeInTheDocument()
-    expect(screen.queryByText('Streaming reply')).toBeNull()
   })
 
-  it('queues binary audio, reflects playback state, and clears playback on barge-in', async () => {
+  it('stops a late microphone grant after end and never uploads', async () => {
+    const permission = deferred<MediaStream>()
+    capture.media.mockReturnValue(permission.promise)
     render(<ConversationMode />)
-    const ws = await start()
-
-    const audioChunk = new ArrayBuffer(12)
-    act(() => ws!.onmessage?.({ data: audioChunk }))
-    expect(mocks.enqueue).toHaveBeenCalledWith(audioChunk)
-
-    act(() => ws!.message({ type: 'barge_in' }))
-    expect(mocks.cancel).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    await act(async () => permission.resolve(capture.stream))
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.nodes).toHaveLength(0)
+    expect(uploads()).toHaveLength(0)
   })
 
-  it('clears the speaking state if queued playback rejects', async () => {
-    mocks.enqueue.mockRejectedValueOnce(new Error('audio decode failed'))
-    render(<ConversationMode />)
-    const ws = await start()
-
-    act(() => ws!.onmessage?.({ data: new ArrayBuffer(12) }))
-    await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledTimes(1))
-    expect(mocks.enqueue).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+  it('aborts start on unmount and closes an ID delivered despite cancellation', async () => {
+    const pending = deferred<ReturnType<typeof response>>()
+    mocks.api.mockImplementation((url: string) =>
+      url === '/api/conversation/sessions'
+        ? pending.promise
+        : Promise.resolve(response(null))
+    )
+    const view = render(<ConversationMode />)
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    const signal = mocks.api.mock.calls.find(
+      ([url]) => url === '/api/conversation/sessions'
+    )?.[1].signal as AbortSignal
+    view.unmount()
+    expect(signal.aborted).toBe(true)
+    await act(async () => pending.resolve(response(session)))
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({ headers: { Authorization: 'Bearer token' } })
+    )
+    expect(
+      mocks.api.mock.calls.some(([url]) => String(url).endsWith('/greeting'))
+    ).toBe(false)
   })
 
-  it('maps a policy websocket close to the unauthorized message', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-
-    act(() => ws!.onclose?.({ code: 1008, reason: 'private details' }))
-
-    expect(await screen.findByText('✕ errorUnauthorized')).toBeInTheDocument()
-    expect(screen.queryByText('private details')).not.toBeInTheDocument()
+  it('discards pending turn data on a language switch and releases capture on account switch', async () => {
+    const view = render(<ConversationMode targetLanguage="es" />)
+    await start()
+    const pending = deferred<ReturnType<typeof response>>()
+    mocks.api.mockImplementation((url: string) =>
+      url.endsWith('/turns')
+        ? pending.promise
+        : Promise.resolve(response({ ...session, remaining_seconds: 600 }))
+    )
+    await recordAndStop()
+    view.rerender(<ConversationMode targetLanguage="ja" />)
+    await act(async () => pending.resolve(response(complete)))
+    expect(screen.queryByText('Welcome back')).toBeNull()
+    expect(revokeUrl).toHaveBeenCalledOnce()
   })
 
-  it('shows session warnings and releases resources when the server ends a session', async () => {
-    const mic = microphone()
-    mocks.getUserMedia.mockResolvedValue(mic.stream)
-    render(<ConversationMode />)
-    const ws = await start()
-
-    act(() => ws!.message({ type: 'session_warning', remaining_seconds: 45 }))
-    expect(screen.getByText('warningTimeout')).toBeInTheDocument()
-
-    act(() => ws!.message({ type: 'session_end', reason: 'max_duration' }))
-    expect(screen.getByText('sessionEnded')).toBeInTheDocument()
-    await waitFor(() => expect(mocks.destroy).toHaveBeenCalledTimes(1))
-    expect(mic.stop).toHaveBeenCalledTimes(1)
-    expect(ws!.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('expands finite quota details and omits unlimited token usage', async () => {
-    mocks.apiFetch.mockImplementation((url: string) =>
-      Promise.resolve({
+  it('ignores assistant audio delivered after unmount and aborts its authenticated fetch', async () => {
+    const pending = deferred<{ ok: boolean; blob: () => Promise<Blob> }>()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.includes('/audio/') ? pending.promise : original(url, options)
+    )
+    const view = render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    await waitFor(() =>
+      expect(
+        mocks.api.mock.calls.some(([url]) => String(url).includes('/audio/'))
+      ).toBe(true)
+    )
+    const signal = mocks.api.mock.calls.find(([url]) =>
+      String(url).includes('/audio/')
+    )?.[1].signal as AbortSignal
+    view.unmount()
+    expect(signal.aborted).toBe(true)
+    await act(async () =>
+      pending.resolve({
         ok: true,
-        json: async () =>
-          url === '/api/auth/quota'
-            ? {
-                sessions_this_week: 3,
-                sessions_limit: 3,
-                sessions_unlimited: false,
-                minutes_today: 12,
-                minutes_limit: 30,
-                time_unlimited: false,
-                minutes_this_week: 12,
-                weekly_minutes_limit: 90,
-                weekly_minutes_unlimited: false,
-                tokens_unlimited: true,
-              }
-            : null,
+        blob: async () => new Blob([float32ToWav(generatedSamples(), 16000)]),
       })
     )
+    expect(createUrl).toHaveBeenCalledOnce()
+    expect(revokeUrl).toHaveBeenCalledOnce()
+    expect(play).not.toHaveBeenCalled()
+  })
+
+  it('keeps assistant text visible when its authenticated audio fetch expires', async () => {
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.includes('/audio/')
+        ? Promise.resolve(response({ detail: 'audio_not_found' }, 404))
+        : original(url, options)
+    )
     render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    expect(await screen.findByText('audioExpired')).toBeInTheDocument()
+    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    expect(play).not.toHaveBeenCalled()
+  })
 
-    await screen.findByRole('button', { name: /3\/3 ses/ })
-    fireEvent.click(screen.getByRole('button', { name: /3\/3 ses/ }))
+  it('ignores a stale activity 410 after a new session starts', async () => {
+    const pending = deferred<ReturnType<typeof response>>()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.endsWith('/activity') ? pending.promise : original(url, options)
+    )
+    render(<ConversationMode />)
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    fireEvent.click(screen.getByRole('button', { name: 'startNew' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    await act(async () =>
+      pending.resolve(response({ detail: 'session_expired' }, 410))
+    )
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+    expect(closeFetch).toHaveBeenCalledTimes(1)
+  })
 
+  it('fatal activity error during playback pauses and detaches all players, revokes audio and retains text', async () => {
+    const view = render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    await screen.findByRole('button', { name: 'pause' })
+    const audios = Array.from(view.container.querySelectorAll('audio'))
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.endsWith('/activity')
+        ? Promise.resolve(response({ detail: 'session_expired' }, 410))
+        : original(url, options)
+    )
+    pause.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'play' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('sessionExpired')
+    expect(pause).toHaveBeenCalled()
+    expect(revokeUrl).toHaveBeenCalledTimes(2)
+    expect(view.container.querySelectorAll('audio')).toHaveLength(0)
+    audios.forEach((audio) => expect(audio.getAttribute('src')).toBeNull())
+    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'startNew' })).toBeInTheDocument()
+    const signal = mocks.api.mock.calls.find(([url]) =>
+      String(url).endsWith('/turns')
+    )?.[1].signal as AbortSignal
+    expect(signal.aborted).toBe(true)
+  })
+
+  it('localizes HTTP gate errors rather than displaying provider detail', async () => {
+    mocks.api.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/conversation/sessions'
+          ? response({ detail: 'voice_services_unavailable' }, 503)
+          : response(null)
+      )
+    )
+    render(<ConversationMode />)
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'errorVoiceServicesUnavailable'
+    )
+    expect(capture.media).not.toHaveBeenCalled()
+  })
+
+  it('checks the backend deadline before expiring a slow provider turn and preserves its response', async () => {
+    const now = Date.now()
+    const nearExpiry = new Date(now + 1500).toISOString()
+    const extended = new Date(now + 180_000).toISOString()
+    const turn = deferred<ReturnType<typeof response>>()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url === '/api/conversation/sessions')
+        return Promise.resolve(
+          response({ ...session, inactivity_expires_at: nearExpiry })
+        )
+      if (url.endsWith('/greeting'))
+        return Promise.resolve(
+          response({ ...greeting, inactivity_expires_at: nearExpiry })
+        )
+      if (url.endsWith('/turns')) return turn.promise
+      if (url.endsWith('/activity'))
+        return Promise.resolve(
+          response({
+            ...session,
+            inactivity_expires_at: nearExpiry,
+            remaining_seconds: 600,
+          })
+        )
+      if (url === '/api/conversation/sessions/session-1')
+        return Promise.resolve(
+          response({
+            ...session,
+            inactivity_expires_at: extended,
+            remaining_seconds: 300,
+          })
+        )
+      return original(url, options)
+    })
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    expect(uploads()).toHaveLength(1)
+    expect(screen.getByText('processing')).toBeInTheDocument()
+    await waitFor(
+      () =>
+        expect(
+          mocks.api.mock.calls.some(
+            ([url]) => url === '/api/conversation/sessions/session-1'
+          )
+        ).toBe(true),
+      { timeout: 3000 }
+    )
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'endSession' })
+    ).toBeInTheDocument()
+    await act(async () =>
+      turn.resolve(response({ ...complete, inactivity_expires_at: extended }))
+    )
+    expect(await screen.findByText('Hello there')).toBeInTheDocument()
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+  })
+
+  it('does not shorten the absolute deadline when a slow provider response reports rounded remaining seconds', async () => {
+    const startAt = Date.now()
+    const absolute = new Date(startAt + 5000).toISOString()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url === '/api/conversation/sessions')
+        return Promise.resolve(response({ ...session, expires_at: absolute }))
+      if (url.endsWith('/greeting'))
+        return Promise.resolve(response({ ...greeting, remaining_seconds: 1 }))
+      return original(url, options)
+    })
+    render(<ConversationMode />)
+    await start()
+    // The greeting's rounded remaining_seconds must not replace expires_at
+    // with a new deadline derived from the response arrival time.
+    await new Promise((resolve) => setTimeout(resolve, 1300))
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+  })
+
+  it('uses the latest same-owner token for closing and ignores a delayed failed close', async () => {
+    render(<ConversationMode />)
+    await start()
+    act(() => useAuthStore.setState({ accessToken: 'refreshed-token' }))
+    const close = deferred<{
+      ok: boolean
+      status: number
+      json: () => Promise<unknown>
+    }>()
+    closeFetch.mockReturnValueOnce(close.promise)
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer refreshed-token' },
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startNew' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    await act(async () =>
+      close.resolve({
+        ok: false,
+        status: 401,
+        json: async () => ({ detail: 'unauthorized' }),
+      })
+    )
+    expect(useAuthStore.getState().accessToken).toBe('refreshed-token')
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps a pending provider turn busy if an expiry read temporarily fails', async () => {
+    const turn = deferred<ReturnType<typeof response>>()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url.endsWith('/turns')) return turn.promise
+      if (url === '/api/conversation/sessions/session-1')
+        return Promise.reject(new TypeError('network unavailable'))
+      return original(url, options)
+    })
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'errorConnection'
+    )
+    expect(screen.getByRole('button', { name: 'record' })).toBeDisabled()
+    expect(closeFetch).not.toHaveBeenCalled()
+    await act(async () => turn.resolve(response(complete)))
+    expect(await screen.findByText('Hello there')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+  })
+
+  it('does not overlap expiry checks and ignores a stale expiry response after restarting', async () => {
+    const original = mocks.api.getMockImplementation()!
+    const check = deferred<ReturnType<typeof response>>()
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url === '/api/conversation/sessions/session-1'
+        ? check.promise
+        : original(url, options)
+    )
+    render(<ConversationMode />)
+    await start()
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(
+      mocks.api.mock.calls.filter(
+        ([url]) => url === '/api/conversation/sessions/session-1'
+      )
+    ).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    fireEvent.click(screen.getByRole('button', { name: 'startNew' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    await act(async () =>
+      check.resolve(response({ detail: 'session_expired' }, 410))
+    )
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+  })
+
+  it('expires at the absolute deadline even if the backend has extended inactivity', async () => {
+    const now = Date.now()
+    const soon = new Date(now + 1000).toISOString()
+    const later = new Date(now + 180_000).toISOString()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) => {
+      if (url === '/api/conversation/sessions')
+        return Promise.resolve(
+          response({
+            ...session,
+            expires_at: soon,
+            inactivity_expires_at: later,
+          })
+        )
+      if (url.endsWith('/greeting'))
+        return Promise.resolve(
+          response({ ...greeting, inactivity_expires_at: later })
+        )
+      return original(url, options)
+    })
+    render(<ConversationMode />)
+    await start()
+    expect(
+      await screen.findByText('sessionExpired', {}, { timeout: 3000 })
+    ).toBeInTheDocument()
+    expect(
+      mocks.api.mock.calls.some(
+        ([url]) => url === '/api/conversation/sessions/session-1'
+      )
+    ).toBe(false)
+  })
+
+  it('expires on the server deadline without a polling activity heartbeat', async () => {
+    mocks.api.mockImplementation(async (url: string) => {
+      if (url === '/api/conversation/sessions')
+        return response({
+          ...session,
+          inactivity_expires_at: new Date(Date.now() - 1000).toISOString(),
+        })
+      if (url.endsWith('/greeting'))
+        return response({
+          ...greeting,
+          inactivity_expires_at: new Date(Date.now() - 1000).toISOString(),
+        })
+      if (url === '/api/conversation/sessions/session-1')
+        return response({ detail: 'session_expired' }, 410)
+      return response(null)
+    })
+    render(<ConversationMode />)
+    await start()
+    expect(
+      await screen.findByText('sessionExpired', {}, { timeout: 3000 })
+    ).toBeInTheDocument()
+    expect(
+      mocks.api.mock.calls.some(([url]) => String(url).endsWith('/activity'))
+    ).toBe(false)
+    expect(screen.getByRole('button', { name: 'startNew' })).toBeInTheDocument()
+  })
+
+  it('closes a late session start with its original owner token after an account switch', async () => {
+    const pending = deferred<ReturnType<typeof response>>()
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url === '/api/conversation/sessions'
+        ? pending.promise
+        : original(url, options)
+    )
+    render(<ConversationMode />)
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    act(() =>
+      useAuthStore.setState({
+        accessToken: 'new-account-token',
+        user: {
+          id: 2,
+          username: 'other',
+          displayName: 'Other',
+          role: 'user',
+          conversation_max_duration: 1800,
+          conversation_inactivity_timeout: 180,
+        },
+      })
+    )
+    await act(async () => pending.resolve(response(session)))
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({ headers: { Authorization: 'Bearer token' } })
+    )
+    expect(
+      mocks.api.mock.calls.some(([url]) => String(url).endsWith('/greeting'))
+    ).toBe(false)
+  })
+
+  it('closes the former owner session after logout and does not send their token to the new account', async () => {
+    const owner = {
+      id: 1,
+      username: 'owner',
+      displayName: 'Owner',
+      role: 'user' as const,
+      conversation_max_duration: 1800,
+      conversation_inactivity_timeout: 180,
+    }
+    useAuthStore.setState({ user: owner, accessToken: 'owner-token' })
+    render(<ConversationMode />)
+    await start()
+    act(() => useAuthStore.getState().logout())
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer owner-token' },
+        credentials: 'omit',
+      })
+    )
+    closeFetch.mockClear()
+    act(() =>
+      useAuthStore.setState({ user: owner, accessToken: 'owner-token' })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    )
+    act(() =>
+      useAuthStore.setState({
+        user: { ...owner, id: 2, username: 'other' },
+        accessToken: 'other-token',
+      })
+    )
+    expect(closeFetch).toHaveBeenCalledWith(
+      '/api/conversation/sessions/session-1/close',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer owner-token' },
+        credentials: 'omit',
+      })
+    )
+    expect(closeFetch).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer other-token' },
+      })
+    )
+  })
+
+  it('clears recording UI and releases capture when the account changes', async () => {
+    render(<ConversationMode />)
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    act(() =>
+      useAuthStore.setState({
+        user: {
+          id: 2,
+          username: 'other',
+          displayName: 'Other',
+          role: 'user',
+          conversation_max_duration: 1800,
+          conversation_inactivity_timeout: 180,
+        },
+      })
+    )
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'stopAndSend' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'start' })).toBeInTheDocument()
+    expect(uploads()).toHaveLength(0)
+  })
+
+  it('preserves freemium/trial UI and finite quota details', async () => {
+    mocks.api.mockImplementation(async () =>
+      response({
+        sessions_this_week: 3,
+        sessions_limit: 3,
+        sessions_unlimited: false,
+        minutes_today: 12,
+        minutes_limit: 30,
+        time_unlimited: false,
+        tokens_unlimited: true,
+      })
+    )
+    const view = render(<ConversationMode />)
+    fireEvent.click(await screen.findByRole('button', { name: /3\/3 ses/ }))
     expect(screen.getByText('quotaSessions')).toBeInTheDocument()
     expect(screen.getByText('quotaMinutes')).toBeInTheDocument()
-    expect(screen.queryByText('quotaTokens')).toBeNull()
-  })
-
-  it('shows unlimited quotas as an infinite summary', async () => {
-    mocks.apiFetch.mockImplementation((url: string) =>
-      Promise.resolve({
-        ok: true,
-        json: async () =>
-          url === '/api/auth/quota'
-            ? {
-                sessions_this_week: 0,
-                sessions_limit: 0,
-                sessions_unlimited: true,
-                minutes_today: 0,
-                minutes_limit: 0,
-                time_unlimited: true,
-                minutes_this_week: 0,
-                weekly_minutes_limit: 0,
-                weekly_minutes_unlimited: true,
-                tokens_unlimited: true,
-              }
-            : null,
-      })
-    )
-    render(<ConversationMode />)
-
-    const summary = await screen.findByRole('button', { name: /∞/ })
-    fireEvent.click(summary)
-    expect(screen.getByText('quotaSessions')).toBeInTheDocument()
-    expect(screen.getByText('quotaMinutes')).toBeInTheDocument()
-    expect(screen.queryByText('quotaTokens')).toBeNull()
-    expect(screen.getAllByText('∞')).toHaveLength(2)
-  })
-
-  it('defaults missing token quota measurements to zero', async () => {
-    mocks.apiFetch.mockImplementation((url: string) =>
-      Promise.resolve({
-        ok: true,
-        json: async () =>
-          url === '/api/auth/quota'
-            ? {
-                sessions_this_week: 0,
-                sessions_limit: 0,
-                sessions_unlimited: true,
-                minutes_today: 0,
-                minutes_limit: 0,
-                time_unlimited: true,
-                tokens_unlimited: false,
-              }
-            : null,
-      })
-    )
-    render(<ConversationMode />)
-
-    const summary = await screen.findByRole('button', { name: /0k\/0k tok/ })
-    fireEvent.click(summary)
-
-    expect(screen.getByText('quotaTokens')).toBeInTheDocument()
-    expect(screen.getByText('0 / 0')).toBeInTheDocument()
-  })
-
-  it('shows the freemium voice limit in red when no uses remain', () => {
-    render(
+    view.rerender(
       <ConversationMode freemiumVoiceRemaining={0} freemiumVoiceLimit={10} />
     )
-
     expect(screen.getByText('freemiumVoiceRemaining')).toHaveClass(
       'text-red-500'
     )
-    expect(screen.queryByRole('button', { name: /quota/ })).toBeNull()
-  })
-
-  it('marks the quota summary exceeded and renders all finite usage bars', async () => {
-    mocks.apiFetch.mockImplementation((url: string) =>
-      Promise.resolve({
-        ok: true,
-        json: async () =>
-          url === '/api/auth/quota'
-            ? {
-                sessions_this_week: 4,
-                sessions_limit: 4,
-                sessions_unlimited: false,
-                minutes_today: 30,
-                minutes_limit: 30,
-                time_unlimited: false,
-                minutes_this_week: 30,
-                weekly_minutes_limit: 90,
-                weekly_minutes_unlimited: false,
-                tokens_this_month: 2500,
-                tokens_monthly_limit: 2500,
-                tokens_unlimited: false,
-              }
-            : null,
-      })
-    )
-    render(<ConversationMode />)
-
-    const summary = await screen.findByRole('button', {
-      name: /4\/4 ses.*30\/30 min.*3k\/3k tok/,
-    })
-    expect(summary.className).toContain('border-fl-error/50')
-    fireEvent.click(summary)
-
-    expect(screen.getByText('quotaSessions')).toBeInTheDocument()
-    expect(screen.getByText('quotaMinutes')).toBeInTheDocument()
-    expect(screen.getByText('quotaTokens')).toBeInTheDocument()
-    expect(screen.getAllByText(/\/4/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/\/30/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/\/3/).length).toBeGreaterThan(0)
-  })
-
-  it('offers billing after a trial ends and handles checkout failure, success and skip', async () => {
-    const locationAssign = vi.fn()
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: { assign: locationAssign },
-    })
-    useConfigStore.setState({ priceMonthly: 12, priceYearly: 99 })
-    mocks.apiFetch.mockImplementation((url: string) =>
-      Promise.resolve(
-        url === '/api/billing/checkout'
-          ? { ok: false, json: async () => ({}) }
-          : { ok: true, json: async () => null }
-      )
-    )
-    render(<ConversationMode trialMode voiceTrialDurationSeconds={80} />)
-    expect(screen.getByText('trialBanner')).toBeInTheDocument()
-    const ws = await start()
-    act(() => ws!.message({ type: 'session_end', reason: 'trial_expired' }))
-
-    expect(await screen.findByText('trialCtaTitle')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /planYearly/ }))
-    await waitFor(() =>
-      expect(mocks.apiFetch).toHaveBeenCalledWith(
-        '/api/billing/checkout',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ plan: 'yearly' }),
-        })
-      )
-    )
-    expect(await screen.findByText('checkoutError')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /planMonthly/ })).toBeEnabled()
-
-    mocks.apiFetch.mockImplementation((url: string) =>
-      Promise.resolve(
-        url === '/api/billing/checkout'
-          ? {
-              ok: true,
-              json: async () => ({ url: 'https://billing.example/checkout' }),
-            }
-          : { ok: true, json: async () => null }
-      )
-    )
-    fireEvent.click(screen.getByRole('button', { name: /planMonthly/ }))
-    await waitFor(() =>
-      expect(locationAssign).toHaveBeenCalledWith(
-        'https://billing.example/checkout'
-      )
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'paywallSkip' }))
-    expect(mocks.push).toHaveBeenCalledWith('/plan')
-  })
-
-  it('uses the unauthorized close message for policy close codes', async () => {
-    render(<ConversationMode />)
-    const ws = await start()
-
-    act(() => ws!.onclose?.({ code: 1008, reason: 'private diagnostic' }))
-
-    expect(screen.getByText('✕ errorUnauthorized')).toBeInTheDocument()
-    expect(screen.queryByText(/private diagnostic/)).toBeNull()
-    expect(ws!.close).toHaveBeenCalledTimes(1)
   })
 })

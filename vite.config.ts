@@ -35,9 +35,6 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       headers: securityHeaders,
-      proxy: {
-        '/ws': { target: env.BACKEND_URL || 'http://127.0.0.1:8000', ws: true },
-      },
     },
   }
 })

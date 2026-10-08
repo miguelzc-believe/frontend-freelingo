@@ -80,8 +80,8 @@ Rollback of this fix restores the previous refresh callers in the app layout, on
 
 ### Before switching infrastructure
 
-Before replacing the original frontend, verify the prepared container on the deployment network, production TLS/CSP and `/ws` routing; then exercise live login, refresh rotation, logout, email recovery, billing returns, administrative authorization and language isolation against FastAPI.
+Before replacing the original frontend, verify the prepared container on the deployment network, production TLS/CSP and same-origin `/api` routing; then exercise live login, refresh rotation, logout, email recovery, billing returns, administrative authorization and language isolation against FastAPI.
 
-Verify microphone permission, VAD initialization, STT plan/language context, incremental chat, binary TTS, voice cancellation/barge-in and browser/device audio behavior with the real providers. No local mocked result proves physical-device or production speech acceptance.
+Conversation now uses explicit voice messages rather than the historical continuous VAD/WebSocket mode described in the dated evidence above. Verify microphone permission, AudioWorklet capture, stop-and-send, language-aware STT, two retries, tutor autoplay and manual replay/progress, and temporary-audio cleanup with the real providers. Incremental text chat remains SSE-based. No local mocked result proves physical-device or production speech acceptance. See [voice messages](voice-messages.md).
 
 Keep the original frontend image/configuration available for rollback until these checks pass. No original deployment files are changed by this migration.

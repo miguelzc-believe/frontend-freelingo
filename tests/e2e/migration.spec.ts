@@ -434,9 +434,10 @@ test('production proxies preserve incremental SSE and binary audio', async ({
   const audio = await request.post('/api/tts', { data: { text: 'fixture' } })
   expect(audio.headers()['content-type']).toBe('audio/mpeg')
   expect(await audio.body()).toEqual(Buffer.from([0, 255, 10]))
-  const model = await request.get('/vad/silero_vad_v5.onnx')
-  expect(model.status()).toBe(200)
-  expect(model.headers()['cross-origin-opener-policy']).toBe('same-origin')
+  const worklet = await request.get('/audio/voice-recorder.worklet.js')
+  expect(worklet.status()).toBe(200)
+  expect(await worklet.text()).toContain('registerProcessor')
+  expect(worklet.headers()['cross-origin-opener-policy']).toBe('same-origin')
   const manifest = await request.get('/manifest.webmanifest')
   expect(manifest.headers()['content-type']).toContain(
     'application/manifest+json'

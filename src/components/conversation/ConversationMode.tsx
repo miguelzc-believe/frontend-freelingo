@@ -1,26 +1,32 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { MicVAD, type RealTimeVADOptions } from '@ricky0123/vad-web'
-import { useRouter } from '@/lib/navigation'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocale, useTranslations } from 'use-intl'
 import { useAuthStore } from '@/store/auth'
-import { resolveVadRedemptionMs } from '@/lib/conversation-vad'
-import { useConfigStore } from '@/store/config'
 import { apiFetch } from '@/lib/api'
-import { float32ToWav, createAudioQueue, type AudioQueue } from '@/lib/audio'
-import { getLogger, silentLogger } from '@/lib/logger'
 import { mapUser } from '@/lib/mappers'
-import { splitYearlyCta, type BillingInterval } from '@/lib/billing-copy'
 import {
-  buildConversationWsUrl,
-  type WsMessage,
+  closeVoiceSession,
+  ConversationApiError,
+  fetchVoiceAudio,
+  getVoiceGreeting,
+  getVoiceSession,
+  markVoiceActivity,
+  sendVoiceTurn,
+  startVoiceSession,
   type ChatContextItem,
-} from '@/lib/conversation-ws'
-import StatusIndicator, { type ConvStatus } from './StatusIndicator'
+  type VoiceSession,
+  type VoiceTurnResult,
+} from '@/lib/conversation-api'
+import {
+  createVoiceRecording,
+  VoiceRecordingError,
+  type VoiceRecording,
+} from '@/lib/voice-recording'
 import TranscriptBubble from './TranscriptBubble'
 import SessionTimeoutBanner from './SessionTimeoutBanner'
-import MicButton from './MicButton'
+import MessageAudioPlayer, { VoicePlayback } from './MessageAudioPlayer'
+import { QuotaPill, TrialPremiumCta } from './VoiceSessionExtras'
 import { WordTooltip, useWordSave } from '@/components/ui/WordTooltip'
-import { type QuotaStatus } from '@/types/api'
+import type { QuotaStatus } from '@/types/api'
 import {
   ReviewPrompt,
   getReviewPromptDismissal,
@@ -30,234 +36,40 @@ import { MemorySavedToast } from '@/components/memory/MemorySavedToast'
 import { useTransientToast } from '@/hooks/useTransientToast'
 
 interface TranscriptEntry {
-  id: number
+  id: string
   role: 'user' | 'assistant'
   text: string
+  audio?: string | undefined
+  audioError?: 'audioExpired' | 'playbackFailed' | undefined
+  turnStatus?: VoiceTurnResult['status'] | undefined
+  attempts?: number | undefined
+  autoPlay?: boolean | undefined
+  cefrLevel?: string | undefined
+  delivery?: 'pending' | 'resend' | 'rejected' | 'confirmed' | undefined
+  deliveryError?: string | undefined
 }
 
-function QuotaBar({
-  label,
-  used,
-  limit,
-  unlimited,
-}: Readonly<{
-  label: string
-  used: number
-  limit: number
-  unlimited: boolean
-}>) {
-  const pct =
-    unlimited || limit === 0
-      ? null
-      : Math.min(100, Math.round((used / limit) * 100))
-  const exceeded = !unlimited && limit > 0 && used >= limit
-  return (
-    <div className="flex items-center gap-3">
-      <span className="text-fl-hint text-fl-muted-4 w-36 shrink-0 font-mono tracking-widest uppercase">
-        {label}
-      </span>
-      {unlimited ? (
-        <span className="text-fl-hint text-fl-muted-2 font-mono">∞</span>
-      ) : (
-        <>
-          <div className="bg-fl-surface-2 h-1 flex-1 overflow-hidden">
-            <div
-              className={`h-full transition-all ${exceeded ? 'bg-fl-error' : 'bg-fl-accent'}`}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span
-            className={`text-fl-hint font-mono tabular-nums ${exceeded ? 'text-fl-error' : 'text-fl-muted-2'}`}
-          >
-            {used}&thinsp;/&thinsp;{limit}
-          </span>
-        </>
-      )}
-    </div>
-  )
+interface PendingTurn {
+  blob: Blob
+  attempts: number
+  status: VoiceTurnResult['status'] | null
+  delivery: 'pending' | 'resend' | 'rejected' | 'confirmed'
 }
 
-function quotaPillSummary(quota: QuotaStatus): {
-  text: string
-  alert: boolean
-} {
-  const parts: string[] = []
-  let alert = false
-
-  if (!quota.sessions_unlimited) {
-    parts.push(`${quota.sessions_this_week}/${quota.sessions_limit} ses`)
-    if (quota.sessions_this_week >= quota.sessions_limit) alert = true
-  }
-
-  if (!quota.time_unlimited) {
-    parts.push(`${quota.minutes_today}/${quota.minutes_limit} min`)
-    if (quota.minutes_today >= quota.minutes_limit) alert = true
-  }
-
-  if (!quota.tokens_unlimited) {
-    const kUsed = Math.round((quota.tokens_this_month ?? 0) / 1000)
-    const kLimit = Math.round((quota.tokens_monthly_limit ?? 0) / 1000)
-    parts.push(`${kUsed}k/${kLimit}k tok`)
-    if ((quota.tokens_this_month ?? 0) >= (quota.tokens_monthly_limit ?? 0))
-      alert = true
-  }
-
-  return { text: parts.length ? parts.join(' · ') : '∞', alert }
+interface SessionRun {
+  abort: AbortController
+  session: VoiceSession | null
+  urls: Set<string>
+  turns: Map<string, PendingTurn>
+  busy: boolean
+  startedAt: number
+  deadline: number
+  ownerId: number | null
+  ownerToken: string
+  expiryCheckPending: boolean
 }
 
-function QuotaPill({
-  quota,
-  t,
-}: Readonly<{
-  quota: QuotaStatus
-  t: (k: string) => string
-}>) {
-  const [open, setOpen] = useState(false)
-  const { text, alert } = quotaPillSummary(quota)
-
-  return (
-    <div className="w-full">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={`text-fl-hint flex w-full items-center justify-between border px-3 py-1.5 font-mono tracking-widest uppercase transition-colors ${
-          alert
-            ? 'border-fl-error/50 text-fl-error hover:border-fl-error'
-            : 'border-fl-border text-fl-muted-3 hover:border-fl-border-2 hover:text-fl-muted-1'
-        }`}
-      >
-        <span>● {text}</span>
-        <span className="text-fl-muted-4">{open ? '▴' : '▾'}</span>
-      </button>
-
-      {open && (
-        <div className="border-fl-border bg-fl-surface space-y-1.5 border border-t-0 px-4 py-3">
-          <QuotaBar
-            label={t('quotaSessions')}
-            used={quota.sessions_this_week}
-            limit={quota.sessions_limit}
-            unlimited={quota.sessions_unlimited}
-          />
-          <QuotaBar
-            label={t('quotaMinutes')}
-            used={quota.minutes_today}
-            limit={quota.minutes_limit}
-            unlimited={quota.time_unlimited}
-          />
-          {!quota.tokens_unlimited && (
-            <QuotaBar
-              label={t('quotaTokens')}
-              used={quota.tokens_this_month ?? 0}
-              limit={quota.tokens_monthly_limit ?? 0}
-              unlimited={false}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function TrialPremiumCta() {
-  const t = useTranslations('billing')
-  const tConversation = useTranslations('conversation')
-  const locale = useLocale()
-  const router = useRouter()
-  const priceMonthly = useConfigStore((s) => s.priceMonthly)
-  const priceYearly = useConfigStore((s) => s.priceYearly)
-  const [loading, setLoading] = useState<BillingInterval | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const yearlyCta = splitYearlyCta(
-    t('planYearly', {
-      price: new Intl.NumberFormat(locale).format(priceYearly),
-    })
-  )
-
-  async function handleCheckout(interval: BillingInterval) {
-    setLoading(interval)
-    setError(null)
-    try {
-      const res = await apiFetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: interval }),
-      })
-      if (!res.ok) {
-        throw new Error(t('checkoutError'))
-      }
-      const { url } = await res.json()
-      window.location.assign(url)
-    } catch {
-      setError(t('checkoutError'))
-      setLoading(null)
-    }
-  }
-
-  return (
-    <div className="border-fl-border bg-fl-surface mb-4 border p-5 text-center">
-      <p className="text-fl-label text-fl-muted-2 mb-2 font-mono tracking-widest uppercase">
-        {tConversation('trialCtaLabel')}
-      </p>
-      <h2 className="text-fl-fg mb-2 font-mono text-base font-bold">
-        {tConversation('trialCtaTitle')}
-      </h2>
-      <p className="text-fl-muted-1 mb-5 font-mono text-sm leading-relaxed">
-        {tConversation('trialCtaDesc')}
-      </p>
-      <div className="flex flex-col gap-3">
-        <button
-          onClick={() => handleCheckout('yearly')}
-          disabled={loading !== null}
-          className="bg-fl-accent text-fl-accent-fg hover:bg-fl-accent/90 w-full px-4 py-3 font-mono text-sm tracking-widest uppercase transition-colors disabled:opacity-50"
-        >
-          {loading === 'yearly' ? (
-            '...'
-          ) : (
-            <span className="flex flex-col items-center gap-0.5 leading-relaxed">
-              <span>{yearlyCta.main}</span>
-              {yearlyCta.savings && (
-                <span className="text-fl-accent-fg text-xs">
-                  {yearlyCta.savings}
-                </span>
-              )}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => handleCheckout('monthly')}
-          disabled={loading !== null}
-          className="border-fl-border text-fl-muted-1 hover:text-fl-fg hover:border-fl-border-2 w-full border px-4 py-3 font-mono text-sm tracking-widest uppercase transition-colors disabled:opacity-50"
-        >
-          {loading === 'monthly'
-            ? '...'
-            : t('planMonthly', {
-                price: new Intl.NumberFormat(locale).format(priceMonthly),
-              })}
-        </button>
-      </div>
-      {error && (
-        <p className="text-fl-hint mt-4 font-mono text-red-500">{error}</p>
-      )}
-      <button
-        onClick={() => router.push('/plan')}
-        className="text-fl-muted-4 hover:text-fl-muted-2 mt-5 w-full font-mono text-xs tracking-widest uppercase transition-colors"
-      >
-        {t('paywallSkip')}
-      </button>
-    </div>
-  )
-}
-
-const ENABLE_CONVERSATION_AUDIO_DEBUG_LOGS = false
-const ENABLE_CONVERSATION_BARGE_IN = false
-const MIN_UTTERANCE_MS = 900
-const MIN_UTTERANCE_RMS = 0.012
-const INTERRUPTION_MIN_UTTERANCE_MS = 1200
-const INTERRUPTION_RMS_THRESHOLD = 0.03
-const BARGE_IN_STARTUP_GUARD_MS = 900
-const VAD_MAX_RMS = 0.25
-const convLogger = ENABLE_CONVERSATION_AUDIO_DEBUG_LOGS
-  ? getLogger('conversation-audio')
-  : silentLogger
+type Status = 'ready' | 'connecting' | 'live' | 'sending' | 'ended' | 'error'
 
 export default function ConversationMode({
   initialContext,
@@ -269,6 +81,7 @@ export default function ConversationMode({
   trialMode,
   freemiumVoiceRemaining,
   freemiumVoiceLimit,
+  conversationId,
   onClose,
 }: Readonly<{
   initialContext?: ChatContextItem[] | undefined
@@ -280,31 +93,44 @@ export default function ConversationMode({
   trialMode?: boolean | undefined
   freemiumVoiceRemaining?: number | undefined
   freemiumVoiceLimit?: number | undefined
+  conversationId?: number | undefined
   onClose?: () => void
 }>) {
   const t = useTranslations('conversation')
+  const v = useTranslations('conversation.voiceMessages')
   const tCommon = useTranslations('common')
   const locale = useLocale()
-  const accessToken = useAuthStore((s) => s.accessToken)
-  const user = useAuthStore((s) => s.user)
-  const setUser = useAuthStore((s) => s.setUser)
-
-  // ─── UI State ────────────────────────────────────────────────────────────
-  const [status, setStatus] = useState<ConvStatus>('ready')
-  const [sessionActive, setSessionActive] = useState(false)
+  const accessToken = useAuthStore((state) => state.accessToken)
+  const user = useAuthStore((state) => state.user)
+  const setUser = useAuthStore((state) => state.setUser)
+  const userId = user?.id ?? null
+  const language = targetLanguage ?? user?.target_language ?? 'en-GB'
+  const scope = JSON.stringify([
+    userId,
+    language,
+    voiceTrialToken ?? null,
+    conversationId ?? null,
+    trialMode ?? false,
+  ])
+  const [status, setStatus] = useState<Status>('ready')
+  const [recording, setRecording] = useState(false)
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
-  const [streamingText, setStreamingText] = useState<string | null>(null)
   const [warningSeconds, setWarningSeconds] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [userSpeaking, setUserSpeaking] = useState(false)
-  const [assistantSpeaking, setAssistantSpeaking] = useState(false)
+  const [quota, setQuota] = useState<QuotaStatus | null>(null)
+  const [reviewPromptOpen, setReviewPromptOpen] = useState(false)
+  const [playback] = useState(() => new VoicePlayback())
+  const runRef = useRef<SessionRun | null>(null)
+  const autoStartedScopeRef = useRef<string | null>(null)
+  const recorderRef = useRef<VoiceRecording | null>(null)
+  const recordButtonRef = useRef<HTMLButtonElement | null>(null)
+  const mountedRef = useRef(true)
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null)
   const {
     visible: memoryToast,
     announcementId: memoryToastId,
     show: showMemoryToast,
   } = useTransientToast()
-  const [quota, setQuota] = useState<QuotaStatus | null>(null)
-  const [reviewPromptOpen, setReviewPromptOpen] = useState(false)
   const {
     selectedWord,
     tooltipPos,
@@ -313,859 +139,626 @@ export default function ConversationMode({
     handleSaveWord,
     dismissTooltip,
   } = useWordSave()
-
-  // Keep server rendering and hydration deterministic by showing the first six.
   const visibleStarters = (t.raw('starters') as string[])
     .slice(0, 6)
     .sort((a, b) => a.localeCompare(b, locale))
 
-  // ─── Fetch quota on mount ─────────────────────────────────────────────────
   const refreshQuota = useCallback(() => {
     apiFetch('/api/auth/quota')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: QuotaStatus | null) => data && setQuota(data))
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: QuotaStatus | null) => {
+        if (mountedRef.current && data) setQuota(data)
+      })
       .catch(() => {})
   }, [])
 
-  useEffect(() => {
-    refreshQuota()
-  }, [refreshQuota])
-
-  // ─── Refs ─────────────────────────────────────────────────────────────────
-  const wsRef = useRef<WebSocket | null>(null)
-  const audioCtxRef = useRef<AudioContext | null>(null)
-  const audioQueueRef = useRef<AudioQueue | null>(null)
-  const transcriptIdRef = useRef(0)
-  const transcriptEndRef = useRef<HTMLDivElement | null>(null)
-  const activeTurnIdRef = useRef<number | null>(null)
-  // Tracks whether the session ended cleanly so ws.onclose doesn't overwrite state
-  const cleanEndRef = useRef(false)
-  const mountedRef = useRef(true)
-  const startAttemptRef = useRef(0)
-  const micStreamRef = useRef<MediaStream | null>(null)
-  const vadInstanceRef = useRef<MicVAD | null>(null)
-  const vadOperationRef = useRef<Promise<void>>(Promise.resolve())
-  const assistantSpeakingRef = useRef(false)
-  const assistantTurnActiveRef = useRef(false)
-  const speechStartedAtRef = useRef<number | null>(null)
-  const sessionActiveRef = useRef(false)
-  const ttsChunkIndexRef = useRef(0)
-  const lastAssistantAudioAtRef = useRef(0)
-  const closeReasonRef = useRef<'manual' | 'route_unload' | 'unknown'>(
-    'unknown'
-  )
-  const sessionStartedAtRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    assistantSpeakingRef.current = assistantSpeaking
-  }, [assistantSpeaking])
-
-  const isLikelySpeech = useCallback(
-    (
-      audio: Float32Array,
-      minUtteranceMs = MIN_UTTERANCE_MS
-    ): { isSpeech: boolean; rms: number; durationMs: number } => {
-      const samples = audio.length
-      if (samples === 0) {
-        return { isSpeech: false, rms: 0, durationMs: 0 }
-      }
-      const startedAt = speechStartedAtRef.current
-      const durationMs = (samples / 16000) * 1000
-      if (!startedAt || durationMs < minUtteranceMs) {
-        return { isSpeech: false, rms: 0, durationMs }
-      }
-      let energy = 0
-      for (let i = 0; i < samples; i += 1) {
-        const sample = audio[i] ?? 0
-        energy += sample * sample
-      }
-      const rms = Math.sqrt(energy / samples)
-      const cappedRms = Number.isFinite(rms) ? Math.min(rms, VAD_MAX_RMS) : 0
-      return {
-        isSpeech: cappedRms >= MIN_UTTERANCE_RMS,
-        rms: cappedRms,
-        durationMs,
-      }
-    },
-    []
-  )
-
-  function interruptAssistantPlayback(
-    speech: { rms: number; durationMs: number },
-    sinceLastAssistantAudioMs: number,
-    wasAssistantSpeaking: boolean
-  ) {
-    if (wasAssistantSpeaking) {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        convLogger.info('sending interrupt at speech end', {
-          rms: speech.rms,
-          durationMs: Math.round(speech.durationMs),
-          sinceLastAssistantAudioMs: Math.round(sinceLastAssistantAudioMs),
-        })
-        wsRef.current.send(JSON.stringify({ type: 'interrupt' }))
-        setAssistantSpeaking(false)
-      }
-    }
-
-    // Barge-in: cancel in-progress TTS playback only when assistant is speaking.
-    if (assistantSpeakingRef.current && audioQueueRef.current) {
-      convLogger.info('processing barge-in speech', {
-        rms: speech.rms,
-        sinceLastAssistantAudioMs: Math.round(sinceLastAssistantAudioMs),
-      })
-      audioQueueRef.current.cancel()
-      setAssistantSpeaking(false)
-    }
-  }
-
-  // MicVAD must only be created after the user grants microphone permission.
-  // Keep event handlers current without rebuilding the active VAD instance.
-  const vadCallbacksRef = useRef<
-    Pick<RealTimeVADOptions, 'onSpeechStart' | 'onVADMisfire' | 'onSpeechEnd'>
-  >({
-    onSpeechStart: () => {},
-    onVADMisfire: () => {},
-    onSpeechEnd: () => {},
-  })
-  vadCallbacksRef.current = {
-    onSpeechStart: () => {
-      if (!sessionActiveRef.current) return
-      convLogger.info('vad speech start', {
-        assistantSpeaking: assistantSpeakingRef.current,
-      })
-      speechStartedAtRef.current = performance.now()
-      setUserSpeaking(true)
-    },
-    onVADMisfire: () => {
-      speechStartedAtRef.current = null
-      if (mountedRef.current) setUserSpeaking(false)
-    },
-    onSpeechEnd: (audio: Float32Array) => {
-      if (!mountedRef.current) return
-      const minUtteranceMs = assistantTurnActiveRef.current
-        ? INTERRUPTION_MIN_UTTERANCE_MS
-        : MIN_UTTERANCE_MS
-      const speech = isLikelySpeech(audio, minUtteranceMs)
-      const isSpeech = speech.isSpeech
-      convLogger.info('vad speech end', {
-        isSpeech,
-        rms: speech.rms,
-        durationMs: Math.round(speech.durationMs),
-        sessionActive: sessionActiveRef.current,
-        assistantSpeaking: assistantSpeakingRef.current,
-        assistantTurnActive: assistantTurnActiveRef.current,
-      })
-      speechStartedAtRef.current = null
-      if (!isSpeech) {
-        setUserSpeaking(false)
-        return
-      }
-      setUserSpeaking(false)
-
-      // Ignore accidental detections when the session ended.
-      if (!sessionActiveRef.current) {
-        return
-      }
-
-      // Never interrupt the tutor turn. While the backend is generating or
-      // sending chunked audio, any detected speech is ignored to avoid lost
-      // responses from VAD false positives or accidental overlap.
-      if (assistantTurnActiveRef.current) {
-        convLogger.warn('ignored user speech while assistant turn is active', {
-          rms: speech.rms,
-          durationMs: Math.round(speech.durationMs),
-          assistantSpeaking: assistantSpeakingRef.current,
-        })
-        return
-      }
-
-      // If the assistant is speaking, avoid false positive interruptions
-      // from playback leakage / room noise. Kept as a defensive guard for any
-      // state race before assistantTurnActiveRef is updated.
-      if (
-        assistantSpeakingRef.current &&
-        speech.rms < INTERRUPTION_RMS_THRESHOLD
-      ) {
-        convLogger.warn('ignored speech while assistant was speaking', {
-          rms: speech.rms,
-          lastAssistantAudioMsAgo:
-            performance.now() - lastAssistantAudioAtRef.current,
-        })
-        return
-      }
-
-      const sinceLastAssistantAudioMs =
-        performance.now() - lastAssistantAudioAtRef.current
-      const wasAssistantSpeaking = assistantSpeakingRef.current
-
-      if (wasAssistantSpeaking && !ENABLE_CONVERSATION_BARGE_IN) {
-        convLogger.warn('ignored user speech while assistant audio is active', {
-          rms: speech.rms,
-          durationMs: Math.round(speech.durationMs),
-          sinceLastAssistantAudioMs: Math.round(sinceLastAssistantAudioMs),
-        })
-        return
-      }
-
-      if (
-        wasAssistantSpeaking &&
-        sinceLastAssistantAudioMs < BARGE_IN_STARTUP_GUARD_MS
-      ) {
-        convLogger.warn('ignored speech early in assistant playback window', {
-          rms: speech.rms,
-          sinceLastAssistantAudioMs: Math.round(sinceLastAssistantAudioMs),
-        })
-        return
-      }
-
-      interruptAssistantPlayback(
-        speech,
-        sinceLastAssistantAudioMs,
-        wasAssistantSpeaking
-      )
-
-      const ws = wsRef.current
-      if (ws?.readyState === WebSocket.OPEN) {
-        assistantTurnActiveRef.current = true
-        try {
-          const wav = float32ToWav(audio, 16000)
-          convLogger.info('sent user utterance to backend', {
-            bytes: wav.byteLength,
-            assistantSpeaking: assistantSpeakingRef.current,
-          })
-          ws.send(wav)
-          setErrorMsg(null)
-          setStatus('live')
-        } catch {
-          assistantTurnActiveRef.current = false
-          setErrorMsg(t('errorConnection'))
-          setStatus('error')
-          finalizeSession()
-        }
-      }
-    },
-  }
-
-  const getMicStream = useCallback(async () => {
-    const stream = micStreamRef.current
-    if (!stream) throw new Error('No active microphone stream')
-    return stream
-  }, [])
-
   const refreshCurrentUser = useCallback(async () => {
+    const id = useAuthStore.getState().user?.id
     try {
-      const res = await apiFetch('/api/auth/me')
-      if (!res.ok) return
-      const data = await res.json()
-      setUser(mapUser(data, useAuthStore.getState().user))
+      const response = await apiFetch('/api/auth/me')
+      if (!response.ok) return
+      const data = await response.json()
+      if (mountedRef.current && useAuthStore.getState().user?.id === id)
+        setUser(mapUser(data, useAuthStore.getState().user))
     } catch {
-      // Non-fatal: the backend remains authoritative and the next /me refresh will sync state.
+      // Non-fatal: authorization and trial usage remain server-owned.
     }
   }, [setUser])
 
-  const finalizeSession = useCallback(
-    (reason: 'manual' | 'route_unload' | 'unknown' = 'unknown') => {
-      if (
-        !sessionActiveRef.current &&
-        !wsRef.current &&
-        !micStreamRef.current &&
-        !vadInstanceRef.current &&
-        !audioCtxRef.current
+  const finish = useCallback(() => {
+    const run = runRef.current
+    runRef.current = null // Invalidate all pending capture, fetch and playback work first.
+    run?.abort.abort()
+    recorderRef.current?.cancel()
+    recorderRef.current = null
+    playback.blocked = true
+    playback.stop()
+    run?.urls.forEach((url) => URL.revokeObjectURL(url))
+    run?.urls.clear()
+    run?.turns.clear()
+    if (run?.session)
+      void closeVoiceSession(run.session.session_id, run.ownerToken)
+        .then(() => {
+          if (mountedRef.current) refreshQuota()
+        })
+        .catch(() => {})
+    if (mountedRef.current) {
+      setRecording(false)
+      setWarningSeconds(null)
+      setStatus('ended')
+      setTranscript((entries) =>
+        entries.map((entry) => ({
+          ...entry,
+          audio: undefined,
+          audioError: entry.audio ? 'audioExpired' : entry.audioError,
+        }))
       )
-        return
-      closeReasonRef.current = reason
-      startAttemptRef.current++
-      sessionActiveRef.current = false
-      activeTurnIdRef.current = null
-      assistantTurnActiveRef.current = false
-      assistantSpeakingRef.current = false
-      speechStartedAtRef.current = null
-      const ws = wsRef.current
-      wsRef.current = null
-      if (ws) {
-        ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null
-        try {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(
-              JSON.stringify({
-                type: 'client_event',
-                event: 'session_close_request',
-                reason,
-              })
-            )
-          }
-        } catch {
-          // A closing transport must not prevent local resource cleanup.
-        }
-        try {
-          ws.close()
-        } catch {
-          // Continue releasing the microphone even if closing the WS fails.
-        }
-      }
-      const vad = vadInstanceRef.current
-      vadInstanceRef.current = null
-      if (vad) {
-        vadOperationRef.current = vadOperationRef.current
-          .then(() => vad.destroy())
-          .catch(() => {})
-      }
-      micStreamRef.current?.getTracks().forEach((track) => track.stop())
-      micStreamRef.current = null
-      audioQueueRef.current?.cancel()
-      audioQueueRef.current = null
-      if (audioCtxRef.current) {
-        void audioCtxRef.current.close().catch(() => {})
-        audioCtxRef.current = null
-      }
-      if (mountedRef.current) {
-        setAssistantSpeaking(false)
-        setUserSpeaking(false)
-        setStreamingText(null)
-        setWarningSeconds(null)
-        setSessionActive(false)
-        dismissTooltip()
-      }
-    },
-    [dismissTooltip]
-  )
+      dismissTooltip()
+    }
+    return run
+  }, [dismissTooltip, playback, refreshQuota])
 
-  // Auto-scroll transcript to bottom. Any transcript mutation moves the bubbles,
-  // so a word tooltip anchored to old viewport coordinates is dropped with it.
+  // Changing account/language/trial invalidates the entire memory-only scope.
+  // Token refresh alone does not: apiFetch always reads the latest bearer token.
+  useEffect(() => {
+    mountedRef.current = true
+    setTranscript([])
+    setRecording(false)
+    setWarningSeconds(null)
+    setErrorMsg(null)
+    setStatus('ready')
+    dismissTooltip()
+    refreshQuota()
+    return () => {
+      mountedRef.current = false
+      finish()
+      // StrictMode replays setup after aborting this run but retains refs. Let
+      // that setup start again; normal renders/token refresh do not clean up.
+      autoStartedScopeRef.current = null
+    }
+  }, [scope, finish, refreshQuota, dismissTooltip])
+
+  useEffect(() => {
+    const run = runRef.current
+    if (run && (!accessToken || userId !== run.ownerId)) finish()
+    else if (run && accessToken) run.ownerToken = accessToken
+  }, [accessToken, userId, finish])
+
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     dismissTooltip()
-  }, [transcript, streamingText, dismissTooltip])
+  }, [transcript, dismissTooltip])
 
-  // ─── Auto-start when opened as overlay from chat ────────────────────────
-  const pendingAutoStartRef = useRef(false)
-
-  useEffect(() => {
-    if (autoStart && !sessionActive) {
-      pendingAutoStartRef.current = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart])
-
-  useEffect(() => {
-    if (pendingAutoStartRef.current && !!accessToken && !sessionActive) {
-      pendingAutoStartRef.current = false
-      void handleStart()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken])
-
-  // ─── WebSocket ────────────────────────────────────────────────────────────
-  const connectWs = useCallback(
-    (token: string, context?: ChatContextItem[]) => {
-      convLogger.info('opening conversation websocket')
-      const url = buildConversationWsUrl()
-      const ws = new WebSocket(url)
-      ws.binaryType = 'arraybuffer'
-      wsRef.current = ws
-      const attempt = startAttemptRef.current
-      const isCurrent = () =>
-        mountedRef.current &&
-        startAttemptRef.current === attempt &&
-        wsRef.current === ws
-
-      ws.onopen = () => {
-        if (!isCurrent()) return
-        const authPayload: Record<string, unknown> = { type: 'auth', token }
-        const storedVoice =
-          typeof window !== 'undefined'
-            ? localStorage.getItem('tts_voice')
-            : null
-        if (storedVoice) authPayload.voice = storedVoice
-        if (context?.length) authPayload.context = context
-        if (targetLanguage) authPayload.target_language = targetLanguage
-        if (voiceTrialToken) authPayload.voice_trial_token = voiceTrialToken
-        try {
-          ws.send(JSON.stringify(authPayload))
-        } catch {
-          setErrorMsg(t('errorConnection'))
-          setStatus('error')
-          finalizeSession()
-          return
-        }
-        sessionStartedAtRef.current = Date.now()
-        convLogger.info('ws auth sent', {
-          hasContext: !!context?.length,
-          targetLanguage: targetLanguage ?? null,
-        })
-        setStatus('live')
-      }
-
-      const handleAudioChunk = (arrayBuffer: ArrayBuffer): void => {
-        if (!isCurrent()) return
-        const chunkId = ++ttsChunkIndexRef.current
-        convLogger.warn('playback chunk received', {
-          chunkId,
-          bytes: arrayBuffer.byteLength,
-        })
-        lastAssistantAudioAtRef.current = performance.now()
-        assistantTurnActiveRef.current = true
-        if (!audioQueueRef.current) {
-          convLogger.warn('audio queue missing for playback')
-          setAssistantSpeaking(false)
-          return
-        }
-        assistantSpeakingRef.current = true
-        setAssistantSpeaking(true)
-        void audioQueueRef.current.enqueue(arrayBuffer).catch((error) => {
-          if (!isCurrent()) return
-          convLogger.error('audio queue enqueue failed', {
-            chunkId,
-            error: error instanceof Error ? error.message : String(error),
-          })
-          setAssistantSpeaking(false)
-        })
-      }
-
-      const handleTranscript = (
-        msg: Extract<WsMessage, { type: 'transcript' }>
-      ) => {
-        if (msg.role === 'user') {
-          // STT result — always final
-          setTranscript((prev) => [
-            ...prev,
-            { id: transcriptIdRef.current++, role: 'user', text: msg.text },
-          ])
-          return
-        }
-        assistantTurnActiveRef.current = true
-        // LLM token stream
-        if (msg.final) {
-          setStreamingText(null)
-          setTranscript((prev) => [
-            ...prev,
-            {
-              id: transcriptIdRef.current++,
-              role: 'assistant',
-              text: msg.text,
-            },
-          ])
-        } else {
-          setStreamingText(msg.text)
-        }
-      }
-
-      const handleBackendStatus = (
-        msg: Extract<WsMessage, { type: 'status' }>
-      ) => {
-        setStatus('live')
-        convLogger.debug('status update', { value: msg.value })
-        if (msg.value === 'transcribing') {
-          assistantTurnActiveRef.current = true
-          setAssistantSpeaking(false)
-        } else if (msg.value === 'speaking') {
-          setAssistantSpeaking(true)
-        } else if (msg.value === 'thinking') {
-          assistantTurnActiveRef.current = true
-        } else if (msg.value === 'listening') {
-          assistantTurnActiveRef.current = false
-        }
-      }
-
-      ws.onmessage = (event) => {
-        if (!isCurrent()) return
-        // Binary → TTS audio chunk
-        if (event.data instanceof ArrayBuffer) {
-          handleAudioChunk(event.data)
-          return
-        }
-        if (event.data instanceof Blob) {
-          void event.data
-            .arrayBuffer()
-            .then((arrayBuffer) => handleAudioChunk(arrayBuffer))
-            .catch(() => {})
-          return
-        }
-
-        // Text → JSON control message
-        try {
-          const msg = JSON.parse(event.data as string) as WsMessage
-          convLogger.debug('ws text message', { type: msg.type })
-          if (msg.turn_id !== undefined) {
-            activeTurnIdRef.current = msg.turn_id
-          }
-
-          switch (msg.type) {
-            case 'transcript':
-              handleTranscript(msg)
-              break
-
-            case 'turn_complete':
-              assistantTurnActiveRef.current = false
-              break
-
-            case 'barge_in':
-              convLogger.warn('barge_in message from backend')
-              audioQueueRef.current?.cancel()
-              setAssistantSpeaking(false)
-              setStreamingText(null)
-              break
-
-            case 'session_warning':
-              convLogger.debug('session warning', {
-                remainingSeconds: msg.remaining_seconds,
-              })
-              setWarningSeconds(msg.remaining_seconds)
-              break
-
-            case 'status':
-              handleBackendStatus(msg)
-              break
-
-            case 'session_end':
-              cleanEndRef.current = true
-              assistantTurnActiveRef.current = false
-              finalizeSession()
-              convLogger.info('session end received', { reason: msg.reason })
-              setStatus('ended')
-              if (trialMode) void refreshCurrentUser()
-              break
-
-            case 'error': {
-              convLogger.error('ws error message', {
-                code: msg.code,
-                message: msg.message,
-              })
-              const errorMessages: Record<string, string> = {
-                auth_failed: t('errorUnauthorized'),
-                services_disabled: t('errorServicesDisabled'),
-                quota_exceeded_sessions: t('quotaExceededSessions'),
-                quota_exceeded_time: t('quotaExceededTime'),
-                quota_exceeded_tokens: t('quotaExceededTokens'),
-                no_active_plan: tCommon('noActivePlan'),
-                stt_failed: t('errorTranscription'),
-                llm_failed: t('errorResponse'),
-                tts_failed: t('errorSpeech'),
-              }
-              setErrorMsg(errorMessages[msg.code] ?? tCommon('errorMessage'))
-              setStatus('error')
-              assistantTurnActiveRef.current = false
-              if (
-                ['stt_failed', 'llm_failed', 'tts_failed'].includes(msg.code)
-              ) {
-                setStatus('live')
-                audioQueueRef.current?.cancel()
-                assistantSpeakingRef.current = false
-                setAssistantSpeaking(false)
-                setStreamingText(null)
-              } else {
-                cleanEndRef.current = true
-                finalizeSession()
-              }
-              break
-            }
-
-            case 'memory_updated':
-              showMemoryToast()
-              break
-          }
-        } catch {
-          // Non-JSON (shouldn't happen for text frames) — ignore
-        }
-      }
-
-      ws.onerror = () => {
-        if (!isCurrent()) return
-        if (!cleanEndRef.current) {
-          convLogger.error('ws onerror')
-          setErrorMsg(t('errorConnection'))
-          setStatus('error')
-          finalizeSession()
-        }
-      }
-
-      ws.onclose = (ev) => {
-        if (!isCurrent()) return
-        convLogger.warn('ws closed', { code: ev.code, reason: ev.reason })
-        if (!cleanEndRef.current) {
-          if (ev.code === 1008) {
-            setErrorMsg(t('errorUnauthorized'))
-          } else if (ev.code !== 1000) {
-            setErrorMsg(t('errorConnection'))
-          }
-          setStatus('error')
-          finalizeSession()
-        }
-        cleanEndRef.current = false
-      }
-    },
-    [
-      t,
-      tCommon,
-      targetLanguage,
-      voiceTrialToken,
-      trialMode,
-      refreshCurrentUser,
-      finalizeSession,
-      showMemoryToast,
-    ]
-  )
-
-  // ─── Session lifecycle ────────────────────────────────────────────────────
-  async function requestMicrophone(
-    startAttempt: number
-  ): Promise<MediaStream | null> {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          autoGainControl: true,
-          noiseSuppression: true,
-        },
-      })
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
-        stream.getTracks().forEach((track) => track.stop())
-        return null
-      }
-      micStreamRef.current = stream
-      return stream
-    } catch {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-        return null
-      setErrorMsg(t('errorMic'))
-      setStatus('error')
-      finalizeSession()
-      return null
-    }
+  function isCurrent(run: SessionRun): boolean {
+    return (
+      mountedRef.current && runRef.current === run && !run.abort.signal.aborted
+    )
   }
 
-  async function startMicrophoneVad(
-    stream: MediaStream,
-    startAttempt: number
-  ): Promise<boolean> {
-    try {
-      const startVad = vadOperationRef.current.then(async () => {
-        if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-          return
-        const vad = await MicVAD.new({
-          baseAssetPath: '/vad/',
-          onnxWASMBasePath: '/vad/',
-          model: 'v5',
-          startOnLoad: false,
-          getStream: getMicStream,
-          pauseStream: async () => {},
-          resumeStream: getMicStream,
-          redemptionMs: resolveVadRedemptionMs(
-            user?.conversation_speech_pause,
-            cefrLevel
-          ),
-          ortConfig: (ort) => {
-            // Single-threaded ONNX — no SharedArrayBuffer / COOP headers required
-            ort.env.wasm.numThreads = 1
-          },
-          onSpeechStart: () => vadCallbacksRef.current.onSpeechStart(),
-          onVADMisfire: () => vadCallbacksRef.current.onVADMisfire(),
-          onSpeechEnd: (audio) => vadCallbacksRef.current.onSpeechEnd(audio),
-        })
-        if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
-          await vad.destroy()
-          stream.getTracks().forEach((track) => track.stop())
-          return
-        }
-        vadInstanceRef.current = vad
-        await vad.start()
-      })
-      vadOperationRef.current = startVad.then(
-        () => undefined,
-        () => undefined
-      )
-      await startVad
-      return true
-    } catch {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-        return false
-      convLogger.error('VAD initialization failed')
-      setErrorMsg(t('errorVadInit'))
-      setStatus('error')
-      finalizeSession()
-      return false
+  function messageFor(error: unknown): string {
+    if (!(error instanceof ConversationApiError)) return t('errorConnection')
+    if (error.status === 410) return v('sessionExpired')
+    if (error.status === 404 || error.status === 401)
+      return t('errorUnauthorized')
+    if (error.status === 422) return t('errorTranscription')
+    if (error.status === 409 || (error.status >= 500 && error.status !== 503))
+      return t('errorConnection')
+    const codes: Record<string, string> = {
+      quota_exceeded_sessions: t('quotaExceededSessions'),
+      quota_exceeded_time: t('quotaExceededTime'),
+      quota_exceeded_tokens: t('quotaExceededTokens'),
+      no_active_plan: tCommon('noActivePlan'),
+      subscription_required: tCommon('noActivePlan'),
+      services_disabled: t('errorServicesDisabled'),
+      voice_services_unavailable: t('errorVoiceServicesUnavailable'),
     }
+    return (
+      codes[error.code] ??
+      (error.status === 503
+        ? t('errorVoiceServicesUnavailable')
+        : tCommon('errorMessage'))
+    )
   }
 
-  async function warmupServices(startAttempt: number): Promise<boolean> {
-    const warmupResponsePromise = apiFetch('/api/conversation/warmup', {
-      method: 'POST',
-      ...(voiceTrialToken
-        ? {
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial_token: voiceTrialToken }),
-          }
-        : {}),
-    })
-    const warmupTimeout = new Promise<Response>((_, reject) => {
-      setTimeout(() => reject(new Error('warmup timeout')), 60_000)
-    })
-    let warmupResponse: Response
-    try {
-      warmupResponse = (await Promise.race([
-        warmupResponsePromise,
-        warmupTimeout,
-      ])) as Response
-    } catch {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-        return false
-      setErrorMsg(`${t('errorConnection')} [warmup request failed]`)
-      convLogger.error('warmup request failed')
-      setStatus('error')
-      finalizeSession()
-      return false
-    }
-
-    if (!warmupResponse.ok) {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-        return false
-      const warmupBody = (await warmupResponse.json().catch(() => ({}))) as {
-        detail?: string | undefined
-      }
-      setErrorMsg(
-        warmupBody.detail === 'voice_services_unavailable'
-          ? t('errorVoiceServicesUnavailable')
-          : t('errorConnection')
-      )
-      convLogger.error('warmup bad status', { status: warmupResponse.status })
-      setStatus('error')
-      finalizeSession()
-      return false
-    }
-    return true
-  }
-
-  async function handleStart(topicContext?: ChatContextItem[]) {
+  function requestFailed(run: SessionRun, error: unknown) {
+    if (!isCurrent(run)) return
+    setErrorMsg(messageFor(error))
     if (
-      !accessToken ||
-      sessionActiveRef.current ||
-      sessionActive ||
-      status === 'warming' ||
-      status === 'connecting' ||
-      status === 'live'
+      error instanceof ConversationApiError &&
+      [401, 402, 404, 410, 429, 503].includes(error.status)
+    ) {
+      finish()
+      if (trialMode) void refreshCurrentUser()
+      refreshQuota()
+    } else {
+      setStatus(run.session ? 'live' : 'error')
+    }
+  }
+
+  function updateExpiry(
+    run: SessionRun,
+    result: { inactivity_expires_at: string; remaining_seconds?: number }
+  ) {
+    if (!run.session || !isCurrent(run)) return
+    // Monotonic inactivity updates: a slower prior activity response must not
+    // shorten a newer turn/activity extension.
+    if (
+      Date.parse(result.inactivity_expires_at) >
+      Date.parse(run.session.inactivity_expires_at)
+    )
+      run.session.inactivity_expires_at = result.inactivity_expires_at
+    // expires_at is the authoritative absolute cap. remaining_seconds is
+    // rounded up by the server; subtracting it from this response's arrival
+    // time could otherwise shorten the session during a slow provider call.
+    if (result.remaining_seconds !== undefined && result.remaining_seconds <= 0)
+      run.deadline = Math.min(run.deadline, Date.now())
+  }
+
+  function activity(run: SessionRun) {
+    if (!run.session || !isCurrent(run)) return
+    void markVoiceActivity(run.session.session_id, run.abort.signal)
+      .then((result) => updateExpiry(run, result))
+      .catch((error: unknown) => requestFailed(run, error))
+  }
+
+  function objectUrl(run: SessionRun, blob: Blob): string {
+    const url = URL.createObjectURL(blob)
+    run.urls.add(url)
+    return url
+  }
+
+  async function applyResult(
+    run: SessionRun,
+    result: VoiceTurnResult,
+    clientTurnId?: string
+  ) {
+    if (!isCurrent(run)) return
+    updateExpiry(run, result)
+    if (result.memory_updated) showMemoryToast()
+    if (clientTurnId) {
+      const pending = run.turns.get(clientTurnId)
+      if (pending) {
+        pending.status = result.status
+        pending.attempts = result.stt_attempts
+        pending.delivery = 'confirmed'
+      }
+      setTranscript((entries) =>
+        entries.map((entry) =>
+          entry.id === clientTurnId
+            ? {
+                ...entry,
+                text:
+                  result.user_text ??
+                  (result.status === 'stt_failed' &&
+                  entry.text === v('processing')
+                    ? ''
+                    : entry.text),
+                turnStatus: result.status,
+                attempts: pending?.attempts ?? result.stt_attempts,
+                delivery: 'confirmed',
+                deliveryError: undefined,
+              }
+            : entry
+        )
+      )
+    }
+    if (result.assistant_text !== null) {
+      const id = `assistant-${result.turn_id}`
+      setTranscript((entries) =>
+        entries.some((entry) => entry.id === id)
+          ? entries
+          : [
+              ...entries,
+              {
+                id,
+                role: 'assistant',
+                text: result.assistant_text!,
+                cefrLevel: run.session?.cefr_level ?? cefrLevel ?? undefined,
+              },
+            ]
+      )
+      if (result.assistant_audio_url) {
+        try {
+          const blob = await fetchVoiceAudio(
+            result.assistant_audio_url,
+            run.abort.signal
+          )
+          if (!isCurrent(run)) return
+          const audio = objectUrl(run, blob)
+          setTranscript((entries) =>
+            entries.map((entry) =>
+              entry.id === id
+                ? {
+                    ...entry,
+                    audio,
+                    autoPlay: result.status === 'complete',
+                  }
+                : entry
+            )
+          )
+        } catch (error) {
+          if (!isCurrent(run)) return
+          if (
+            error instanceof ConversationApiError &&
+            [401, 410, 429, 503].includes(error.status)
+          ) {
+            requestFailed(run, error)
+            return
+          }
+          setTranscript((entries) =>
+            entries.map((entry) =>
+              entry.id === id
+                ? {
+                    ...entry,
+                    audioError:
+                      error instanceof ConversationApiError &&
+                      [404, 410].includes(error.status)
+                        ? 'audioExpired'
+                        : 'playbackFailed',
+                  }
+                : entry
+            )
+          )
+        }
+      }
+    }
+    if (result.status === 'llm_failed' || result.status === 'tts_failed')
+      setErrorMsg(v('replyFailed'))
+  }
+
+  async function start(topicContext?: ChatContextItem[]) {
+    if (!accessToken || runRef.current) return
+    const run: SessionRun = {
+      abort: new AbortController(),
+      session: null,
+      urls: new Set(),
+      turns: new Map(),
+      busy: true,
+      startedAt: Date.now(),
+      deadline: Infinity,
+      ownerId: userId,
+      ownerToken: accessToken,
+      expiryCheckPending: false,
+    }
+    runRef.current = run
+    playback.blocked = false
+    setTranscript([])
+    dismissTooltip()
+    setErrorMsg(null)
+    setStatus('connecting')
+    try {
+      const session = await startVoiceSession(
+        {
+          target_language: language,
+          context: topicContext ?? initialContext,
+          voice_trial_token: voiceTrialToken,
+          conversation_id: conversationId,
+        },
+        run.abort.signal
+      )
+      if (!isCurrent(run)) {
+        // If the response arrives despite cancellation, close its known ID.
+        // If it is lost entirely, request cancellation/server TTL bound lifetime.
+        void closeVoiceSession(session.session_id, run.ownerToken).catch(
+          () => {}
+        )
+        return
+      }
+      run.session = session
+      run.deadline = Date.parse(session.expires_at)
+      setStatus('sending')
+      // Session creation does not generate speech and never acquires the mic.
+      const greeting = await getVoiceGreeting(
+        session.session_id,
+        run.abort.signal
+      )
+      await applyResult(run, greeting)
+    } catch (error) {
+      requestFailed(run, error)
+      if (isCurrent(run) && !run.session) {
+        finish()
+        setStatus('error')
+      }
+    } finally {
+      run.busy = false
+      if (isCurrent(run)) setStatus('live')
+      refreshQuota()
+    }
+  }
+
+  useEffect(() => {
+    if (autoStart && accessToken && autoStartedScopeRef.current !== scope) {
+      autoStartedScopeRef.current = scope
+      void start()
+    }
+    // One start per current account/language/trial/conversation scope. Bearer
+    // refresh cannot duplicate a start; recording always needs an explicit click.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, accessToken, scope])
+
+  function expire(run: SessionRun) {
+    if (!isCurrent(run)) return
+    finish()
+    setErrorMsg(v('sessionExpired'))
+    refreshQuota()
+    if (trialMode) void refreshCurrentUser()
+  }
+
+  function reconcileExpiry(run: SessionRun) {
+    if (!run.session || !isCurrent(run) || run.expiryCheckPending) return
+    const session = run.session
+    run.expiryCheckPending = true
+    // GET does not extend inactivity. The backend may have refreshed it as
+    // soon as the upload arrived, before its provider response reaches us.
+    void getVoiceSession(session.session_id, run.abort.signal)
+      .then((result) => {
+        if (!isCurrent(run)) return
+        updateExpiry(run, result)
+        const remaining = Math.ceil(
+          (Math.min(run.deadline, Date.parse(session.inactivity_expires_at)) -
+            Date.now()) /
+            1000
+        )
+        if (remaining <= 0) expire(run)
+        else setWarningSeconds(remaining <= 60 ? remaining : null)
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent(run)) return
+        if (error instanceof ConversationApiError && error.status === 410) {
+          expire(run)
+        } else if (
+          error instanceof ConversationApiError &&
+          [401, 402, 404, 429, 503].includes(error.status)
+        ) {
+          requestFailed(run, error)
+        } else {
+          // A failed read cannot prove inactivity expiry or finish a pending
+          // provider request. The absolute deadline remains the upper bound.
+          setErrorMsg(messageFor(error))
+        }
+      })
+      .finally(() => {
+        run.expiryCheckPending = false
+      })
+  }
+
+  // Status reads never extend activity. Reconcile on returning to the tab so
+  // suspended/background browser timers cannot preserve expired audio.
+  useEffect(() => {
+    const reconcile = () => {
+      const run = runRef.current
+      if (document.hidden || !run?.session || !isCurrent(run)) return
+      if (run.deadline <= Date.now()) expire(run)
+      else reconcileExpiry(run)
+    }
+    document.addEventListener('visibilitychange', reconcile)
+    return () => document.removeEventListener('visibilitychange', reconcile)
+    // The listener always checks run identity before applying any async result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finish, v, trialMode, refreshQuota, refreshCurrentUser])
+
+  // No polling/activity heartbeat: timers use server UTC deadlines, and only
+  // explicit record/play extends inactivity. A turn response also supplies TTL.
+  useEffect(() => {
+    if (status !== 'live' && status !== 'sending') return
+    const timer = setInterval(() => {
+      const run = runRef.current
+      if (!run?.session) return
+      const remaining = Math.ceil(
+        (Math.min(run.deadline, Date.parse(run.session.inactivity_expires_at)) -
+          Date.now()) /
+          1000
+      )
+      if (remaining <= 0) {
+        if (run.deadline <= Date.now()) expire(run)
+        else reconcileExpiry(run)
+      } else setWarningSeconds(remaining <= 60 ? remaining : null)
+    }, 1000)
+    return () => clearInterval(timer)
+    // Both helpers validate the live run; tick reads mutable server deadlines.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, finish, v, refreshQuota, trialMode, refreshCurrentUser])
+
+  async function send(run: SessionRun, id: string, retry: boolean) {
+    const turn = run.turns.get(id)
+    if (
+      !run.session ||
+      !turn ||
+      !isCurrent(run) ||
+      run.busy ||
+      recorderRef.current
     )
       return
-
-    const startAttempt = ++startAttemptRef.current
-    sessionActiveRef.current = true
-
-    // AudioContext MUST be created during a user-gesture (this click handler)
-    let ctx: AudioContext
-    try {
-      ctx = new AudioContext()
-    } catch {
-      setErrorMsg(t('errorConnection'))
-      setStatus('error')
-      finalizeSession()
+    if (
+      retry &&
+      (turn.delivery !== 'confirmed' ||
+        turn.status !== 'stt_failed' ||
+        turn.attempts >= 3)
+    )
       return
-    }
-    audioCtxRef.current = ctx
+    if (!retry && turn.delivery !== 'pending' && turn.delivery !== 'resend')
+      return
+    // Reserve only the request, not an STT attempt: an ambiguous response may
+    // already be cached server-side. Recover manually with retry=false first.
+    run.busy = true
+    turn.delivery = 'pending'
+    setTranscript((entries) =>
+      entries.map((entry) =>
+        entry.id === id
+          ? { ...entry, delivery: 'pending', deliveryError: undefined }
+          : entry
+      )
+    )
+    setStatus('sending')
+    setErrorMsg(null)
+    // The backend refreshes inactivity when it accepts a turn, before the
+    // provider responds. Check its current deadline once the old one expires.
     try {
-      if (ctx.state === 'suspended') {
-        await ctx.resume()
+      const result = await sendVoiceTurn(
+        run.session.session_id,
+        turn.blob,
+        id,
+        retry,
+        run.abort.signal
+      )
+      await applyResult(run, result, id)
+    } catch (error) {
+      if (!isCurrent(run)) return
+      // Bad bytes cannot be recovered by resending. Network/500 and a busy
+      // session remain manually recoverable using the original idempotency ID.
+      turn.delivery =
+        error instanceof ConversationApiError &&
+        [413, 422].includes(error.status)
+          ? 'rejected'
+          : 'resend'
+      setTranscript((entries) =>
+        entries.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                text: entry.text === v('processing') ? '' : entry.text,
+                delivery: turn.delivery,
+                deliveryError: messageFor(error),
+              }
+            : entry
+        )
+      )
+      requestFailed(run, error)
+    } finally {
+      run.busy = false
+      if (isCurrent(run)) setStatus('live')
+    }
+  }
+
+  async function stopRecording(run: SessionRun, recorder: VoiceRecording) {
+    if (!isCurrent(run) || recorderRef.current !== recorder || run.busy) return
+    run.busy = true
+    setRecording(false)
+    setStatus('sending')
+    try {
+      const blob = await recorder.stop()
+      if (!isCurrent(run) || recorderRef.current !== recorder) return
+      recorderRef.current = null
+      playback.blocked = false
+      run.busy = false
+      if (!blob) {
+        setErrorMsg(v('cancelled'))
+        setStatus('live')
+        return
+      }
+      const id = crypto.randomUUID()
+      const audio = objectUrl(run, blob)
+      run.turns.set(id, {
+        blob,
+        attempts: 0,
+        status: null,
+        delivery: 'pending',
+      })
+      // Show the local bytes before waiting for STT. Retries use this exact Blob.
+      setTranscript((entries) => [
+        ...entries,
+        { id, role: 'user', text: v('processing'), audio, delivery: 'pending' },
+      ])
+      await send(run, id, false)
+    } catch (error) {
+      if (isCurrent(run)) {
+        recorderRef.current = null
+        playback.blocked = false
+        run.busy = false
+        setStatus('live')
+        setErrorMsg(
+          v(
+            error instanceof VoiceRecordingError
+              ? error.code
+              : 'microphoneUnavailable'
+          )
+        )
+      }
+    }
+  }
+
+  function cancelRecording() {
+    const run = runRef.current
+    const recorder = recorderRef.current
+    if (!run || !isCurrent(run) || run.busy || !recorder) return
+    // Invalidate this capture before cleanup so late initialization/limit work
+    // cannot send it or interfere with the next recording in the same session.
+    recorderRef.current = null
+    recorder.cancel()
+    playback.blocked = false
+    setRecording(false)
+    setErrorMsg(null)
+    recordButtonRef.current?.focus()
+  }
+
+  async function record() {
+    const run = runRef.current
+    if (!run?.session || !isCurrent(run) || run.busy || recorderRef.current)
+      return
+    playback.blocked = true
+    playback.stop()
+    setErrorMsg(null)
+    setRecording(true)
+    const recorder = createVoiceRecording(
+      run.session.max_recording_seconds,
+      () => {
+        if (isCurrent(run) && recorderRef.current === recorder)
+          void stopRecording(run, recorder)
+      }
+    )
+    recorderRef.current = recorder
+    activity(run)
+    try {
+      const started = await recorder.start()
+      if (!started && isCurrent(run) && recorderRef.current === recorder) {
+        recorderRef.current = null
+        playback.blocked = false
+        setRecording(false)
       }
     } catch (error) {
-      convLogger.warn('audio context resume failed', { error })
-    }
-    if (!mountedRef.current || startAttemptRef.current !== startAttempt) return
-    audioQueueRef.current = createAudioQueue(ctx, () => {
-      if (!mountedRef.current || startAttemptRef.current !== startAttempt)
-        return
-      assistantSpeakingRef.current = false
-      setAssistantSpeaking(false)
-    })
-
-    cleanEndRef.current = false
-    setStatus('connecting')
-    setSessionActive(true)
-    setAssistantSpeaking(false)
-    setTranscript([])
-    setStreamingText(null)
-    dismissTooltip()
-    setWarningSeconds(null)
-    setErrorMsg(null)
-    setUserSpeaking(false)
-    setAssistantSpeaking(false)
-    activeTurnIdRef.current = null
-    assistantTurnActiveRef.current = false
-    sessionStartedAtRef.current = null
-    refreshQuota()
-
-    // Trigger model warmup on TTS/STT services and WAIT for them to be ready
-    // before opening the WebSocket. Models are loaded lazily by the backend;
-    // this ensures the first transcription/synthesis in the session is fast.
-    setStatus('warming')
-
-    // Ask for microphone access from the start action before initializing VAD.
-    const stream = await requestMicrophone(startAttempt)
-    if (!stream) return
-
-    // VAD creation is intentionally delayed until after getUserMedia succeeds.
-    if (!(await startMicrophoneVad(stream, startAttempt))) return
-    if (!mountedRef.current || startAttemptRef.current !== startAttempt) return
-
-    if (!(await warmupServices(startAttempt))) return
-
-    if (!mountedRef.current || startAttemptRef.current !== startAttempt) {
-      return
-    }
-    const latestToken = useAuthStore.getState().accessToken
-    if (!latestToken) {
-      setErrorMsg(t('errorUnauthorized'))
-      setStatus('error')
-      finalizeSession()
-      convLogger.error('no access token for websocket connect')
-      return
-    }
-    try {
-      connectWs(latestToken, topicContext ?? initialContext)
-    } catch {
-      setErrorMsg(t('errorConnection'))
-      setStatus('error')
-      finalizeSession()
+      if (!isCurrent(run) || recorderRef.current !== recorder) return
+      recorderRef.current = null
+      playback.blocked = false
+      setRecording(false)
+      setErrorMsg(
+        v(
+          error instanceof VoiceRecordingError
+            ? error.code
+            : 'microphoneUnavailable'
+        )
+      )
     }
   }
 
-  function handleStop() {
-    const sessionDurationMs = sessionStartedAtRef.current
-      ? Date.now() - sessionStartedAtRef.current
-      : 0
-    startAttemptRef.current++
-    cleanEndRef.current = true
-    finalizeSession('manual')
-    sessionStartedAtRef.current = null
-    setStatus('ended')
+  function end() {
+    const run = finish()
+    if (!run) return
     if (trialMode) void refreshCurrentUser()
     if (
-      shouldShowVoiceReviewPrompt(getReviewPromptDismissal(), sessionDurationMs)
-    ) {
+      shouldShowVoiceReviewPrompt(
+        getReviewPromptDismissal(),
+        Date.now() - run.startedAt
+      )
+    )
       setReviewPromptOpen(true)
-    }
-    // Allow a moment for the backend to record session seconds, then refresh
-    setTimeout(() => refreshQuota(), 1500)
+    refreshQuota()
   }
 
-  // Cleanup on unmount
-  /* eslint-disable react-hooks/exhaustive-deps */
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-      cleanEndRef.current = true
-      finalizeSession('route_unload')
-      sessionStartedAtRef.current = null
-    }
-  }, [])
-  /* eslint-enable react-hooks/exhaustive-deps */
-
-  // ─── Render ───────────────────────────────────────────────────────────────
-  const premiumQuotaPill =
-    quota && !trialMode ? <QuotaPill quota={quota} t={t} /> : null
+  const active =
+    status === 'connecting' || status === 'live' || status === 'sending'
+  const busy = status === 'connecting' || status === 'sending'
+  const label = recording
+    ? v('recording')
+    : busy
+      ? v('sending')
+      : active
+        ? v('ready')
+        : status === 'ended'
+          ? t('sessionEnded')
+          : v('ready')
 
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col overflow-hidden p-4 md:p-6">
-      {/* Header */}
       <div className="border-fl-border mb-6 flex items-end justify-between border-b pb-4">
         <div>
           <p className="text-fl-label text-fl-muted-2 mb-1 font-mono tracking-widest uppercase">
@@ -1177,14 +770,16 @@ export default function ConversationMode({
         </div>
         {onClose && (
           <button
-            onClick={onClose}
+            onClick={() => {
+              end()
+              onClose()
+            }}
             className="text-fl-hint text-fl-muted-2 hover:text-fl-fg font-mono tracking-widest uppercase transition-colors"
           >
             ← {tCommon('back')}
           </button>
         )}
       </div>
-
       {trialMode && (
         <div className="border-fl-accent/40 bg-fl-surface text-fl-muted-1 mb-4 border px-4 py-3 text-center font-mono text-xs tracking-widest uppercase">
           {t('trialBanner', {
@@ -1192,106 +787,131 @@ export default function ConversationMode({
           })}
         </div>
       )}
-
       <MemorySavedToast visible={memoryToast} announcementId={memoryToastId} />
-
-      {/* Transcript area */}
       <div className="mb-4 min-h-0 flex-1 space-y-3 overflow-y-auto px-2">
-        {transcript.length === 0 && !streamingText && status === 'live' && (
-          <p className="text-fl-label text-fl-muted-4 py-8 text-center font-mono">
-            {t('tapToStart')}
-          </p>
-        )}
-        {(() => {
-          const lastUserIdx = transcript.reduce(
-            (acc, e, j) => (e.role === 'user' ? j : acc),
-            -1
-          )
-          return transcript.map((entry, i) => (
-            <TranscriptBubble
-              key={entry.id}
-              role={entry.role}
-              text={entry.text}
-              speaking={
-                entry.role === 'user' && userSpeaking && i === lastUserIdx
-              }
-              userAvatar={user?.avatar}
-              userInitial={(user?.displayName || user?.username || '?')[0]}
-              languageCode={targetLanguage}
-              onPointerUp={
-                entry.role === 'assistant'
-                  ? () =>
-                      handleTextSelection(entry.text, cefrLevel ?? undefined)
-                  : undefined
-              }
-            />
-          ))
-        })()}
-        {streamingText !== null && (
+        {transcript.map((entry) => (
           <TranscriptBubble
-            role="assistant"
-            text={streamingText}
-            streaming
-            speaking={assistantSpeaking}
+            key={entry.id}
+            role={entry.role}
+            text={entry.text}
             userAvatar={user?.avatar}
             userInitial={(user?.displayName || user?.username || '?')[0]}
-            languageCode={targetLanguage}
-          />
-        )}
+            languageCode={language}
+            onPointerUp={
+              entry.role === 'assistant'
+                ? () =>
+                    handleTextSelection(
+                      entry.text,
+                      entry.cefrLevel ??
+                        runRef.current?.session?.cefr_level ??
+                        cefrLevel ??
+                        undefined
+                    )
+                : undefined
+            }
+          >
+            {entry.audio && (
+              <MessageAudioPlayer
+                src={entry.audio}
+                playback={playback}
+                autoPlay={entry.autoPlay ?? false}
+                disabled={recording}
+                onActivity={() => {
+                  const run = runRef.current
+                  if (run) activity(run)
+                }}
+              />
+            )}
+            {entry.audioError && (
+              <p role="status" className="text-fl-muted-2 font-mono text-xs">
+                {v(entry.audioError)}
+              </p>
+            )}
+            {entry.deliveryError && (
+              <p role="status" className="text-fl-error font-mono text-xs">
+                {entry.deliveryError}
+              </p>
+            )}
+            {entry.delivery === 'resend' && active && (
+              <button
+                disabled={busy || recording}
+                onClick={() => {
+                  const run = runRef.current
+                  if (run) void send(run, entry.id, false)
+                }}
+                className="border-fl-border mt-2 border px-3 py-2 font-mono text-xs disabled:opacity-40"
+              >
+                {tCommon('retry')}
+              </button>
+            )}
+            {entry.turnStatus === 'stt_failed' &&
+              entry.delivery === 'confirmed' && (
+                <div className="text-fl-error font-mono text-xs" role="status">
+                  <p>{v('transcriptionFailed')}</p>
+                  {(entry.attempts ?? 1) < 3 && active ? (
+                    <button
+                      disabled={busy || recording}
+                      onClick={() => {
+                        const run = runRef.current
+                        if (run) void send(run, entry.id, true)
+                      }}
+                      className="border-fl-border mt-2 border px-3 py-2 disabled:opacity-40"
+                    >
+                      {v('retry')} ·{' '}
+                      {v('retryCount', {
+                        count: Math.max(0, (entry.attempts ?? 1) - 1),
+                        max: 2,
+                      })}
+                    </button>
+                  ) : (
+                    <p>{v('retryLimit')}</p>
+                  )}
+                </div>
+              )}
+          </TranscriptBubble>
+        ))}
         <div ref={transcriptEndRef} />
       </div>
-
-      {/* Status message */}
       {errorMsg && (
-        <div className="border-fl-error/40 bg-fl-surface text-fl-error mb-4 border px-4 py-3 font-mono text-xs">
-          ✕ {errorMsg}
-        </div>
-      )}
-      {status === 'ended' && (
-        <div className="border-fl-border bg-fl-surface text-fl-muted-2 mb-4 border px-4 py-3 font-mono text-xs">
-          {t('sessionEnded')}
+        <div
+          role="alert"
+          className="border-fl-error/40 bg-fl-surface text-fl-error mb-4 border px-4 py-3 font-mono text-xs"
+        >
+          {errorMsg}
         </div>
       )}
       {trialMode && status === 'ended' && <TrialPremiumCta />}
-
-      {/* Conversation starters — shown when idle, hidden as soon as session starts */}
-      {!trialMode &&
-        !sessionActive &&
-        (status === 'ready' || status === 'ended' || status === 'error') && (
-          <div className="mb-4">
-            <p className="text-fl-hint text-fl-muted-3 mb-3 text-center font-mono tracking-widest uppercase">
-              {t('startersHint')}
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {visibleStarters.map((topic) => (
-                <button
-                  key={topic}
-                  onClick={() =>
-                    void handleStart([
-                      {
-                        role: 'user',
-                        content: `I'd like to practice English by talking about ${topic}.`,
-                      },
-                    ])
-                  }
-                  className="text-fl-muted-1 border-fl-border hover:border-fl-border-2 hover:text-fl-fg border px-3 py-2 font-mono text-xs tracking-wide transition-colors"
-                >
-                  {topic}
-                </button>
-              ))}
-            </div>
+      {!trialMode && !active && (
+        <div className="mb-4">
+          <p className="text-fl-hint text-fl-muted-3 mb-3 text-center font-mono tracking-widest uppercase">
+            {t('startersHint')}
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {visibleStarters.map((topic) => (
+              <button
+                key={topic}
+                onClick={() =>
+                  void start([
+                    {
+                      role: 'user',
+                      content: `I'd like to practice ${language} by talking about ${topic}.`,
+                    },
+                  ])
+                }
+                className="text-fl-muted-1 border-fl-border hover:border-fl-border-2 hover:text-fl-fg border px-3 py-2 font-mono text-xs tracking-wide transition-colors"
+              >
+                {topic}
+              </button>
+            ))}
           </div>
-        )}
-
-      {/* Controls */}
+        </div>
+      )}
       <div className="flex flex-col items-center gap-4 pb-2">
-        {/* Timeout warning */}
         {warningSeconds !== null && (
           <div className="w-full">
             <SessionTimeoutBanner seconds={warningSeconds} />
           </div>
         )}
-        {/* Quota pill — freemium gets a simplified voice counter, premium gets full quota bars */}
         {freemiumVoiceRemaining != null && freemiumVoiceLimit != null ? (
           <span
             className={`text-fl-label font-mono tracking-widest uppercase ${freemiumVoiceRemaining <= 0 ? 'text-red-500' : 'text-fl-muted-2'}`}
@@ -1301,20 +921,67 @@ export default function ConversationMode({
               limit: freemiumVoiceLimit,
             })}
           </span>
+        ) : quota && !trialMode ? (
+          <QuotaPill quota={quota} />
+        ) : null}
+        <p
+          role="status"
+          className="text-fl-fg font-mono text-xs font-semibold tracking-wide uppercase"
+        >
+          {label}
+        </p>
+        {active ? (
+          <>
+            <div className="flex flex-wrap justify-center gap-3">
+              <button
+                ref={recordButtonRef}
+                disabled={busy}
+                onClick={() => {
+                  const run = runRef.current
+                  const recorder = recorderRef.current
+                  if (run && recorder) void stopRecording(run, recorder)
+                  else void record()
+                }}
+                className="border-fl-border text-fl-fg hover:border-fl-border-2 border px-5 py-3 font-mono text-sm tracking-widest uppercase disabled:opacity-40"
+              >
+                {recording ? v('stopAndSend') : v('record')}
+              </button>
+              {recording && (
+                <button
+                  disabled={busy}
+                  onClick={cancelRecording}
+                  className="border-fl-border text-fl-muted-2 hover:border-fl-border-2 hover:text-fl-fg border px-5 py-3 font-mono text-sm tracking-widest uppercase disabled:opacity-40"
+                >
+                  {tCommon('cancel')}
+                </button>
+              )}
+            </div>
+            {runRef.current?.session && (
+              <p className="text-fl-muted-3 font-mono text-xs">
+                {v('recordingLimit', {
+                  seconds: Math.min(
+                    120,
+                    runRef.current.session.max_recording_seconds
+                  ),
+                })}
+              </p>
+            )}
+            <button
+              onClick={end}
+              className="text-fl-muted-2 hover:text-fl-fg border-fl-border border px-4 py-2 font-mono text-xs tracking-widest uppercase"
+            >
+              {v('endSession')}
+            </button>
+          </>
         ) : (
-          premiumQuotaPill
-        )}
-        <StatusIndicator
-          status={status}
-          userSpeaking={userSpeaking}
-          assistantSpeaking={assistantSpeaking}
-        />
-        {!(trialMode && status === 'ended') && (
-          <MicButton
-            status={status}
-            onStart={handleStart}
-            onStop={handleStop}
-          />
+          !(trialMode && status === 'ended') && (
+            <button
+              onClick={() => void start()}
+              className="bg-fl-accent text-fl-accent-fg px-5 py-3 font-mono text-sm tracking-widest uppercase"
+            >
+              {t(status === 'ready' ? 'start' : 'startNew')}
+            </button>
+          )
         )}
       </div>
       <ReviewPrompt
@@ -1322,8 +989,6 @@ export default function ConversationMode({
         onClose={() => setReviewPromptOpen(false)}
         onSubmitted={() => setReviewPromptOpen(false)}
       />
-
-      {/* Word-save tooltip */}
       {selectedWord && (
         <WordTooltip
           word={selectedWord}

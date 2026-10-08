@@ -62,13 +62,6 @@ function log(
   }
 }
 
-export const silentLogger: Logger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-}
-
 export function getLogger(namespace: string): Logger {
   return {
     debug: (message: string, payload?: unknown) =>

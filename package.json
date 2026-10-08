@@ -14,7 +14,6 @@
     "test:e2e": "playwright test",
     "quality": "tsx scripts/quality.ts",
     "format": "prettier --write src tests scripts *.ts *.json *.mjs",
-    "postinstall": "tsx scripts/copy-vad-models.ts",
     "quality:dead-code": "tsx scripts/dead-code.ts",
     "quality:dead-code:production": "tsx scripts/dead-code.ts --production",
     "test:mutation": "stryker run",
@@ -26,7 +25,6 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
-    "@ricky0123/vad-web": "^0.0.30",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",

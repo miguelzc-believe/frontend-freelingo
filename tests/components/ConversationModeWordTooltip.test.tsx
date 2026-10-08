@@ -9,218 +9,160 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ConversationMode from '@/components/conversation/ConversationMode'
 import { useAuthStore } from '@/store/auth'
+import { captureFixture, generatedSamples } from '../helpers/voice-capture'
 
+const { api } = vi.hoisted(() => ({ api: vi.fn() }))
+vi.mock('@/lib/api', () => ({ apiFetch: api }))
 vi.mock('use-intl', () => ({
-  useTranslations: () => {
-    const t = ((key: string) => key) as ((key: string) => string) & {
-      raw: (key: string) => string[]
-    }
-    t.raw = (key: string) =>
-      key === 'starters' ? ['a', 'b', 'c', 'd', 'e', 'f'] : []
-    return t
-  },
   useLocale: () => 'en',
+  useTranslations: () => Object.assign((key: string) => key, { raw: () => [] }),
 }))
-
-const mockApiFetch = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/api', () => ({ apiFetch: mockApiFetch }))
-
-vi.mock('@/lib/conversation-ws', () => ({
-  buildConversationWsUrl: () => 'ws://test',
-}))
-
-vi.mock('@/lib/audio', () => ({
-  createAudioQueue: () => ({
-    enqueue: vi.fn().mockResolvedValue(undefined),
-    cancel: vi.fn(),
-  }),
-  float32ToWav: vi.fn(),
-}))
-
-vi.mock('@ricky0123/vad-web', () => ({
-  MicVAD: {
-    new: async () => ({
-      start: vi.fn().mockResolvedValue(undefined),
-      destroy: vi.fn().mockResolvedValue(undefined),
-      listening: false,
-    }),
-  },
-}))
-
 vi.mock('@/lib/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
-
 vi.mock('@/components/reviews/ReviewPrompt', () => ({
   ReviewPrompt: () => null,
   getReviewPromptDismissal: () => null,
 }))
-
 vi.mock('@/lib/review-prompt-triggers', () => ({
   shouldShowVoiceReviewPrompt: () => false,
 }))
 
-class MockAudioContext {
-  state = 'running'
-  resume = vi.fn().mockResolvedValue(undefined)
-  close = vi.fn().mockResolvedValue(undefined)
+const session = {
+  session_id: 'session',
+  cefr_level: 'A2',
+  max_recording_seconds: 120,
+  expires_at: new Date(Date.now() + 600_000).toISOString(),
+  inactivity_expires_at: new Date(Date.now() + 180_000).toISOString(),
 }
-
-function microphoneStream() {
-  return {
-    getTracks: () => [{ stop: vi.fn() }],
-  } as unknown as MediaStream
+const turn = {
+  turn_id: 'greeting',
+  user_text: null,
+  assistant_text: 'El perro corre',
+  assistant_audio_url: null,
+  status: 'complete',
+  stt_attempts: 0,
+  memory_updated: false,
+  remaining_seconds: 600,
+  inactivity_expires_at: session.inactivity_expires_at,
 }
+let capture: ReturnType<typeof captureFixture>
 
-class MockWebSocket {
-  static OPEN = 1
-  static instances: MockWebSocket[] = []
-  static get last(): MockWebSocket | undefined {
-    return MockWebSocket.instances[MockWebSocket.instances.length - 1]
-  }
-
-  readyState = 1
-  binaryType = ''
-  onopen: ((ev: Event) => void) | null = null
-  onmessage: ((ev: MessageEvent) => void) | null = null
-  onclose: ((ev: CloseEvent) => void) | null = null
-  onerror: ((ev: Event) => void) | null = null
-  send = vi.fn()
-  close = vi.fn()
-
-  constructor(public url: string) {
-    MockWebSocket.instances.push(this)
-  }
-}
-
-function mockSelection(word: string) {
-  const rect = { left: 10, top: 20, width: 30, height: 10 }
-  const selection = {
+async function selectWord() {
+  vi.spyOn(window, 'getSelection').mockReturnValue({
     isCollapsed: false,
     rangeCount: 1,
-    toString: () => word,
-    getRangeAt: () => ({ getBoundingClientRect: () => rect }),
+    toString: () => 'perro',
+    getRangeAt: () => ({
+      getBoundingClientRect: () => ({
+        left: 10,
+        top: 20,
+        width: 30,
+        height: 10,
+      }),
+    }),
     removeAllRanges: vi.fn(),
-  }
-  vi.spyOn(window, 'getSelection').mockReturnValue(
-    selection as unknown as Selection
-  )
-}
-
-async function selectWordInBubble(bubbleText: string, word: string) {
-  mockSelection(word)
-  fireEvent.pointerUp(screen.getByText(bubbleText))
+  } as unknown as Selection)
+  fireEvent.pointerUp(screen.getByText('El perro corre'))
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }
-
-async function startSession() {
-  fireEvent.click(screen.getByText('start'))
-  await waitFor(() => expect(MockWebSocket.instances.length).toBeGreaterThan(0))
-  act(() => {
-    MockWebSocket.last?.onopen?.(new Event('open'))
-  })
+async function start() {
+  fireEvent.click(screen.getByRole('button', { name: 'start' }))
+  await screen.findByText('El perro corre')
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
   )
 }
 
-function deliverTranscript(payload: Record<string, unknown>) {
-  act(() => {
-    MockWebSocket.last?.onmessage?.({
-      data: JSON.stringify({ type: 'transcript', final: true, ...payload }),
-    } as MessageEvent)
-  })
-}
-
-const baseUser = {
-  id: 1,
-  username: 'u',
-  displayName: 'U',
-  role: 'user' as const,
-  conversation_max_duration: 1800,
-  conversation_inactivity_timeout: 180,
-}
-
-describe('ConversationMode word tooltip dismissal', () => {
-  beforeEach(() => {
-    mockApiFetch.mockReset()
-    mockApiFetch.mockImplementation(async (url: string) => {
-      if (url === '/api/auth/quota') {
-        return { ok: true, json: async () => null }
-      }
-      return { ok: true, json: async () => ({}) }
+beforeEach(() => {
+  capture = captureFixture()
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
+  vi.stubGlobal(
+    'URL',
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => 'blob:test'),
+      revokeObjectURL: vi.fn(),
     })
-    useAuthStore.setState({ accessToken: 'tok', user: { ...baseUser } })
-    MockWebSocket.instances = []
-    Element.prototype.scrollIntoView = vi.fn()
-    vi.stubGlobal('AudioContext', MockAudioContext)
-    vi.stubGlobal('WebSocket', MockWebSocket)
-    vi.stubGlobal('navigator', {
-      mediaDevices: { getUserMedia: vi.fn(async () => microphoneStream()) },
-    })
+  )
+  api.mockReset().mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () =>
+      url === '/api/flashcards/from-word'
+        ? { already_saved: false }
+        : url === '/api/conversation/sessions' || url.endsWith('/activity')
+          ? session
+          : url.endsWith('/greeting')
+            ? turn
+            : url.endsWith('/turns')
+              ? {
+                  ...turn,
+                  turn_id: 'next',
+                  user_text: 'Ya veo',
+                  assistant_text: 'Muy bien',
+                }
+              : null,
+  }))
+  useAuthStore.setState({ accessToken: 'tok', user: null })
+  Element.prototype.scrollIntoView = vi.fn()
+})
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+describe('voice-message word tooltip', () => {
+  it('saves vocabulary with the server session level instead of a stale prop, even after ending', async () => {
+    const view = render(<ConversationMode targetLanguage="es" cefrLevel="C1" />)
+    await start()
+    view.rerender(<ConversationMode targetLanguage="es" cefrLevel="B2" />)
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    await selectWord()
+    fireEvent.click(screen.getByRole('button', { name: 'saveWord' }))
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        '/api/flashcards/from-word',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            word: 'perro',
+            context: 'El perro corre',
+            cefr_level: 'A2',
+          }),
+        })
+      )
+    )
   })
 
-  afterEach(() => {
-    cleanup()
-    vi.unstubAllGlobals()
-  })
-
-  it('dismisses the word tooltip when a new transcript turn arrives', async () => {
+  it('keeps selectable assistant text and dismisses on a new message', async () => {
     render(<ConversationMode targetLanguage="es" />)
-    await startSession()
-
-    deliverTranscript({
-      role: 'assistant',
-      text: 'El perro corre',
-      turn_id: 1,
-    })
-    await selectWordInBubble('El perro corre', 'perro')
+    await start()
+    await selectWord()
     expect(screen.getByText('saveWord')).toBeInTheDocument()
-    expect(screen.getByText('perro')).toBeInTheDocument()
-
-    deliverTranscript({ role: 'user', text: 'Ya veo', turn_id: 2 })
-
-    expect(screen.queryByText('saveWord')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    act(() =>
+      capture.nodes[0]!.emit({ type: 'samples', samples: generatedSamples() })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'stopAndSend' }))
+    await act(async () => capture.nodes[0]!.emit({ type: 'stopped' }))
+    await screen.findByText('Muy bien')
+    expect(screen.queryByText('saveWord')).toBeNull()
   })
 
-  it('dismisses the word tooltip when the session is stopped', async () => {
+  it('dismisses at end, retains text, then clears it on restart', async () => {
     render(<ConversationMode targetLanguage="es" />)
-    await startSession()
-
-    deliverTranscript({
-      role: 'assistant',
-      text: 'El perro corre',
-      turn_id: 1,
-    })
-    await selectWordInBubble('El perro corre', 'perro')
-    expect(screen.getByText('saveWord')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'stop' }))
-
-    expect(screen.queryByText('saveWord')).not.toBeInTheDocument()
-  })
-
-  it('dismisses the word tooltip and clears the transcript when a new session is started', async () => {
-    render(<ConversationMode targetLanguage="es" />)
-    await startSession()
-
-    deliverTranscript({
-      role: 'assistant',
-      text: 'El perro corre',
-      turn_id: 1,
-    })
-    await selectWordInBubble('El perro corre', 'perro')
-    expect(screen.getByText('saveWord')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'stop' }))
+    await start()
+    await selectWord()
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+    expect(screen.queryByText('saveWord')).toBeNull()
     expect(screen.getByText('El perro corre')).toBeInTheDocument()
-
-    await selectWordInBubble('El perro corre', 'perro')
+    await selectWord()
     expect(screen.getByText('saveWord')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByText('startNew'))
-
-    expect(screen.queryByText('saveWord')).not.toBeInTheDocument()
-    expect(screen.queryByText('El perro corre')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'startNew' }))
+    expect(screen.queryByText('saveWord')).toBeNull()
+    expect(screen.queryByText('El perro corre')).toBeNull()
+    await screen.findByText('El perro corre')
   })
 })
