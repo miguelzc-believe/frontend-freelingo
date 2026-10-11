@@ -109,7 +109,12 @@ describe('AdminUserStatsPage subscription visibility', () => {
     const subscriptionTab = await screen.findByRole('button', {
       name: 'tabSubscription',
     })
-    expect(screen.getByText('statusActive')).toBeDefined()
+    const subscriptionBadge = screen.getByText('statusActive')
+    expect(subscriptionBadge).toHaveClass(
+      'border-green-500/40',
+      'text-green-400'
+    )
+    expect(subscriptionBadge).not.toHaveClass('inline-flex')
     fireEvent.click(subscriptionTab)
     expect(screen.getByText('subscriptionOverride')).toBeDefined()
     expect(screen.getByText('cus_test')).toBeDefined()

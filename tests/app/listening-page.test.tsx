@@ -9,34 +9,42 @@ const {
   mockDecrement,
   mockTranslate,
   mockDismissTooltip,
+  mockHandleTextSelection,
+  mockTranslationNamespace,
+  wordSelection,
 } = vi.hoisted(() => ({
   mockApiFetch: vi.fn(),
   mockFetchStatus: vi.fn().mockResolvedValue(undefined),
   mockDecrement: vi.fn(),
   mockTranslate: (key: string) => key,
   mockDismissTooltip: vi.fn(),
+  mockHandleTextSelection: vi.fn(),
+  mockTranslationNamespace: vi.fn(),
+  wordSelection: { word: null as string | null },
 }))
 
 // Stable reference: the page's load effect depends on `t`.
-vi.mock('use-intl', () => ({ useTranslations: () => mockTranslate }))
-vi.mock('@/lib/api', () => ({ apiFetch: mockApiFetch }))
-vi.mock('@/components/TargetLanguageText', () => ({
-  TargetLanguageText: ({ children }: { children: ReactNode }) => (
-    <span>{children}</span>
-  ),
+vi.mock('use-intl', () => ({
+  useTranslations: (namespace: string) => {
+    mockTranslationNamespace(namespace)
+    return mockTranslate
+  },
 }))
+vi.mock('@/lib/api', () => ({ apiFetch: mockApiFetch }))
 vi.mock('@/components/ui/page-loading', () => ({
   PageLoading: ({ label }: { label?: string }) => (
     <div>{label ?? 'loading'}</div>
   ),
 }))
 vi.mock('@/components/ui/WordTooltip', () => ({
-  WordTooltip: () => null,
+  WordTooltip: ({ word }: { word: string }) => (
+    <div data-testid="word-tooltip">{word}</div>
+  ),
   useWordSave: () => ({
-    selectedWord: null,
+    selectedWord: wordSelection.word,
     tooltipPos: null,
     saveState: 'idle',
-    handleTextSelection: vi.fn(),
+    handleTextSelection: mockHandleTextSelection,
     handleSaveWord: vi.fn(),
     dismissTooltip: mockDismissTooltip,
   }),
@@ -197,6 +205,7 @@ async function answerExercise(picks: string[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  wordSelection.word = null
   useAuthStore.setState({ accessToken: 'token', user: null })
   useConfigStore.setState({ stripeEnabled: false, maintenanceMode: false })
   useLanguageStore.setState({ activeLanguage: german })
@@ -218,6 +227,88 @@ describe('ListeningPage', () => {
     expect(screen.getByText('B1 · mcq')).toBeInTheDocument()
     expect(screen.getByTestId('audio-player')).toHaveTextContent('12')
     expect(mockApiFetch).toHaveBeenCalledWith('/api/listening/next')
+  })
+
+  it('preserves exercise-language choices, listening-specific classes and word selection', async () => {
+    mockApi({
+      next: {
+        available: true,
+        exercise: { ...exercise, target_language: 'ja-JP' },
+      },
+    })
+    render(<ListeningPage />)
+    await screen.findByText('Am Bahnhof')
+    const question = screen.getByText('1. Wohin fährt der Zug?')
+    const option = screen.getByRole('button', { name: optionLabel(0, 'a') })
+    expect(question).toHaveAttribute('lang', 'ja-JP')
+    expect(screen.getByText('Nach Berlin')).toHaveAttribute('lang', 'ja-JP')
+    expect(option).toHaveAttribute(
+      'class',
+      'w-full border px-3 py-2 text-left transition-colors border-fl-border text-fl-muted-1 hover:border-fl-border-2 hover:text-fl-fg hover:bg-fl-surface-2'
+    )
+    fireEvent.pointerUp(question)
+    expect(mockHandleTextSelection).toHaveBeenCalledExactlyOnceWith(
+      'Wohin fährt der Zug?',
+      'B1'
+    )
+    fireEvent.click(option)
+    expect(option).toHaveAttribute(
+      'class',
+      'w-full border px-3 py-2 text-left transition-colors border-fl-accent bg-fl-surface-2 text-fl-fg'
+    )
+    expect(mockTranslationNamespace).toHaveBeenCalledWith('listening')
+    expect(mockTranslationNamespace).not.toHaveBeenCalledWith('reading')
+  })
+
+  it('keeps transcript language and selection separate from the active-language result review', async () => {
+    mockApi({
+      next: {
+        available: true,
+        exercise: { ...exercise, target_language: 'ja-JP' },
+      },
+    })
+    render(<ListeningPage />)
+    await screen.findByText('Am Bahnhof')
+    await answerExercise(['a', 'b'])
+    await screen.findByText('resultsLabel')
+    const transcript = screen.getByText('Der Zug fährt um zehn Uhr ab.')
+    expect(transcript).toHaveAttribute('lang', 'ja-JP')
+    expect(transcript).toHaveClass(
+      'word-selectable',
+      'cursor-text',
+      'select-text'
+    )
+    expect(screen.getByText('1. Wohin fährt der Zug?')).toHaveAttribute(
+      'lang',
+      'de'
+    )
+    expect(screen.getByText('Nach Berlin')).toHaveAttribute('lang', 'de')
+    fireEvent.pointerUp(transcript)
+    expect(mockHandleTextSelection).toHaveBeenCalledExactlyOnceWith(
+      'Der Zug fährt um zehn Uhr ab.',
+      'B1'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'viewHistory' }))
+    expect(await screen.findByText('historyEmpty')).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/listening/history?skip=0&limit=10'
+    )
+  })
+
+  it('keeps the selected-word tooltip in listening exercises, results and history', async () => {
+    wordSelection.word = 'Zug'
+    mockApi()
+    render(<ListeningPage />)
+    await screen.findByText('Am Bahnhof')
+    expect(screen.getByTestId('word-tooltip')).toHaveTextContent('Zug')
+    mockDismissTooltip.mockClear()
+    await answerExercise(['a', 'b'])
+    await screen.findByText('resultsLabel')
+    expect(mockDismissTooltip).not.toHaveBeenCalled()
+    expect(screen.getByTestId('word-tooltip')).toHaveTextContent('Zug')
+    fireEvent.click(screen.getByRole('button', { name: 'viewHistory' }))
+    await screen.findByText('historyEmpty')
+    expect(screen.getByTestId('word-tooltip')).toHaveTextContent('Zug')
   })
 
   it('loads and shows an empty history with the first-page API contract', async () => {
@@ -261,6 +352,21 @@ describe('ListeningPage', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('1/2')).toBeInTheDocument()
     expect(screen.getByText('+8 XP')).toBeInTheDocument()
+    const historyText = screen.getByText('Der Zug fährt um zehn Uhr ab.')
+    expect(historyText).toHaveAttribute('lang', 'de')
+    expect(historyText).toHaveClass(
+      'word-selectable',
+      'cursor-text',
+      'border-t',
+      'pt-3',
+      'select-text'
+    )
+    expect(historyText).not.toHaveClass('line-clamp-3')
+    fireEvent.pointerUp(historyText)
+    expect(mockHandleTextSelection).toHaveBeenCalledExactlyOnceWith(
+      'Der Zug fährt um zehn Uhr ab.',
+      'B1'
+    )
   })
 
   it('submits a replay attempt with no XP reward', async () => {

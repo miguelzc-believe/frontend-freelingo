@@ -144,6 +144,21 @@ describe('AdminUsersPage', () => {
     expect(row.getByText('ada@example.com')).toBeInTheDocument()
     expect(row.getByText('roleUser')).toBeInTheDocument()
     expect(row.getByText('active')).toBeInTheDocument()
+    const subscriptionBadges = screen.getAllByText('statusActive')
+    expect(subscriptionBadges).toHaveLength(3)
+    expect(row.getByText('statusActive')).toHaveClass(
+      'border-green-500/40',
+      'text-green-400'
+    )
+    expect(row.getByText('statusActive')).not.toHaveClass('inline-flex')
+    const mobileBadge = subscriptionBadges.find((badge) =>
+      badge.closest('.lg\\:hidden')
+    )
+    expect(mobileBadge).toHaveClass(
+      'inline-flex',
+      'border-green-500/40',
+      'text-green-400'
+    )
     expect(screen.getByText('1 total')).toBeInTheDocument()
     expect(latestUsersParams().get('skip')).toBe('0')
     expect(latestUsersParams().get('limit')).toBe('10')
@@ -385,6 +400,26 @@ describe('AdminUsersPage', () => {
     expect(screen.queryByRole('dialog', { name: 'createUser' })).toBeNull()
   })
 
+  it('opts into light dismissal even when the browser exposes closedBy', async () => {
+    const previous = Object.getOwnPropertyDescriptor(
+      HTMLDialogElement.prototype,
+      'closedBy'
+    )
+    Object.defineProperty(HTMLDialogElement.prototype, 'closedBy', {
+      configurable: true,
+      value: 'closerequest',
+    })
+    try {
+      const dialog = await openCreateUserForm()
+      expect(dialog).toHaveAttribute('closedby', 'any')
+      expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledTimes(1)
+    } finally {
+      if (previous)
+        Object.defineProperty(HTMLDialogElement.prototype, 'closedBy', previous)
+      else Reflect.deleteProperty(HTMLDialogElement.prototype, 'closedBy')
+    }
+  })
+
   it('fallback distinguishes panel padding from an outside click and removes its listener', async () => {
     const view = await renderLoadedPage()
     fireEvent.click(screen.getByRole('button', { name: 'createUserBtn' }))
@@ -409,6 +444,42 @@ describe('AdminUsersPage', () => {
     fireEvent.click(dialog, { clientX: 2, clientY: 2 })
     expect(HTMLDialogElement.prototype.close).toHaveBeenCalledTimes(closes)
     view.unmount()
+  })
+
+  it('preserves the native language choices and translated sorting', async () => {
+    const dialog = await openCreateUserForm()
+    const select = within(dialog).getByLabelText('fieldNativeLanguage')
+
+    expect(select).toHaveValue('es')
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => ({
+          value: (option as HTMLOptionElement).value,
+          label: option.textContent,
+        }))
+    ).toEqual(
+      [
+        'da',
+        'de',
+        'en',
+        'es',
+        'fi',
+        'fr',
+        'hr',
+        'it',
+        'nl',
+        'pl',
+        'pt',
+        'ro',
+        'ru',
+        'sv',
+        'tr',
+      ].map((code) => ({
+        value: code,
+        label: code,
+      }))
+    )
   })
 
   it('keeps the dialog open for panel, field and select interactions', async () => {

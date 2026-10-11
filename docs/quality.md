@@ -77,7 +77,7 @@ authenticated SonarQube scan, waiting for the existing server Quality Gate.
 SonarQube supplies duplication, security and maintainability analysis. See the
 [README](../README.md#sonarqube-quality-analysis) for environment configuration.
 The runner resolves an absolute pnpm launcher before executing checks and passes
-the analysis token only to the scanner. Regression tests cover failure at each
+the analysis token only to the scanner and the read-only duplication guard. Regression tests cover failure at each
 stage, required environment variables, token isolation and JavaScript/standalone
 launchers. Connection settings come exclusively from `SONAR_TOKEN`,
 `SONAR_HOST_URL` and `SONAR_PROJECT_KEY`. No token-file fallback is supported.
@@ -88,8 +88,8 @@ Both mutation profiles require an explicit manual workflow dispatch: select
 are independent of SonarQube, which runs after the checks job.
 Reports are retained for seven days. SonarQube runs
 on `development`, when the repository secret `SONAR_TOKEN` and variables
-`SONAR_HOST_URL`/`SONAR_PROJECT_KEY` exist; otherwise
-the scan step explicitly reports a skip. Community Build uses one analysis
+`SONAR_HOST_URL`/`SONAR_PROJECT_KEY` exist; missing configuration now fails
+the scan step rather than skipping the global duplication budget. Community Build uses one analysis
 branch. CI uses Node 24.21.0, matching local validation and the project's engine
 requirement; the previous Node 25 is [end of life](https://nodejs.org/en/about/previous-releases).
 The workflow configuration was parsed locally; live GitHub Actions execution
@@ -132,6 +132,92 @@ lint, types, Knip and CRAP, with 49.53% Vitest line coverage and no Stryker
 invocation. SonarQube returned `OK`: new-code coverage 95.2%, new duplication
 0% and zero new issues. Existing findings total 21 bugs, three security warnings
 and 404 code smells; overall combined coverage is 48.6%, duplication 5.5%.
+
+## Global duplication budget
+
+`pnpm quality:duplication` is a read-only post-scan check. It requires the same
+three Sonar environment variables as `pnpm quality` and rejects global
+`duplicated_lines_density >= 1%`, missing/malformed measures and unsuccessful
+compute tasks. A green new-code Quality Gate alone does not meet this budget.
+The metric is `duplicated_lines / lines * 100`, not duplicated lines divided by
+NCLOC. No CPD exclusions or token/line thresholds have been added.
+
+`pnpm quality` prepares a fresh `.scannerwork/report-task.txt`, passes the full
+Git HEAD as `sonar.scm.revision`, waits for the existing server gate and runs the
+post-scan check. The checker verifies the report's server/project, compute task,
+explicit scanner revision and unchanged local HEAD. All tracked changes and
+untracked authored files under `src`, `scripts`, `tests`, `messages`, `.github`
+and the enumerated root configuration paths must be committed first. Unrelated
+untracked local tooling data such as `.codegraph/` is preserved and does not
+block the check; ignored files and untracked paths outside that authored scope
+are not revision-bound. Playwright MCP artifacts are ignored, never committed.
+The host URL is validated before scanner startup and cannot contain credentials,
+query parameters or fragments. Scanner verbosity is pinned to false and log
+level to INFO in arguments and environment, so inherited DEBUG/TRACE settings
+cannot dump the scanner properties containing the analysis token. Startup
+errors identify only the phase, never host values or command arguments.
+
+The analysis token can read compute-task context and global/file measures, but
+cannot read the project's analysis history or duplication groups. The measures
+endpoint exposes only the latest state, not a snapshot selected by analysis ID.
+Serialize all scans for this project, including local/external runners: CI has
+its own concurrency group, which does not lock those other runners. The guard
+honestly validates latest measures after the expected task, not an atomic
+historical snapshot. Missing CI Sonar configuration now fails instead of
+silently skipping the required duplication check.
+
+Presentation is shared by domain: `components/practice`, `components/native-help`,
+`components/auth`, `components/legal` and the administrative subscription badge.
+Page-owned requests, validation, quota/replay rules and disclosure state stay
+separate. `NATIVE_LANGUAGE_CODES` is independent of UI locales and the target
+catalog; target display data has a typed tuple schema with one metadata mapper.
+Existing `fl-*` classes, CJK text and authored occurrence identities are retained.
+`NativeLanguageField` shares the native selector markup without coupling it to
+UI locale choices. `usePracticeGeneration` shares only the 15-second warning
+and unmount abort lifecycle; generation requests and error differences remain
+screen-owned. The full browser suite also exposed a pre-existing admin dialog
+bug: `closedby=any` was set only on unsupported engines. It is now set before
+`showModal()` on all engines, retaining the older-engine outside-click fallback.
+
+`tests/e2e/duplication-regressions.spec.ts` exercises the changed flows using a
+production build and deterministic same-origin fixtures on desktop and mobile.
+It complements the full browser suite and interactive Playwright MCP validation;
+these checks do not establish live FastAPI/provider or physical-device acceptance.
+
+### Measurement record
+
+The fresh starting analysis on 2026-10-11 used revision
+`d1d3d161def5108986fa92da31a8aefc3a00795e`: 1,409 duplicated lines out of 33,798
+lines, 44 blocks and displayed density 4.2%. Compute task
+`8d252716-ff55-4b6d-9108-af850e74169b` completed successfully. Its separate
+server gate failed on 47 new issues; coverage and new-code duplication passed.
+The intermediate working-tree scan reduced duplication to 324 / 33,890 lines,
+10 blocks and displayed density 1.0% (task
+`6b6b4509-f9b4-43ab-805c-96622a9428ff`). This was not accepted as the final
+result: the shared native selector and generation lifecycle were extracted
+next, and a clean revision-bound analysis is required below.
+
+The production-build browser suite passed all 76 desktop/mobile cases, including
+the ten new duplication regressions and the 38-route sweep on both projects.
+The first run found two new-test label-selector mistakes and the existing
+native dialog opt-in bug; both were corrected before the complete passing rerun.
+Interactive Playwright MCP on the production server verified login/httpOnly
+cookie restoration, reading/listening scoring and target-language attributes,
+transcript timing, password independence, encoded legal invite navigation,
+profile native choices, help disclosures and desktop/mobile dialog dismissal.
+The asserted flows had no page errors or horizontal overflow. Screenshots were
+captured, but visual screenshot comparison was not performed because the agent
+runtime could not inspect image input. No physical-device or live-provider
+acceptance is claimed.
+
+Final local validation passed lint, strict types, both Knip budgets and all
+1,548 tests in 138 files with fresh coverage: 90.76% lines, 84.27% branches,
+88.83% statements and 86.32% functions. The guard/runner focused suite passed
+130 tests. CPD source exclusions and existing quality budgets are unchanged.
+The mechanical UI detector reported no findings on the changed screens and
+shared components. Build succeeded with existing non-fatal Vite/Rolldown
+warnings. CRAP passed: 1,925 functions, eight above 30 and maximum 56.00.
+Remote duplication measurements are recorded after the clean scan.
 
 ## Removal
 

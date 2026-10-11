@@ -874,25 +874,29 @@ describe('ProfileSection', () => {
 
   // ── Native language and locale select options ───────────────
 
-  it('renders all native language options', () => {
+  it('preserves the exact native-language choices in translated label order', () => {
     render(<ProfileSection />)
     const select = selectAfterLabelText('nativeLanguage')
     const options = Array.from(select.options).map((o) => o.value)
-    expect(options).toContain('en')
-    expect(options).toContain('es')
-    expect(options).toContain('fr')
-    expect(options).toContain('pt')
-    expect(options).toContain('de')
-    expect(options).toContain('it')
-    expect(options).toContain('pl')
-    expect(options).toContain('nl')
-    expect(options).toContain('ro')
-    expect(options).toContain('ru')
-    expect(options).toContain('tr')
-    expect(options).toContain('sv')
-    expect(options).toContain('da')
-    expect(options).toContain('fi')
-    expect(options).toContain('hr')
+    expect(options).toEqual([
+      'da',
+      'de',
+      'en',
+      'es',
+      'fi',
+      'fr',
+      'hr',
+      'it',
+      'nl',
+      'pl',
+      'pt',
+      'ro',
+      'ru',
+      'sv',
+      'tr',
+    ])
+    expect(select).toHaveValue('es')
+    expect(selectAfterLabelText('uiLocale')).toHaveValue('en')
   })
 
   it('renders all ui locale options', () => {

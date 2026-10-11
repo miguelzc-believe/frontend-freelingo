@@ -314,6 +314,43 @@ describe('registration availability', () => {
     expect(screen.queryByText(/auth\.register\.invalidPassword/)).toBeNull()
   })
 
+  it('preserves required password fields, form validation and sorted native languages', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
+    const { container } = render(<RegisterPage />)
+    await screen.findByRole('button', { name: 'auth.register.submit' })
+    const form = container.querySelector('form')!
+
+    expect(form).not.toHaveAttribute('novalidate')
+    for (const password of form.querySelectorAll('input[type="password"]')) {
+      expect(password).toBeRequired()
+      expect(password).not.toHaveAttribute('autocomplete')
+    }
+    const expectedLanguages = [
+      'en',
+      'es',
+      'fr',
+      'pt',
+      'de',
+      'it',
+      'pl',
+      'nl',
+      'ro',
+      'ru',
+      'tr',
+      'sv',
+      'da',
+      'fi',
+      'hr',
+    ].sort((a, b) => `languages.${a}`.localeCompare(`languages.${b}`))
+    expect(
+      screen
+        .getAllByRole('option')
+        .map((option) => option.getAttribute('value'))
+    ).toEqual(expectedLanguages)
+    expect(screen.getByRole('combobox')).toHaveValue('es')
+    expect(apiFetch).not.toHaveBeenCalled()
+  })
+
   it('toggles visibility of both password fields', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
     const { container } = render(<RegisterPage />)

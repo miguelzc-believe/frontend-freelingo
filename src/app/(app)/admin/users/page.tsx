@@ -17,10 +17,12 @@ import {
 } from 'lucide-react'
 import { AdminNav } from '@/components/admin/AdminNav'
 import { AdminPageHeader } from '@/components/admin/AdminShell'
+import { AdminSubscriptionBadge } from '@/components/admin/AdminSubscriptionBadge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { PageLoading } from '@/components/ui/page-loading'
 import { Pagination } from '@/components/ui/pagination'
 import { apiFetch } from '@/lib/api'
+import { NATIVE_LANGUAGE_CODES } from '@/lib/native-languages'
 import {
   DEFAULT_TARGET_LANGUAGE,
   TARGET_LANGUAGE_CATALOG,
@@ -41,45 +43,7 @@ interface AdminUserItem {
   subscription_status: string
 }
 
-const LANGUAGES = [
-  'en',
-  'es',
-  'fr',
-  'pt',
-  'de',
-  'it',
-  'pl',
-  'nl',
-  'ro',
-  'ru',
-  'tr',
-  'sv',
-  'da',
-  'fi',
-  'hr',
-] as const
-
 const PAGE_SIZE = 10
-
-function statusBadgeClass(status: string) {
-  switch (status) {
-    case 'active':
-      return 'border-green-500/40 text-green-400'
-    case 'trialing':
-      return 'border-blue-500/40 text-blue-400'
-    case 'past_due':
-    case 'unpaid':
-    case 'paused':
-      return 'border-yellow-500/40 text-yellow-400'
-    case 'incomplete':
-    case 'incomplete_expired':
-      return 'border-orange-500/40 text-orange-400'
-    case 'canceled':
-      return 'border-fl-border text-fl-muted-2'
-    default:
-      return 'border-fl-border text-fl-muted-3'
-  }
-}
 
 function getCreateUserError(
   detail: unknown,
@@ -286,9 +250,9 @@ export default function AdminUsersPage() {
   useEffect(() => {
     const dialog = createDialogRef.current
     if (!createDialogMounted || !dialog?.isConnected) return
-    if (!('closedBy' in HTMLDialogElement.prototype)) {
-      dialog.setAttribute('closedby', 'any')
-    }
+    // Opt into native light dismissal when supported; older engines use the
+    // existing outside-click fallback below and safely ignore this attribute.
+    dialog.setAttribute('closedby', 'any')
     if (!dialog.open) dialog.showModal()
     const needsLightDismiss = !('closedBy' in HTMLDialogElement.prototype)
     const dismissOutside = (event: MouseEvent) => {
@@ -813,11 +777,10 @@ export default function AdminUsersPage() {
                       </td>
                       {stripeEnabled && (
                         <td className="px-5 py-4 align-middle">
-                          <span
-                            className={`text-fl-hint border px-2 py-0.5 font-mono tracking-widest uppercase ${statusBadgeClass(u.subscription_status)}`}
-                          >
-                            {subscriptionLabel(u.subscription_status, tBilling)}
-                          </span>
+                          <AdminSubscriptionBadge
+                            status={u.subscription_status}
+                            tBilling={tBilling}
+                          />
                         </td>
                       )}
                       <td className="px-5 py-4 align-middle">
@@ -921,11 +884,11 @@ export default function AdminUsersPage() {
                       / {u.native_language}
                     </p>
                     {stripeEnabled && (
-                      <span
-                        className={`text-fl-hint inline-flex border px-2 py-0.5 font-mono tracking-widest uppercase ${statusBadgeClass(u.subscription_status)}`}
-                      >
-                        {subscriptionLabel(u.subscription_status, tBilling)}
-                      </span>
+                      <AdminSubscriptionBadge
+                        status={u.subscription_status}
+                        tBilling={tBilling}
+                        inline
+                      />
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1109,7 +1072,7 @@ export default function AdminUsersPage() {
                   }
                   className={inputCls + ' appearance-none'}
                 >
-                  {[...LANGUAGES]
+                  {[...NATIVE_LANGUAGE_CODES]
                     .sort((a, b) => tLang(a).localeCompare(tLang(b)))
                     .map((code) => (
                       <option key={code} value={code}>
@@ -1192,41 +1155,4 @@ export default function AdminUsersPage() {
       />
     </div>
   )
-}
-
-function subscriptionLabel(
-  status: string,
-  tBilling: (
-    key:
-      | 'statusActive'
-      | 'statusTrialing'
-      | 'statusPastDue'
-      | 'statusUnpaid'
-      | 'statusPaused'
-      | 'statusIncomplete'
-      | 'statusIncompleteExpired'
-      | 'statusCanceled'
-      | 'statusNone'
-  ) => string
-) {
-  switch (status) {
-    case 'active':
-      return tBilling('statusActive')
-    case 'trialing':
-      return tBilling('statusTrialing')
-    case 'past_due':
-      return tBilling('statusPastDue')
-    case 'unpaid':
-      return tBilling('statusUnpaid')
-    case 'paused':
-      return tBilling('statusPaused')
-    case 'incomplete':
-      return tBilling('statusIncomplete')
-    case 'incomplete_expired':
-      return tBilling('statusIncompleteExpired')
-    case 'canceled':
-      return tBilling('statusCanceled')
-    default:
-      return tBilling('statusNone')
-  }
 }

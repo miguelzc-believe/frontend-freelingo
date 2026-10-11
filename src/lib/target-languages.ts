@@ -70,78 +70,39 @@ function withCapabilities(
   }
 }
 
-export const TARGET_LANGUAGE_CATALOG: TargetLanguage[] = [
-  withCapabilities({
-    code: 'en-US',
-    name: 'English (US)',
-    nameEn: 'English (US)',
-    flagPath: '/flags/usa.jpg',
-    iso639: 'en',
-  }),
-  withCapabilities({
-    code: 'en-GB',
-    name: 'English (UK)',
-    nameEn: 'English (UK)',
-    flagPath: '/flags/uk.jpg',
-    iso639: 'en',
-  }),
-  withCapabilities({
-    code: 'es-ES',
-    name: 'Español',
-    nameEn: 'Spanish',
-    flagPath: '/flags/spain.jpg',
-    iso639: 'es',
-  }),
-  withCapabilities({
-    code: 'it-IT',
-    name: 'Italiano',
-    nameEn: 'Italian',
-    flagPath: '/flags/italy.jpg',
-    iso639: 'it',
-  }),
-  withCapabilities({
-    code: 'pt-PT',
-    name: 'Português',
-    nameEn: 'Portuguese',
-    flagPath: '/flags/portugal.jpg',
-    iso639: 'pt',
-  }),
-  withCapabilities({
-    code: 'fr-FR',
-    name: 'Français',
-    nameEn: 'French',
-    flagPath: '/flags/france.jpg',
-    iso639: 'fr',
-  }),
-  withCapabilities({
-    code: 'de-DE',
-    name: 'Deutsch',
-    nameEn: 'German',
-    flagPath: '/flags/germany.jpg',
-    iso639: 'de',
-  }),
-  withCapabilities({
-    code: 'ja-JP',
-    name: '日本語',
-    nameEn: 'Japanese',
-    flagPath: '/flags/japan.jpg',
-    iso639: 'ja',
-  }),
-  withCapabilities({
-    code: 'ko-KR',
-    name: '한국어',
-    nameEn: 'Korean',
-    flagPath: '/flags/south_korea.jpg',
-    iso639: 'ko',
-  }),
-  withCapabilities({
-    code: 'zh-CN',
-    name: '中文（中国）',
-    nameEn: 'Chinese (Mainland China)',
-    flagPath: '/flags/china.jpg',
-    iso639: 'zh',
-  }),
+// Keep the authored catalog data separate from its common metadata assembly.
+// Tuples retain a fixed schema, ordering and literal display names.
+type LanguageCatalogEntry = readonly [
+  code: string,
+  name: string,
+  nameEn: string,
+  flagFile: string,
+  iso639: string,
 ]
+
+const LANGUAGE_CATALOG_ENTRIES = [
+  ['en-US', 'English (US)', 'English (US)', 'usa.jpg', 'en'],
+  ['en-GB', 'English (UK)', 'English (UK)', 'uk.jpg', 'en'],
+  ['es-ES', 'Español', 'Spanish', 'spain.jpg', 'es'],
+  ['it-IT', 'Italiano', 'Italian', 'italy.jpg', 'it'],
+  ['pt-PT', 'Português', 'Portuguese', 'portugal.jpg', 'pt'],
+  ['fr-FR', 'Français', 'French', 'france.jpg', 'fr'],
+  ['de-DE', 'Deutsch', 'German', 'germany.jpg', 'de'],
+  ['ja-JP', '日本語', 'Japanese', 'japan.jpg', 'ja'],
+  ['ko-KR', '한국어', 'Korean', 'south_korea.jpg', 'ko'],
+  ['zh-CN', '中文（中国）', 'Chinese (Mainland China)', 'china.jpg', 'zh'],
+] satisfies readonly LanguageCatalogEntry[]
+
+export const TARGET_LANGUAGE_CATALOG: TargetLanguage[] =
+  LANGUAGE_CATALOG_ENTRIES.map(([code, name, nameEn, flagFile, iso639]) =>
+    withCapabilities({
+      code,
+      name,
+      nameEn,
+      flagPath: `/flags/${flagFile}`,
+      iso639,
+    })
+  )
 
 export const SUPPORTED_TARGET_LANGUAGES: TargetLanguage[] =
   TARGET_LANGUAGE_CATALOG

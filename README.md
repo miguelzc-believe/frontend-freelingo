@@ -93,8 +93,11 @@ Run `pnpm quality` to execute lint, type checking, dead-code checks, tests with
 V8 coverage and CRAP, then upload to the private
 [FreeLingo Frontend project](https://sonar.miguel-zapata.com/dashboard?id=frontend-freelingo).
 The command stops on a failed local check, waits for the server Quality Gate,
-and returns a nonzero exit code if the gate fails. It requires network access;
-the scanner downloads its runtime on the first run.
+then enforces global duplication strictly below 1% with `pnpm quality:duplication`.
+It returns a nonzero exit code if either gate fails. The scan requires clean
+tracked files and no untracked authored source/tests/config; commit the validated
+changes locally first. It requires network access; the scanner downloads its
+runtime on the first run.
 
 Use `pnpm quality:local` for the checks without upload. Mutation testing is
 manual: run `pnpm test:mutation:core` for critical code or `pnpm test:mutation`

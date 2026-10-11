@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { accessSync, constants, realpathSync } from 'node:fs'
 import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { prepareDuplicationScan, validateSonarHost } from './duplication'
 
 export function findPnpm() {
   const launcher = process.env.npm_execpath
@@ -36,6 +37,12 @@ export function runQuality() {
     )
     return 1
   }
+  try {
+    validateSonarHost(host || '')
+  } catch {
+    console.error('Invalid SonarQube server URL.')
+    return 1
+  }
   const pnpm = findPnpm()
   const script = /\.[cm]?js$/.test(pnpm)
   // Resolve once, then launch absolute paths; use this Node for JS launchers.
@@ -43,6 +50,7 @@ export function runQuality() {
   const prefix = script ? [pnpm] : []
   const checkEnv = { ...process.env }
   delete checkEnv.SONAR_TOKEN
+  let revision = ''
   for (const args of [
     ['quality:local'],
     [
@@ -50,15 +58,45 @@ export function runQuality() {
       'sonar-scanner-npm',
       `-Dsonar.host.url=${host}`,
       `-Dsonar.projectKey=${project}`,
+      '-Dsonar.verbose=false',
+      '-Dsonar.log.level=INFO',
     ],
+    ['quality:duplication'],
   ]) {
     const isScanner = args[0] === 'exec'
+    const isGuard = args[0] === 'quality:duplication'
+    if (isScanner) {
+      try {
+        revision = prepareDuplicationScan()
+      } catch {
+        console.error(
+          'Could not prepare SonarQube scan: require clean tracked files, no untracked authored files and a removable previous task report.'
+        )
+        return 1
+      }
+      args.push(`-Dsonar.scm.revision=${revision}`)
+    }
+    if (isGuard) args.push(revision)
     const result = spawnSync(executable, [...prefix, ...args], {
       stdio: 'inherit',
-      env: isScanner ? { ...checkEnv, SONAR_TOKEN: token } : checkEnv,
+      env: isScanner
+        ? {
+            ...checkEnv,
+            SONAR_TOKEN: token,
+            SONAR_VERBOSE: 'false',
+            SONAR_LOG_LEVEL: 'INFO',
+          }
+        : isGuard
+          ? { ...checkEnv, SONAR_TOKEN: token }
+          : checkEnv,
     })
     if (result.error) {
-      console.error(`Could not start pnpm ${args.join(' ')}.`)
+      const phase = isScanner
+        ? 'SonarQube scanner'
+        : isGuard
+          ? 'global duplication guard'
+          : 'local quality checks'
+      console.error(`Could not start ${phase}.`)
       return 1
     }
     if (result.status !== 0) return result.status ?? 1

@@ -14,6 +14,10 @@ import { PageLoading } from '@/components/ui/page-loading'
 import { TargetLanguageText } from '@/components/TargetLanguageText'
 import { useAuthStore } from '@/store/auth'
 import { documentOccurrences } from '@/lib/document-occurrences'
+import { NativeHelpDisclosure } from '@/components/native-help/NativeHelpDisclosure'
+import { NativeHelpGlossary } from '@/components/native-help/NativeHelpGlossary'
+import { NativeHelpList } from '@/components/native-help/NativeHelpList'
+import { NativeHelpTraps } from '@/components/native-help/NativeHelpTraps'
 
 const CEFR_LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const REGISTERS: Register[] = ['formal', 'neutral', 'informal']
@@ -97,18 +101,12 @@ function CategoryCard({
       </div>
 
       {nativeLanguageName && (
-        <div className="border-fl-border border-b px-5 py-3">
-          <button
-            type="button"
-            onClick={() => setNativeHelpOpen((open) => !open)}
-            className="text-fl-label text-fl-muted-3 hover:text-fl-fg flex w-full items-center justify-between font-mono tracking-widest uppercase transition-colors"
-            aria-expanded={nativeHelpOpen}
-          >
-            <span>
-              {tCommon('nativeHelpTitle', { language: nativeLanguageName })}
-            </span>
-            <span>{nativeHelpOpen ? '−' : '+'}</span>
-          </button>
+        <NativeHelpDisclosure
+          title={tCommon('nativeHelpTitle', { language: nativeLanguageName })}
+          open={nativeHelpOpen}
+          onToggle={() => setNativeHelpOpen((open) => !open)}
+          variant="compact"
+        >
           {nativeHelpOpen && (
             <div className="mt-3 space-y-3">
               {loadingNativeHelp && (
@@ -124,27 +122,14 @@ function CategoryCard({
                     {nativeHelp.summary}
                   </p>
 
-                  {nativeHelp.usage_tips.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpUsageTips')}
-                      </p>
-                      <ul className="space-y-1">
-                        {documentOccurrences(
-                          [...sectionPath, 'usage_tips'],
-                          nativeHelp.usage_tips
-                        ).map(({ value: tip, key }) => (
-                          <li
-                            key={key}
-                            className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
-                          >
-                            <span className="text-fl-muted-3 mr-2">·</span>
-                            {tip}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <NativeHelpList
+                    title={tCommon('nativeHelpUsageTips')}
+                    className="space-y-1"
+                    items={documentOccurrences(
+                      [...sectionPath, 'usage_tips'],
+                      nativeHelp.usage_tips
+                    )}
+                  />
 
                   {nativeHelp.register_notes.length > 0 && (
                     <div className="border-fl-border space-y-1 border-t pt-3">
@@ -189,55 +174,22 @@ function CategoryCard({
                     </div>
                   )}
 
-                  {nativeHelp.common_traps.length > 0 && (
-                    <div className="border-fl-border space-y-2 border-t pt-3">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpCommonTraps')}
-                      </p>
-                      {documentOccurrences(
-                        [...sectionPath, 'common_traps'],
-                        nativeHelp.common_traps
-                      ).map(({ value: trap, key }) => (
-                        <div key={key} className="space-y-0.5">
-                          <p className="text-fl-muted-2 text-sm">
-                            {trap.mistake}
-                          </p>
-                          <p className="text-fl-muted-1 text-sm leading-relaxed">
-                            {trap.fix}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <NativeHelpTraps
+                    title={tCommon('nativeHelpCommonTraps')}
+                    items={documentOccurrences(
+                      [...sectionPath, 'common_traps'],
+                      nativeHelp.common_traps
+                    )}
+                  />
 
-                  {nativeHelp.mini_glossary.length > 0 && (
-                    <div className="border-fl-border space-y-2 border-t pt-3">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpMiniGlossary')}
-                      </p>
-                      {documentOccurrences(
-                        [...sectionPath, 'mini_glossary'],
-                        nativeHelp.mini_glossary
-                      ).map(({ value: item, key }) => (
-                        <div key={key}>
-                          <TargetLanguageText
-                            languageCode={language}
-                            className="text-fl-muted-1 text-sm font-bold"
-                          >
-                            {item.term}
-                          </TargetLanguageText>
-                          <p className="text-fl-muted-2 text-sm">
-                            {item.meaning}
-                          </p>
-                          {item.note && (
-                            <p className="text-fl-muted-1 text-sm leading-relaxed">
-                              {item.note}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <NativeHelpGlossary
+                    title={tCommon('nativeHelpMiniGlossary')}
+                    languageCode={language}
+                    items={documentOccurrences(
+                      [...sectionPath, 'mini_glossary'],
+                      nativeHelp.mini_glossary
+                    )}
+                  />
                 </>
               )}
               {!loadingNativeHelp && !nativeHelp && (
@@ -255,7 +207,7 @@ function CategoryCard({
               )}
             </div>
           )}
-        </div>
+        </NativeHelpDisclosure>
       )}
 
       <ul className="divide-fl-border divide-y">
