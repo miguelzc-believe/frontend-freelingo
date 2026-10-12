@@ -4,15 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/store/auth'
 import { useConfigStore } from '@/store/config'
 
-const { apiFetch, push } = vi.hoisted(() => ({
+const { apiFetch, push, searchParams } = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   push: vi.fn(),
+  searchParams: new URLSearchParams(),
 }))
 
 vi.mock('@/lib/api', () => ({ apiFetch }))
 vi.mock('@/lib/navigation', () => ({
   useRouter: () => ({ push }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParams,
 }))
 vi.mock('use-intl', () => ({
   useTranslations: (namespace: string) => (key: string) =>
@@ -24,6 +25,7 @@ import LoginPage from '@/app/(auth)/login/page'
 afterEach(() => vi.unstubAllGlobals())
 
 beforeEach(() => {
+  for (const key of Array.from(searchParams.keys())) searchParams.delete(key)
   apiFetch.mockReset()
   push.mockReset()
   useAuthStore.setState({ accessToken: null, user: null })
@@ -32,6 +34,30 @@ beforeEach(() => {
 })
 
 describe('login submission', () => {
+  it('preserves the registered notice, noValidate and password field semantics', () => {
+    searchParams.set('registered', 'true')
+    render(<LoginPage />)
+    const form = document.querySelector('form')!
+    const password = form.querySelector('input[type="password"]')!
+
+    expect(form).toHaveAttribute('novalidate')
+    expect(screen.getByText(/auth\.login\.accountCreated/)).toBeInTheDocument()
+    expect(password).toHaveAttribute('autocomplete', 'current-password')
+    expect(password).not.toBeRequired()
+    fireEvent.change(password, { target: { value: 'synthetic-password' } })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'auth.login.showPassword' })
+    )
+    expect(password).toHaveAttribute('type', 'text')
+    expect(password).toHaveValue('synthetic-password')
+    fireEvent.click(
+      screen.getByRole('button', { name: 'auth.login.hidePassword' })
+    )
+    expect(password).toHaveAttribute('type', 'password')
+    expect(apiFetch).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
   it('posts credentials, stores the mapped session and navigates after /me', async () => {
     apiFetch.mockImplementation((path: string) =>
       Promise.resolve(

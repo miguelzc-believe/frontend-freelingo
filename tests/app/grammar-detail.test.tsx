@@ -241,6 +241,30 @@ describe('GrammarDetailPage', () => {
     ).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it('omits empty native subsections and reopens cached help without requesting it again', async () => {
+    setup()
+    mockGetNativeHelp.mockResolvedValue({
+      ...nativeHelp,
+      key_points: [],
+      examples: [],
+      common_traps: [],
+      mini_glossary: [],
+    })
+    const summary = await screen.findByText('Native summary')
+    expect(summary.parentElement?.parentElement?.children).toHaveLength(1)
+    expect(screen.queryByText('nativeHelpKeyPoints')).toBeNull()
+    expect(screen.queryByText('nativeHelpCommonTraps')).toBeNull()
+    expect(screen.queryByText('nativeHelpMiniGlossary')).toBeNull()
+    const toggle = screen.getByRole('button', { name: /nativeHelpTitle/ })
+    fireEvent.click(toggle)
+    expect(screen.queryByText('Native summary')).toBeNull()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    expect(screen.getByText('Native summary')).toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(mockGetNativeHelp).toHaveBeenCalledExactlyOnceWith(topic.slug, 'de')
+  })
+
   it('lets learners retry failed native-language help generation', async () => {
     mockGetTopics.mockResolvedValue([topic])
     mockGetNativeHelp

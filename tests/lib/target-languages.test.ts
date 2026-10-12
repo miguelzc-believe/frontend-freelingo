@@ -84,6 +84,36 @@ describe('SUPPORTED_TARGET_LANGUAGES', () => {
 })
 
 describe('TARGET_LANGUAGE_CATALOG', () => {
+  it.each([
+    ['en-US', 'English (US)', 'English (US)', '/flags/usa.jpg', 'en'],
+    ['en-GB', 'English (UK)', 'English (UK)', '/flags/uk.jpg', 'en'],
+    ['es-ES', 'Español', 'Spanish', '/flags/spain.jpg', 'es'],
+    ['it-IT', 'Italiano', 'Italian', '/flags/italy.jpg', 'it'],
+    ['pt-PT', 'Português', 'Portuguese', '/flags/portugal.jpg', 'pt'],
+    ['fr-FR', 'Français', 'French', '/flags/france.jpg', 'fr'],
+    ['de-DE', 'Deutsch', 'German', '/flags/germany.jpg', 'de'],
+    ['ja-JP', '日本語', 'Japanese', '/flags/japan.jpg', 'ja'],
+    ['ko-KR', '한국어', 'Korean', '/flags/south_korea.jpg', 'ko'],
+    [
+      'zh-CN',
+      '中文（中国）',
+      'Chinese (Mainland China)',
+      '/flags/china.jpg',
+      'zh',
+    ],
+  ])(
+    'preserves every display field for %s',
+    (code, name, nameEn, flagPath, iso639) => {
+      expect(getLanguageByCode(code)).toMatchObject({
+        code,
+        name,
+        nameEn,
+        flagPath,
+        iso639,
+      })
+    }
+  )
+
   it('contains the current supported languages plus CJK catalog entries', () => {
     expect(TARGET_LANGUAGE_CATALOG).toHaveLength(10)
     expect(TARGET_LANGUAGE_CATALOG.map((l) => l.code)).toEqual([

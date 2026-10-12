@@ -13,6 +13,10 @@ import { useAuthStore } from '@/store/auth'
 import { useLanguageStore } from '@/store/language'
 import { PageLoading } from '@/components/ui/page-loading'
 import { documentOccurrences, documentRanges } from '@/lib/document-occurrences'
+import { NativeHelpDisclosure } from '@/components/native-help/NativeHelpDisclosure'
+import { NativeHelpGlossary } from '@/components/native-help/NativeHelpGlossary'
+import { NativeHelpList } from '@/components/native-help/NativeHelpList'
+import { NativeHelpTraps } from '@/components/native-help/NativeHelpTraps'
 
 function renderExplanation(text: string, section: string) {
   const lines = documentRanges([section, 'explanation'], text, '\n')
@@ -290,18 +294,11 @@ export default function GrammarDetailPage({
       </div>
 
       {nativeLanguageName && (
-        <div className="border-fl-border bg-fl-surface border">
-          <button
-            type="button"
-            onClick={() => setNativeHelpOpen((open) => !open)}
-            className="border-fl-border text-fl-label text-fl-muted-2 hover:text-fl-fg flex w-full items-center justify-between border-b px-6 py-4 font-mono tracking-widest uppercase transition-colors"
-            aria-expanded={nativeHelpOpen}
-          >
-            <span>
-              {tCommon('nativeHelpTitle', { language: nativeLanguageName })}
-            </span>
-            <span>{nativeHelpOpen ? '−' : '+'}</span>
-          </button>
+        <NativeHelpDisclosure
+          title={tCommon('nativeHelpTitle', { language: nativeLanguageName })}
+          open={nativeHelpOpen}
+          onToggle={() => setNativeHelpOpen((open) => !open)}
+        >
           {nativeHelpOpen && (
             <div className="space-y-4 px-6 py-5">
               {loadingNativeHelp && (
@@ -322,32 +319,18 @@ export default function GrammarDetailPage({
                     </p>
                   </div>
 
-                  {nativeHelp.key_points.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpKeyPoints')}
-                      </p>
-                      <ul className="space-y-1">
-                        {documentOccurrences(
-                          [
-                            targetLanguageCode,
-                            topic.slug,
-                            'native-help',
-                            'key-points',
-                          ],
-                          nativeHelp.key_points
-                        ).map(({ value: point, key }) => (
-                          <li
-                            key={key}
-                            className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
-                          >
-                            <span className="text-fl-muted-3 mr-2">·</span>
-                            {point}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <NativeHelpList
+                    title={tCommon('nativeHelpKeyPoints')}
+                    items={documentOccurrences(
+                      [
+                        targetLanguageCode,
+                        topic.slug,
+                        'native-help',
+                        'key-points',
+                      ],
+                      nativeHelp.key_points
+                    )}
+                  />
 
                   {nativeHelp.examples.length > 0 && (
                     <div className="border-fl-border space-y-2 border-t pt-3">
@@ -378,65 +361,32 @@ export default function GrammarDetailPage({
                     </div>
                   )}
 
-                  {nativeHelp.common_traps.length > 0 && (
-                    <div className="border-fl-border space-y-2 border-t pt-3">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpCommonTraps')}
-                      </p>
-                      {documentOccurrences(
-                        [
-                          targetLanguageCode,
-                          topic.slug,
-                          'native-help',
-                          'common-traps',
-                        ],
-                        nativeHelp.common_traps
-                      ).map(({ value: trap, key }) => (
-                        <div key={key} className="space-y-0.5">
-                          <p className="text-fl-muted-2 text-sm">
-                            {trap.mistake}
-                          </p>
-                          <p className="text-fl-muted-1 text-sm leading-relaxed">
-                            {trap.fix}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <NativeHelpTraps
+                    title={tCommon('nativeHelpCommonTraps')}
+                    items={documentOccurrences(
+                      [
+                        targetLanguageCode,
+                        topic.slug,
+                        'native-help',
+                        'common-traps',
+                      ],
+                      nativeHelp.common_traps
+                    )}
+                  />
 
-                  {nativeHelp.mini_glossary.length > 0 && (
-                    <div className="border-fl-border space-y-2 border-t pt-3">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpMiniGlossary')}
-                      </p>
-                      {documentOccurrences(
-                        [
-                          targetLanguageCode,
-                          topic.slug,
-                          'native-help',
-                          'mini-glossary',
-                        ],
-                        nativeHelp.mini_glossary
-                      ).map(({ value: item, key }) => (
-                        <div key={key}>
-                          <TargetLanguageText
-                            languageCode={targetLanguageCode}
-                            className="text-fl-muted-1 text-sm font-bold"
-                          >
-                            {item.term}
-                          </TargetLanguageText>
-                          <p className="text-fl-muted-2 text-sm">
-                            {item.meaning}
-                          </p>
-                          {item.note && (
-                            <p className="text-fl-muted-1 text-sm leading-relaxed">
-                              {item.note}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <NativeHelpGlossary
+                    title={tCommon('nativeHelpMiniGlossary')}
+                    languageCode={targetLanguageCode}
+                    items={documentOccurrences(
+                      [
+                        targetLanguageCode,
+                        topic.slug,
+                        'native-help',
+                        'mini-glossary',
+                      ],
+                      nativeHelp.mini_glossary
+                    )}
+                  />
                 </>
               )}
               {!loadingNativeHelp && !nativeHelp && (
@@ -456,7 +406,7 @@ export default function GrammarDetailPage({
               )}
             </div>
           )}
-        </div>
+        </NativeHelpDisclosure>
       )}
 
       {topic.rules.length > 0 && (

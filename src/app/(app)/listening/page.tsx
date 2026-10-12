@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'use-intl'
 import { apiFetch } from '@/lib/api'
 import { useLanguageStore } from '@/store/language'
@@ -6,7 +6,8 @@ import { FreemiumQuotaBanner } from '@/components/billing/FreemiumQuotaBanner'
 import { PaywallBanner } from '@/components/billing/PaywallBanner'
 import { MaintenanceGate } from '@/components/billing/MaintenanceBanner'
 import { type ListeningExercise } from '@/types/api'
-import { WordTooltip, useWordSave } from '@/components/ui/WordTooltip'
+import { useWordSave } from '@/components/ui/WordTooltip'
+import { PracticeWordTooltip } from '@/components/practice/PracticeWordTooltip'
 import { PageLoading } from '@/components/ui/page-loading'
 import { useFreemiumStore } from '@/store/freemium'
 import { useConfigStore } from '@/store/config'
@@ -14,11 +15,19 @@ import { useAuthStore, isSubscribed, isFreemiumTrialActive } from '@/store/auth'
 import { Pagination } from '@/components/ui/pagination'
 import { ExerciseAudioPlayer } from '@/components/ui/exercise-audio-player'
 import { TargetLanguageText } from '@/components/TargetLanguageText'
+import { PracticeScoreCard } from '@/components/practice/PracticeScoreCard'
+import { PracticeQuestionReview } from '@/components/practice/PracticeQuestionReview'
+import { PracticeResultActions } from '@/components/practice/PracticeResultActions'
+import { PracticeHistoryContent } from '@/components/practice/PracticeHistoryContent'
+import { PracticeQuestions } from '@/components/practice/PracticeQuestions'
+import { PracticePageHeader } from '@/components/practice/PracticePageHeader'
+import { PracticeEmptyState } from '@/components/practice/PracticeEmptyState'
 import {
   ReviewPrompt,
   getReviewPromptDismissal,
 } from '@/components/reviews/ReviewPrompt'
 import { shouldShowExerciseReviewPrompt } from '@/lib/review-prompt-triggers'
+import { usePracticeGeneration } from '@/hooks/usePracticeGeneration'
 
 // ---------------------------------------------------------------------------
 // Main page logic
@@ -51,17 +60,6 @@ type PageState =
 
 const HISTORY_PAGE_SIZE = 10
 
-function getOptionReviewClass(
-  key: string,
-  correctKey: string | undefined,
-  userAnswer: string | undefined,
-  isCorrect: boolean
-): string {
-  if (key === correctKey) return 'text-fl-success font-bold'
-  if (key === userAnswer && !isCorrect) return 'text-fl-error-fg line-through'
-  return 'text-fl-muted-1'
-}
-
 async function readGeneratedExercise(
   response: Response
 ): Promise<ListeningExercise | null> {
@@ -79,78 +77,6 @@ function areAllQuestionsAnswered(
 ): boolean {
   if (!exercise) return false
   return Object.keys(answers).length === exercise.questions.length
-}
-
-function ListeningHistoryContent({
-  historyLoading,
-  history,
-  onReplay,
-  t,
-  handleTextSelection,
-}: Readonly<{
-  historyLoading: boolean
-  history: AttemptItem[]
-  onReplay: (item: AttemptItem) => void
-  t: (key: string) => string
-  handleTextSelection: ReturnType<typeof useWordSave>['handleTextSelection']
-}>) {
-  if (historyLoading && history.length === 0) {
-    return <PageLoading fullScreen={false} className="block p-5" />
-  }
-  if (history.length === 0) {
-    return (
-      <div className="border-fl-border bg-fl-surface border p-6 text-center">
-        <p className="text-fl-muted-3 font-mono text-xs tracking-wide">
-          {t('historyEmpty')}
-        </p>
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-3">
-      {history.map((item) => (
-        <div
-          key={item.id}
-          className="border-fl-border bg-fl-surface border p-4"
-        >
-          <div className="mb-3 flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-fl-fg truncate font-mono text-xs font-bold tracking-wide">
-                {item.exercise.topic}
-              </p>
-              <p className="text-fl-label text-fl-muted-3 mt-0.5 font-mono tracking-widest uppercase">
-                {item.exercise.level} · {item.exercise.exercise_type}
-              </p>
-            </div>
-            <div className="shrink-0 text-right">
-              <p className="text-fl-fg font-mono text-xs font-bold">
-                {item.score}/{item.exercise.questions.length}
-              </p>
-              <p className="text-fl-label text-fl-accent font-mono">
-                +{item.xp_earned} XP
-              </p>
-            </div>
-          </div>
-          <TargetLanguageText
-            as="p"
-            languageCode={item.exercise.target_language}
-            className="text-fl-muted-2 border-fl-border word-selectable mb-3 cursor-text border-t pt-3 select-text"
-            onPointerUp={() =>
-              handleTextSelection(item.text, item.exercise.level ?? 'B1')
-            }
-          >
-            {item.text}
-          </TargetLanguageText>
-          <button
-            onClick={() => onReplay(item)}
-            className="text-fl-muted-2 hover:text-fl-fg font-mono text-xs tracking-widest uppercase transition-colors"
-          >
-            {t('practiceAgain')}
-          </button>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 function ListeningResults({
@@ -193,32 +119,14 @@ function ListeningResults({
   return (
     <div className="mx-auto max-w-4xl space-y-5 px-4 py-6 md:px-8">
       {/* Score card */}
-      <div className="border-fl-border bg-fl-surface border p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-              {t('resultsLabel')}
-            </p>
-            <p className="text-fl-fg mt-1 font-mono text-2xl font-bold">
-              {result.score}/{exercise.questions.length}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-              XP
-            </p>
-            {isReplay ? (
-              <p className="text-fl-label text-fl-muted-3 mt-1 font-mono">
-                {t('replayNoXp')}
-              </p>
-            ) : (
-              <p className="text-fl-accent mt-1 font-mono text-xl font-bold">
-                +{result.xp_earned}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
+      <PracticeScoreCard
+        score={result.score}
+        questionCount={exercise.questions.length}
+        xpEarned={result.xp_earned}
+        isReplay={isReplay}
+        resultsLabel={t('resultsLabel')}
+        replayNoXpLabel={t('replayNoXp')}
+      />
 
       {/* Transcript */}
       <div>
@@ -240,84 +148,31 @@ function ListeningResults({
       </div>
 
       {/* Question review */}
-      <div className="space-y-3">
-        <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-          {t('review')}
-        </p>
-        {exercise.questions.map((q) => {
-          const correctKey = result.correct_answers.find(
-            (c) => c.index === q.index
-          )?.correct
-          const userAnswer = answers[String(q.index)]
-          const isCorrect = userAnswer === correctKey
-          return (
-            <div
-              key={q.index}
-              className={`border p-4 ${
-                isCorrect
-                  ? 'border-fl-success/50 bg-fl-success/5'
-                  : 'border-fl-error-fg/50 bg-fl-error-fg/5'
-              }`}
-            >
-              <TargetLanguageText
-                as="p"
-                languageCode={targetLanguageCode}
-                className="text-fl-fg mb-3"
-              >
-                {q.index + 1}. {q.question}
-              </TargetLanguageText>
-              <div className="space-y-1">
-                {Object.entries(q.options).map(([k, v]) => (
-                  <div
-                    key={k}
-                    className={`px-3 py-1.5 ${getOptionReviewClass(k, correctKey, userAnswer, isCorrect)}`}
-                  >
-                    <span className="text-fl-label font-mono font-bold">
-                      {k}.
-                    </span>{' '}
-                    <TargetLanguageText languageCode={targetLanguageCode}>
-                      {v}
-                    </TargetLanguageText>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      <PracticeQuestionReview
+        questions={exercise.questions}
+        correctAnswers={result.correct_answers}
+        answers={answers}
+        languageCode={targetLanguageCode}
+        reviewLabel={t('review')}
+      />
 
       {/* Actions */}
-      <div className="flex gap-3 pt-1">
-        <button
-          onClick={loadNext}
-          className="border-fl-border bg-fl-surface text-fl-fg hover:bg-fl-surface-2 flex-1 border py-3 font-mono text-sm tracking-widest uppercase transition-colors"
-        >
-          {t('nextExercise')}
-        </button>
-        <button
-          onClick={() => loadHistory(0)}
-          className="border-fl-border bg-fl-surface text-fl-muted-2 hover:text-fl-fg hover:bg-fl-surface-2 border px-4 py-3 font-mono text-xs tracking-widest uppercase transition-colors"
-        >
-          {t('viewHistory')}
-        </button>
-      </div>
+      <PracticeResultActions
+        onNext={loadNext}
+        onHistory={loadHistory}
+        nextLabel={t('nextExercise')}
+        historyLabel={t('viewHistory')}
+      />
 
       {/* Word-save tooltip */}
-      {selectedWord && (
-        <WordTooltip
-          word={selectedWord}
-          pos={tooltipPos}
-          saveState={saveState}
-          onSave={() => handleSaveWord()}
-          onDismiss={dismissTooltip}
-          labels={{
-            saveWord: tCommon('saveWord'),
-            wordSaved: tCommon('wordSaved'),
-            wordAlreadySaved: tCommon('wordAlreadySaved'),
-            wordSaveError: tCommon('wordSaveError'),
-          }}
-        />
-      )}
+      <PracticeWordTooltip
+        selectedWord={selectedWord}
+        tooltipPos={tooltipPos}
+        saveState={saveState}
+        onSave={handleSaveWord}
+        onDismiss={dismissTooltip}
+        tCommon={tCommon}
+      />
       <ReviewPrompt
         open={reviewPromptOpen}
         onClose={onCloseReview}
@@ -370,33 +225,9 @@ function ListeningPage() {
   const [submitting, setSubmitting] = useState(false)
   const [reviewPromptOpen, setReviewPromptOpen] = useState(false)
   const [isReplay, setIsReplay] = useState(false)
-  const [generatingWarn, setGeneratingWarn] = useState(false)
-  const generateAbortRef = useRef<AbortController | null>(null)
-  const generatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Warn if exercise generation takes longer than 15 s
-  useEffect(() => {
-    if (pageState === 'generating') {
-      setGeneratingWarn(false)
-      generatingTimerRef.current = setTimeout(
-        () => setGeneratingWarn(true),
-        15_000
-      )
-    } else {
-      if (generatingTimerRef.current) clearTimeout(generatingTimerRef.current)
-      setGeneratingWarn(false)
-    }
-    return () => {
-      if (generatingTimerRef.current) clearTimeout(generatingTimerRef.current)
-    }
-  }, [pageState])
-
-  // Cancel in-flight long-poll on unmount
-  useEffect(() => {
-    return () => {
-      generateAbortRef.current?.abort()
-    }
-  }, [])
+  const { generatingWarn, generateAbortRef } = usePracticeGeneration(
+    pageState === 'generating'
+  )
 
   const loadNext = useCallback(async () => {
     setPageState('loading')
@@ -574,23 +405,29 @@ function ListeningPage() {
   if (pageState === 'history') {
     return (
       <div className="mx-auto max-w-4xl px-4 py-6 md:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-fl-fg font-mono text-sm font-bold tracking-widest uppercase">
-            {t('historyTitle')}
-          </h1>
-          <button
-            onClick={loadNext}
-            className="text-fl-muted-2 hover:text-fl-fg font-mono text-xs tracking-widest uppercase transition-colors"
-          >
-            {t('practiceMore')}
-          </button>
-        </div>
+        <PracticePageHeader
+          title={t('historyTitle')}
+          actionLabel={t('practiceMore')}
+          onAction={loadNext}
+        />
 
-        <ListeningHistoryContent
+        <PracticeHistoryContent
           historyLoading={historyLoading}
           history={history}
-          t={t}
-          handleTextSelection={handleTextSelection}
+          emptyLabel={t('historyEmpty')}
+          replayLabel={t('practiceAgain')}
+          renderText={(item) => (
+            <TargetLanguageText
+              as="p"
+              languageCode={item.exercise.target_language}
+              className="text-fl-muted-2 border-fl-border word-selectable mb-3 cursor-text border-t pt-3 select-text"
+              onPointerUp={() =>
+                handleTextSelection(item.text, item.exercise.level ?? 'B1')
+              }
+            >
+              {item.text}
+            </TargetLanguageText>
+          )}
           onReplay={(item) => {
             setExercise(item.exercise)
             setAnswers({})
@@ -611,21 +448,14 @@ function ListeningPage() {
         />
 
         {/* Word-save tooltip */}
-        {selectedWord && (
-          <WordTooltip
-            word={selectedWord}
-            pos={tooltipPos}
-            saveState={saveState}
-            onSave={() => handleSaveWord()}
-            onDismiss={dismissTooltip}
-            labels={{
-              saveWord: tCommon('saveWord'),
-              wordSaved: tCommon('wordSaved'),
-              wordAlreadySaved: tCommon('wordAlreadySaved'),
-              wordSaveError: tCommon('wordSaveError'),
-            }}
-          />
-        )}
+        <PracticeWordTooltip
+          selectedWord={selectedWord}
+          tooltipPos={tooltipPos}
+          saveState={saveState}
+          onSave={handleSaveWord}
+          onDismiss={dismissTooltip}
+          tCommon={tCommon}
+        />
       </div>
     )
   }
@@ -659,17 +489,11 @@ function ListeningPage() {
   if (pageState === 'idle') {
     return (
       <div className="mx-auto max-w-4xl px-4 py-6 md:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-fl-fg font-mono text-sm font-bold tracking-widest uppercase">
-            {t('title')}
-          </h1>
-          <button
-            onClick={() => loadHistory(0)}
-            className="text-fl-muted-2 hover:text-fl-fg font-mono text-xs tracking-widest uppercase transition-colors"
-          >
-            {t('history')}
-          </button>
-        </div>
+        <PracticePageHeader
+          title={t('title')}
+          actionLabel={t('history')}
+          onAction={() => loadHistory(0)}
+        />
 
         {error && (
           <p className="text-fl-caption text-fl-error-fg mb-4 font-mono">
@@ -682,17 +506,11 @@ function ListeningPage() {
         {freemiumExhausted ? (
           <PaywallBanner feature="listening" compact />
         ) : (
-          <div className="border-fl-border bg-fl-surface flex flex-col items-center gap-5 border p-8 text-center">
-            <p className="text-fl-muted-2 font-mono text-xs tracking-wide">
-              {t('noExercises')}
-            </p>
-            <button
-              onClick={handleGenerate}
-              className="border-fl-border bg-fl-surface text-fl-fg hover:bg-fl-surface-2 border px-8 py-3 font-mono text-sm tracking-widest uppercase transition-colors"
-            >
-              {t('generate')}
-            </button>
-          </div>
+          <PracticeEmptyState
+            label={t('noExercises')}
+            generateLabel={t('generate')}
+            onGenerate={handleGenerate}
+          />
         )}
       </div>
     )
@@ -750,55 +568,17 @@ function ListeningPage() {
             <p className="text-fl-label text-fl-muted-3 mb-3 font-mono tracking-widest uppercase">
               {t('questionsLabel')}
             </p>
-            <div className="space-y-4">
-              {exercise.questions.map((q) => (
-                <div
-                  key={q.index}
-                  className="border-fl-border bg-fl-surface border p-4"
-                >
-                  <TargetLanguageText
-                    as="p"
-                    languageCode={exercise.target_language}
-                    onPointerUp={() =>
-                      handleTextSelection(q.question, exercise.level)
-                    }
-                    className="text-fl-fg word-selectable mb-3 cursor-text select-text"
-                  >
-                    {q.index + 1}. {q.question}
-                  </TargetLanguageText>
-                  <div className="space-y-2">
-                    {Object.entries(q.options).map(([k, v]) => {
-                      const selected = answers[String(q.index)] === k
-                      return (
-                        <button
-                          key={k}
-                          onClick={() =>
-                            setAnswers((prev) => ({
-                              ...prev,
-                              [String(q.index)]: k,
-                            }))
-                          }
-                          className={`w-full border px-3 py-2 text-left transition-colors ${
-                            selected
-                              ? 'border-fl-accent bg-fl-surface-2 text-fl-fg'
-                              : 'border-fl-border text-fl-muted-1 hover:border-fl-border-2 hover:text-fl-fg hover:bg-fl-surface-2'
-                          }`}
-                        >
-                          <span className="text-fl-label font-mono font-bold">
-                            {k}.
-                          </span>{' '}
-                          <TargetLanguageText
-                            languageCode={exercise.target_language}
-                          >
-                            {v}
-                          </TargetLanguageText>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <PracticeQuestions
+              questions={exercise.questions}
+              answers={answers}
+              languageCode={exercise.target_language}
+              level={exercise.level}
+              modality="listening"
+              onTextSelection={handleTextSelection}
+              onAnswer={(index, key) =>
+                setAnswers((prev) => ({ ...prev, [String(index)]: key }))
+              }
+            />
           </div>
 
           {/* Error */}
@@ -817,21 +597,14 @@ function ListeningPage() {
             {submitting ? tCommon('checking') : t('submit')}
           </button>
 
-          {selectedWord && (
-            <WordTooltip
-              word={selectedWord}
-              pos={tooltipPos}
-              saveState={saveState}
-              onSave={() => handleSaveWord()}
-              onDismiss={dismissTooltip}
-              labels={{
-                saveWord: tCommon('saveWord'),
-                wordSaved: tCommon('wordSaved'),
-                wordAlreadySaved: tCommon('wordAlreadySaved'),
-                wordSaveError: tCommon('wordSaveError'),
-              }}
-            />
-          )}
+          <PracticeWordTooltip
+            selectedWord={selectedWord}
+            tooltipPos={tooltipPos}
+            saveState={saveState}
+            onSave={handleSaveWord}
+            onDismiss={dismissTooltip}
+            tCommon={tCommon}
+          />
         </>
       )}
     </div>

@@ -170,6 +170,7 @@ async function enterAnswer(answer: string) {
     target: { value: answer },
   })
   await vi.waitFor(() => {
+    expect(screen.getByPlaceholderText('yourAnswer')).toHaveValue(answer)
     expect(screen.getByRole('button', { name: 'submitAnswer' })).toBeEnabled()
   })
 }
@@ -393,7 +394,10 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({}))
     })
 
-    render(<LessonPage />)
+    // Settle initial answer restoration before entering the retry scenario.
+    await act(async () => {
+      render(<LessonPage />)
+    })
     await enterAnswer('Ich lerne Deutsch.')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
 

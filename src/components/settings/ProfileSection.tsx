@@ -5,25 +5,8 @@ import { clearAvatarCache } from '@/lib/avatar-cache'
 import { mapUser } from '@/lib/mappers'
 import { useAuthStore } from '@/store/auth'
 import { SUPPORTED_LOCALES } from '@/lib/locales'
+import { NativeLanguageField } from '@/components/NativeLanguageField'
 import { AuthAvatarImage } from '@/components/AuthAvatarImage'
-
-const LANGUAGES = [
-  'en',
-  'es',
-  'fr',
-  'pt',
-  'de',
-  'it',
-  'pl',
-  'nl',
-  'ro',
-  'ru',
-  'tr',
-  'sv',
-  'da',
-  'fi',
-  'hr',
-] as const
 
 function resizeImage(file: File, maxPx: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -309,24 +292,12 @@ export function ProfileSection({ title }: { title?: string } = {}) {
         </p>
       </div>
 
-      <div>
-        <label className="text-fl-muted-2 mb-2 block font-mono text-xs tracking-widest uppercase">
-          {t('nativeLanguage')}
-        </label>
-        <select
-          value={nativeLanguage}
-          onChange={(e) => setNativeLanguage(e.target.value)}
-          className="bg-fl-bg border-fl-border text-fl-fg focus:border-fl-border-2 w-full appearance-none border px-4 py-3 font-mono text-sm transition-colors focus:outline-none"
-        >
-          {[...LANGUAGES]
-            .sort((a, b) => tLang(a).localeCompare(tLang(b)))
-            .map((code) => (
-              <option key={code} value={code}>
-                {tLang(code)}
-              </option>
-            ))}
-        </select>
-      </div>
+      <NativeLanguageField
+        label={t('nativeLanguage')}
+        value={nativeLanguage}
+        onChange={setNativeLanguage}
+        languageName={tLang}
+      />
 
       <div>
         <label className="text-fl-muted-2 mb-2 block font-mono text-xs tracking-widest uppercase">

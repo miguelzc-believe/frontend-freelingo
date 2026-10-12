@@ -9,6 +9,10 @@ import { useAuthStore } from '@/store/auth'
 import { apiFetch } from '@/lib/api'
 import { documentOccurrences } from '@/lib/document-occurrences'
 import { TargetLanguageText } from '@/components/TargetLanguageText'
+import { NativeHelpDisclosure } from '@/components/native-help/NativeHelpDisclosure'
+import { NativeHelpGlossary } from '@/components/native-help/NativeHelpGlossary'
+import { NativeHelpList } from '@/components/native-help/NativeHelpList'
+import { NativeHelpTraps } from '@/components/native-help/NativeHelpTraps'
 
 const POS_LABELS: Record<string, string> = {
   noun: 'n.',
@@ -206,18 +210,11 @@ export default function VocabularySetPage({
       </div>
 
       {nativeLanguageName && (
-        <div className="border-fl-border bg-fl-surface border">
-          <button
-            type="button"
-            onClick={() => setNativeHelpOpen((open) => !open)}
-            className="border-fl-border text-fl-label text-fl-muted-2 hover:text-fl-fg flex w-full items-center justify-between border-b px-6 py-4 font-mono tracking-widest uppercase transition-colors"
-            aria-expanded={nativeHelpOpen}
-          >
-            <span>
-              {tCommon('nativeHelpTitle', { language: nativeLanguageName })}
-            </span>
-            <span>{nativeHelpOpen ? '−' : '+'}</span>
-          </button>
+        <NativeHelpDisclosure
+          title={tCommon('nativeHelpTitle', { language: nativeLanguageName })}
+          open={nativeHelpOpen}
+          onToggle={() => setNativeHelpOpen((open) => !open)}
+        >
           {nativeHelpOpen && (
             <div className="space-y-4 px-6 py-5">
               {loadingNativeHelp && (
@@ -233,27 +230,13 @@ export default function VocabularySetPage({
                     {nativeHelp.summary}
                   </p>
 
-                  {nativeHelp.study_tips.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpStudyTips')}
-                      </p>
-                      <ul className="space-y-1">
-                        {documentOccurrences(
-                          [...sectionPath, 'study_tips'],
-                          nativeHelp.study_tips
-                        ).map(({ value: tip, key }) => (
-                          <li
-                            key={key}
-                            className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
-                          >
-                            <span className="text-fl-muted-3 mr-2">·</span>
-                            {tip}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <NativeHelpList
+                    title={tCommon('nativeHelpStudyTips')}
+                    items={documentOccurrences(
+                      [...sectionPath, 'study_tips'],
+                      nativeHelp.study_tips
+                    )}
+                  />
 
                   {nativeHelp.word_notes.length > 0 && (
                     <div className="border-fl-border space-y-2 border-t pt-3">
@@ -282,77 +265,31 @@ export default function VocabularySetPage({
                     </div>
                   )}
 
-                  {nativeHelp.common_traps.length > 0 && (
-                    <div className="border-fl-border space-y-2 border-t pt-3">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpCommonTraps')}
-                      </p>
-                      {documentOccurrences(
-                        [...sectionPath, 'common_traps'],
-                        nativeHelp.common_traps
-                      ).map(({ value: trap, key }) => (
-                        <div key={key} className="space-y-0.5">
-                          <p className="text-fl-muted-2 text-sm">
-                            {trap.mistake}
-                          </p>
-                          <p className="text-fl-muted-1 text-sm leading-relaxed">
-                            {trap.fix}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <NativeHelpTraps
+                    title={tCommon('nativeHelpCommonTraps')}
+                    items={documentOccurrences(
+                      [...sectionPath, 'common_traps'],
+                      nativeHelp.common_traps
+                    )}
+                  />
 
-                  {nativeHelp.mini_glossary.length > 0 && (
-                    <div className="border-fl-border space-y-2 border-t pt-3">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpMiniGlossary')}
-                      </p>
-                      {documentOccurrences(
-                        [...sectionPath, 'mini_glossary'],
-                        nativeHelp.mini_glossary
-                      ).map(({ value: item, key }) => (
-                        <div key={key}>
-                          <TargetLanguageText
-                            languageCode={targetLanguageCode}
-                            className="text-fl-muted-1 text-sm font-bold"
-                          >
-                            {item.term}
-                          </TargetLanguageText>
-                          <p className="text-fl-muted-2 text-sm">
-                            {item.meaning}
-                          </p>
-                          {item.note && (
-                            <p className="text-fl-muted-1 text-sm leading-relaxed">
-                              {item.note}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <NativeHelpGlossary
+                    title={tCommon('nativeHelpMiniGlossary')}
+                    languageCode={targetLanguageCode}
+                    items={documentOccurrences(
+                      [...sectionPath, 'mini_glossary'],
+                      nativeHelp.mini_glossary
+                    )}
+                  />
 
-                  {nativeHelp.practice_prompts.length > 0 && (
-                    <div className="border-fl-border space-y-2 border-t pt-3">
-                      <p className="text-fl-label text-fl-muted-3 font-mono tracking-widest uppercase">
-                        {tCommon('nativeHelpPractice')}
-                      </p>
-                      <ul className="space-y-1">
-                        {documentOccurrences(
-                          [...sectionPath, 'practice_prompts'],
-                          nativeHelp.practice_prompts
-                        ).map(({ value: prompt, key }) => (
-                          <li
-                            key={key}
-                            className="text-fl-muted-1 max-w-[70ch] text-sm leading-relaxed"
-                          >
-                            <span className="text-fl-muted-3 mr-2">·</span>
-                            {prompt}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <NativeHelpList
+                    title={tCommon('nativeHelpPractice')}
+                    className="border-fl-border space-y-2 border-t pt-3"
+                    items={documentOccurrences(
+                      [...sectionPath, 'practice_prompts'],
+                      nativeHelp.practice_prompts
+                    )}
+                  />
                 </>
               )}
               {!loadingNativeHelp && !nativeHelp && (
@@ -372,7 +309,7 @@ export default function VocabularySetPage({
               )}
             </div>
           )}
-        </div>
+        </NativeHelpDisclosure>
       )}
 
       {/* Word list */}

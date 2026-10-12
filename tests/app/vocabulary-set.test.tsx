@@ -232,6 +232,47 @@ describe('VocabularySetPage', () => {
     expect(screen.getByRole('button', { name: 'addAll' })).toBeEnabled()
   })
 
+  it('keeps help explicitly requested and hides empty subsections without reloading cached help', async () => {
+    mockApiFetch
+      .mockResolvedValueOnce(jsonResponse({ set: vocabularySet }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          native_help: {
+            ...help,
+            study_tips: [],
+            word_notes: [],
+            common_traps: [],
+            mini_glossary: [],
+            practice_prompts: [],
+          },
+        })
+      )
+    render(<VocabularySetPage params={{ setId: 'set/one' }} />)
+    const toggle = await screen.findByRole('button', {
+      name: /nativeHelpTitle/,
+    })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    expect(mockApiFetch).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'nativeHelpShow' }))
+    const summary = await screen.findByText(help.summary)
+    expect(summary.parentElement?.children).toHaveLength(1)
+    for (const label of [
+      'nativeHelpStudyTips',
+      'nativeHelpWordNotes',
+      'nativeHelpCommonTraps',
+      'nativeHelpMiniGlossary',
+      'nativeHelpPractice',
+    ]) {
+      expect(screen.queryByText(label)).toBeNull()
+    }
+    fireEvent.click(toggle)
+    expect(screen.queryByText(help.summary)).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.getByText(help.summary)).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledTimes(2)
+  })
+
   it('loads and retries native help for the target language', async () => {
     mockApiFetch
       .mockResolvedValueOnce(jsonResponse({ set: vocabularySet }))

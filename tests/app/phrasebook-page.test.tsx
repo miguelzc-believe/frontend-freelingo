@@ -288,6 +288,41 @@ describe('PhrasebookPage', () => {
     expect(mockNativeHelp).toHaveBeenCalledWith('greetings', 'de')
   })
 
+  it('keeps beginner help open but explicitly requested and omits empty subsections', async () => {
+    mockNativeHelp.mockResolvedValue({
+      ...nativeHelp,
+      usage_tips: [],
+      register_notes: [],
+      phrase_notes: [],
+      common_traps: [],
+      mini_glossary: [],
+    })
+    render(<PhrasebookPage />)
+    await screen.findByText('Greetings')
+    const toggles = screen.getAllByRole('button', { name: /nativeHelpTitle/ })
+    expect(toggles[0]).toHaveAttribute('aria-expanded', 'true')
+    expect(toggles[1]).toHaveAttribute('aria-expanded', 'false')
+    expect(mockNativeHelp).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'nativeHelpShow' }))
+    const summary = await screen.findByText(nativeHelp.summary)
+    expect(summary.parentElement?.children).toHaveLength(1)
+    expect(summary.parentElement).toHaveAttribute('class', 'mt-3 space-y-3')
+    for (const label of [
+      'nativeHelpUsageTips',
+      'nativeHelpRegisterNotes',
+      'nativeHelpPhraseNotes',
+      'nativeHelpCommonTraps',
+      'nativeHelpMiniGlossary',
+    ]) {
+      expect(screen.queryByText(label)).toBeNull()
+    }
+    fireEvent.click(toggles[0]!)
+    expect(screen.queryByText(nativeHelp.summary)).toBeNull()
+    fireEvent.click(toggles[0]!)
+    expect(screen.getByText(nativeHelp.summary)).toBeInTheDocument()
+    expect(mockNativeHelp).toHaveBeenCalledExactlyOnceWith('greetings', 'de')
+  })
+
   it('offers retry when native help fails, then displays the successful retry', async () => {
     mockNativeHelp.mockRejectedValueOnce(new Error('offline'))
     render(<PhrasebookPage />)

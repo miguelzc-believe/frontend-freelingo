@@ -13,6 +13,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "quality": "tsx scripts/quality.ts",
+    "quality:duplication": "tsx scripts/duplication.ts",
     "format": "prettier --write src tests scripts *.ts *.json *.mjs",
     "quality:dead-code": "tsx scripts/dead-code.ts",
     "quality:dead-code:production": "tsx scripts/dead-code.ts --production",

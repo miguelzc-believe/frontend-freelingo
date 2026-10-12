@@ -1,5 +1,16 @@
 type Translate = (key: string) => string
 
+export function getLegalDocumentHref(
+  page: '/terms' | '/privacy',
+  from: string | null,
+  invite: string | null
+): string {
+  if (from === 'settings' || from === 'landing') return `${page}?from=${from}`
+  if (from !== 'register') return page
+  const inviteQuery = invite ? `&invite=${encodeURIComponent(invite)}` : ''
+  return `${page}?from=register${inviteQuery}`
+}
+
 export function getLegalBackHref(
   isFromSettings: boolean,
   isFromRegister: boolean,

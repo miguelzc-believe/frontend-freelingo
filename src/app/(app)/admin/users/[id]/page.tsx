@@ -14,6 +14,10 @@ import {
   User,
 } from 'lucide-react'
 import { AdminNav } from '@/components/admin/AdminNav'
+import {
+  AdminSubscriptionBadge,
+  getSubscriptionLabel,
+} from '@/components/admin/AdminSubscriptionBadge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { PageLoading } from '@/components/ui/page-loading'
 import { apiFetch } from '@/lib/api'
@@ -135,26 +139,6 @@ function SummaryCard({
       <p className="text-fl-fg font-mono text-lg">{value}</p>
     </div>
   )
-}
-
-function subscriptionStatusClass(status: string) {
-  switch (status) {
-    case 'active':
-      return 'border-green-500/40 text-green-400'
-    case 'trialing':
-      return 'border-blue-500/40 text-blue-400'
-    case 'past_due':
-    case 'unpaid':
-    case 'paused':
-      return 'border-yellow-500/40 text-yellow-400'
-    case 'incomplete':
-    case 'incomplete_expired':
-      return 'border-orange-500/40 text-orange-400'
-    case 'canceled':
-      return 'border-fl-border text-fl-muted-2'
-    default:
-      return 'border-fl-border text-fl-muted-3'
-  }
 }
 
 function UserProfile({
@@ -523,11 +507,10 @@ export default function AdminUserStatsPage() {
             {user.role === 'admin' ? t('roleAdmin') : t('roleUser')}
           </span>
           {stripeEnabled && (
-            <span
-              className={`text-fl-hint border px-2 py-0.5 font-mono tracking-widest uppercase ${subscriptionStatusClass(user.subscription_status)}`}
-            >
-              {subscriptionLabel}
-            </span>
+            <AdminSubscriptionBadge
+              status={user.subscription_status}
+              tBilling={tBilling}
+            />
           )}
         </div>
       </div>
@@ -901,43 +884,6 @@ function QuotaInput({
       </span>
     </label>
   )
-}
-
-function getSubscriptionLabel(
-  status: string,
-  tBilling: (
-    key:
-      | 'statusActive'
-      | 'statusTrialing'
-      | 'statusPastDue'
-      | 'statusUnpaid'
-      | 'statusPaused'
-      | 'statusIncomplete'
-      | 'statusIncompleteExpired'
-      | 'statusCanceled'
-      | 'statusNone'
-  ) => string
-) {
-  switch (status) {
-    case 'active':
-      return tBilling('statusActive')
-    case 'trialing':
-      return tBilling('statusTrialing')
-    case 'past_due':
-      return tBilling('statusPastDue')
-    case 'unpaid':
-      return tBilling('statusUnpaid')
-    case 'paused':
-      return tBilling('statusPaused')
-    case 'incomplete':
-      return tBilling('statusIncomplete')
-    case 'incomplete_expired':
-      return tBilling('statusIncompleteExpired')
-    case 'canceled':
-      return tBilling('statusCanceled')
-    default:
-      return tBilling('statusNone')
-  }
 }
 
 function planLabel(
