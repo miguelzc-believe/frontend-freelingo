@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -27,6 +28,7 @@ vi.mock('@/components/settings/VoiceProviderSettings', () => ({
 import { AiSection } from '@/components/settings/AiSection'
 import { AiConfigurationBanner } from '@/components/AiConfigurationBanner'
 import type { LlmSettings } from '@/lib/llm-settings'
+import { deferred } from '../helpers/voice-capture'
 
 const saved: LlmSettings = {
   configured: true,
@@ -165,6 +167,28 @@ describe('AI settings', () => {
     )
     expect(screen.queryByLabelText('maxTokens')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox')).toHaveValue('openai')
+  })
+
+  it('preserves every provider option label, value and order', async () => {
+    setup()
+    const provider = await screen.findByRole('combobox')
+    const options = within(provider).getAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([
+      'selectProvider',
+      'Ollama',
+      'OpenAI',
+      'Anthropic',
+      'DeepSeek',
+      'customProvider',
+    ])
+    expect(options.map((option) => option.getAttribute('value'))).toEqual([
+      '',
+      'ollama',
+      'openai',
+      'anthropic',
+      'deepseek',
+      'custom',
+    ])
   })
 
   it('retains a key for the same provider and normalized URL and clears typed keys on canonical save', async () => {
@@ -429,6 +453,30 @@ describe('AI settings', () => {
     expect(await screen.findByText('saved-model')).toBeInTheDocument()
   })
 
+  it('shows a read-only refresh error instead of stale configured status until retry succeeds', async () => {
+    setup(saved, 'user')
+    await screen.findByText('saved-model')
+    mocks.apiFetch.mockRejectedValue(new Error('offline'))
+    act(() => window.dispatchEvent(new Event('freelingo:llm-settings-saved')))
+    expect(await screen.findByRole('alert')).toHaveTextContent('loadFailed')
+    expect(screen.getByText('readonly')).toBeInTheDocument()
+    expect(screen.queryByText('saved-model')).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    mocks.apiFetch.mockResolvedValue(response(empty))
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('missing')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'retry' })
+    ).not.toBeInTheDocument()
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(3)
+    for (const [path, options] of mocks.apiFetch.mock.calls) {
+      expect(path).toBe('/api/llm-settings/status')
+      expect(options).toEqual({ cache: 'no-store' })
+    }
+  })
+
   it('validates provider/model, custom URL and Anthropic token count before submitting', async () => {
     setup(empty)
     await screen.findByLabelText('apiKey')
@@ -503,6 +551,61 @@ describe('AI settings', () => {
       base_url: 'https://example.com/v1',
     })
   })
+
+  it.each([
+    ['admin', false, false, 'bannerAdmin'],
+    ['user', false, false, 'readonly'],
+    ['admin', false, true, 'bannerAdmin'],
+    ['user', false, true, 'readonly'],
+    ['admin', true, true, 'voice.globalHint'],
+    ['user', true, true, 'voice.globalHint'],
+    ['admin', true, false, null],
+    ['user', true, false, null],
+  ] as const)(
+    'renders the banner for role=%s, LLM configured=%s, voice missing=%s',
+    async (role, configured, voiceMissing, hint) => {
+      useAuthStore.setState({ user: { ...user, role } })
+      const llmStatus = deferred<Response>()
+      const voiceStatus = deferred<Response>()
+      mocks.apiFetch.mockImplementation((path: string) =>
+        path === '/api/llm-settings/status'
+          ? llmStatus.promise
+          : voiceStatus.promise.then((value) => value.clone())
+      )
+      render(<AiConfigurationBanner />)
+      await act(async () => {
+        llmStatus.resolve(response({ ...saved, configured }))
+        voiceStatus.resolve(response({ configured: !voiceMissing }))
+      })
+      expect(mocks.apiFetch).toHaveBeenCalledTimes(3)
+      expect(mocks.apiFetch.mock.calls.map(([path]) => path)).toEqual([
+        '/api/llm-settings/status',
+        '/api/tts-settings/status',
+        '/api/stt-settings/status',
+      ])
+      if (hint === null) {
+        expect(screen.queryByRole('status')).not.toBeInTheDocument()
+        expect(screen.queryByRole('link')).not.toBeInTheDocument()
+        return
+      }
+      const status = screen.getByRole('status')
+      expect(status.tagName).toBe('OUTPUT')
+      expect(status).not.toHaveAttribute('role')
+      expect(within(status).getByText(hint)).toHaveClass('text-fl-muted-2')
+      expect(within(status).queryAllByText('missing')).toHaveLength(
+        Number(!configured)
+      )
+      for (const key of ['voice.bannerMissingTts', 'voice.bannerMissingStt']) {
+        expect(within(status).queryAllByText(key)).toHaveLength(
+          Number(voiceMissing)
+        )
+      }
+      expect(
+        screen.getByRole('link', { name: 'openSettings' })
+      ).toHaveAttribute('href', '/settings#ai')
+      expect(within(status).queryByRole('link')).not.toBeInTheDocument()
+    }
+  )
 
   it('shows missing voice configuration after the LLM is saved', async () => {
     setup(empty)

@@ -103,12 +103,9 @@ function VoiceServiceStatus({ kind }: { readonly kind: 'tts' | 'stt' }) {
     }
   }, [attempt, kind])
 
-  return (
-    <section className="border-fl-border space-y-3 border p-4">
-      <h3 className="text-fl-fg font-mono text-xs tracking-widest uppercase">
-        {t(kind)}
-      </h3>
-      {failed && !saved ? (
+  function renderStatus() {
+    if (failed && !saved) {
+      return (
         <div>
           <p role="alert" className="text-fl-error mb-3 font-mono text-sm">
             {t('loadFailed')}
@@ -121,31 +118,45 @@ function VoiceServiceStatus({ kind }: { readonly kind: 'tts' | 'stt' }) {
             {t('retry')}
           </button>
         </div>
-      ) : saved ? (
-        saved.configured ? (
-          <dl className="grid gap-2 font-mono text-sm">
-            <div>
-              <dt className="text-fl-muted-2">{t('model')}</dt>
-              <dd className="text-fl-fg break-all">{saved.model}</dd>
-            </div>
-            {kind === 'tts' && (
-              <div>
-                <dt className="text-fl-muted-2">{t('voice')}</dt>
-                <dd className="text-fl-fg">{saved.voice}</dd>
-              </div>
-            )}
-            <dt className="text-fl-muted-2">{t('configured')}</dt>
-          </dl>
-        ) : (
-          <output className="text-fl-muted-2 block font-mono text-sm">
-            {t('missing')}
-          </output>
-        )
-      ) : (
+      )
+    }
+    if (!saved) {
+      return (
         <output className="text-fl-muted-2 block font-mono text-sm">
           {t('loading')}
         </output>
-      )}
+      )
+    }
+    if (!saved.configured) {
+      return (
+        <output className="text-fl-muted-2 block font-mono text-sm">
+          {t('missing')}
+        </output>
+      )
+    }
+    return (
+      <dl className="grid gap-2 font-mono text-sm">
+        <div>
+          <dt className="text-fl-muted-2">{t('model')}</dt>
+          <dd className="text-fl-fg break-all">{saved.model}</dd>
+        </div>
+        {kind === 'tts' && (
+          <div>
+            <dt className="text-fl-muted-2">{t('voice')}</dt>
+            <dd className="text-fl-fg">{saved.voice}</dd>
+          </div>
+        )}
+        <dt className="text-fl-muted-2">{t('configured')}</dt>
+      </dl>
+    )
+  }
+
+  return (
+    <section className="border-fl-border space-y-3 border p-4">
+      <h3 className="text-fl-fg font-mono text-xs tracking-widest uppercase">
+        {t(kind)}
+      </h3>
+      {renderStatus()}
     </section>
   )
 }

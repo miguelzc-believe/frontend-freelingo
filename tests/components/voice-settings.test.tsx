@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore, type User } from '@/store/auth'
 
@@ -7,6 +14,7 @@ vi.mock('@/lib/api', () => mocks)
 vi.mock('use-intl', () => ({ useTranslations: () => (key: string) => key }))
 
 import { VoiceProviderSettings } from '@/components/settings/VoiceProviderSettings'
+import { deferred } from '../helpers/voice-capture'
 
 const ttsSaved = {
   configured: true,
@@ -319,6 +327,77 @@ describe('OmniRoute voice settings', () => {
     for (const alert of alerts) expect(alert).toHaveTextContent('loadFailed')
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
+
+  it.each(['tts', 'stt'] as const)(
+    'retries a failed read-only %s status without requesting admin settings',
+    async (kind) => {
+      useAuthStore.setState({ user: learner, accessToken: 'test' })
+      mocks.apiFetch.mockRejectedValue(new Error('offline'))
+      render(<VoiceProviderSettings />)
+      expect(await screen.findAllByRole('alert')).toHaveLength(2)
+      const section = screen.getByRole('heading', { name: kind }).parentElement!
+      mocks.apiFetch.mockResolvedValue(response({ configured: false }))
+      fireEvent.click(within(section).getByRole('button', { name: 'retry' }))
+      expect(await within(section).findByRole('status')).toHaveTextContent(
+        'missing'
+      )
+      expect(within(section).queryByRole('alert')).not.toBeInTheDocument()
+      expect(within(section).queryByRole('button')).not.toBeInTheDocument()
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      expect(mocks.apiFetch).toHaveBeenCalledTimes(3)
+      expect(mocks.apiFetch).toHaveBeenLastCalledWith(
+        `/api/${kind}-settings/status`,
+        { cache: 'no-store' }
+      )
+    }
+  )
+
+  it.each([true, false])(
+    'preserves read-only voice status after a failed refresh with configured=%s',
+    async (configured) => {
+      useAuthStore.setState({ user: learner, accessToken: 'test' })
+      const initialStatus = deferred<void>()
+      mocks.apiFetch.mockImplementation(async (path: string) => {
+        await initialStatus.promise
+        const saved = path === '/api/tts-settings/status' ? ttsSaved : sttSaved
+        return response({ ...saved, configured })
+      })
+      render(<VoiceProviderSettings />)
+      await act(async () => {
+        initialStatus.resolve()
+      })
+      mocks.apiFetch.mockRejectedValue(new Error('offline'))
+      await act(async () => {
+        window.dispatchEvent(new Event('freelingo:voice-settings-saved'))
+      })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button')).not.toBeInTheDocument()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      expect(screen.queryByText('loading')).not.toBeInTheDocument()
+      expect(mocks.apiFetch).toHaveBeenCalledTimes(4)
+      if (!configured) {
+        expect(screen.getAllByRole('status')).toHaveLength(2)
+        for (const status of screen.getAllByRole('status')) {
+          expect(status).toHaveTextContent('missing')
+          expect(status.tagName).toBe('OUTPUT')
+        }
+        return
+      }
+      expect(screen.getByText(ttsSaved.model)).toBeInTheDocument()
+      expect(screen.getByText(sttSaved.model)).toBeInTheDocument()
+      expect(screen.getAllByText('configured')).toHaveLength(2)
+      const ttsSection = screen.getByRole('heading', {
+        name: 'tts',
+      }).parentElement!
+      const sttSection = screen.getByRole('heading', {
+        name: 'stt',
+      }).parentElement!
+      expect(within(ttsSection).getByText('voice')).toBeInTheDocument()
+      expect(within(sttSection).queryByText('voice')).not.toBeInTheDocument()
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    }
+  )
 
   it('clears the entered key and disallows reuse after the gateway URL changes', async () => {
     setup()

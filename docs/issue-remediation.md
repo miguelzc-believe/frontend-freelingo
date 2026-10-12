@@ -90,3 +90,19 @@ that selector, not a production change. The earlier full Vitest suite passed
 1,575 tests in 138 files; its first invocation had an external 120-second command
 limit and the completed rerun used a sufficient process limit without changing
 test timeouts. Existing bundler warnings remain non-fatal.
+
+## 5. Explicit presentation branches
+
+Nested ternaries are replaced with named presentation decisions and early
+returns, not moved to another expression. Voice labels preserve recording first,
+then connection/send, ended and ready. Quota presentation keeps complete freemium
+values ahead of server quota, including zero remaining/limit and trial mode;
+incomplete freemium values fall back to general non-trial quota.
+
+Validation: 62 focused voice tests passed, including all six status labels with
+and without recording and an eight-case quota matrix. Settings status and
+provider-label branches retain their existing localized content, tokens,
+request ownership and hooks. All 69 settings/presentation cases passed, including
+provider option order and values, eight banner combinations, readonly refresh
+errors and TTS/STT retries. New asynchronous tests settle external promises, not
+`act`-wrapped renders. Scoped ESLint and strict typecheck passed.

@@ -24,9 +24,10 @@ import {
 import TranscriptBubble from './TranscriptBubble'
 import SessionTimeoutBanner from './SessionTimeoutBanner'
 import MessageAudioPlayer, { VoicePlayback } from './MessageAudioPlayer'
-import { QuotaPill, TrialPremiumCta } from './VoiceSessionExtras'
+import { VoiceQuota, TrialPremiumCta } from './VoiceSessionExtras'
 import { WordTooltip, useWordSave } from '@/components/ui/WordTooltip'
 import type { QuotaStatus } from '@/types/api'
+import { voiceStatusLabel, type VoiceStatus } from '@/lib/voice-presentation'
 import {
   ReviewPrompt,
   getReviewPromptDismissal,
@@ -68,8 +69,6 @@ interface SessionRun {
   ownerToken: string
   expiryCheckPending: boolean
 }
-
-type Status = 'ready' | 'connecting' | 'live' | 'sending' | 'ended' | 'error'
 
 function transcriptDescriptionId(entry: TranscriptEntry, id: string) {
   if (!entry.text) return undefined
@@ -120,7 +119,7 @@ export default function ConversationMode({
     conversationId ?? null,
     trialMode ?? false,
   ])
-  const [status, setStatus] = useState<Status>('ready')
+  const [status, setStatus] = useState<VoiceStatus>('ready')
   const [recording, setRecording] = useState(false)
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [warningSeconds, setWarningSeconds] = useState<number | null>(null)
@@ -755,15 +754,8 @@ export default function ConversationMode({
   const active =
     status === 'connecting' || status === 'live' || status === 'sending'
   const busy = status === 'connecting' || status === 'sending'
-  const label = recording
-    ? v('recording')
-    : busy
-      ? v('sending')
-      : active
-        ? v('ready')
-        : status === 'ended'
-          ? t('sessionEnded')
-          : v('ready')
+  const labelKey = voiceStatusLabel(status, recording)
+  const label = labelKey === 'sessionEnded' ? t(labelKey) : v(labelKey)
 
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col overflow-hidden p-4 md:p-6">
@@ -925,18 +917,12 @@ export default function ConversationMode({
             <SessionTimeoutBanner seconds={warningSeconds} />
           </div>
         )}
-        {freemiumVoiceRemaining != null && freemiumVoiceLimit != null ? (
-          <span
-            className={`text-fl-label font-mono tracking-widest uppercase ${freemiumVoiceRemaining <= 0 ? 'text-red-500' : 'text-fl-muted-2'}`}
-          >
-            {t('freemiumVoiceRemaining', {
-              remaining: freemiumVoiceRemaining,
-              limit: freemiumVoiceLimit,
-            })}
-          </span>
-        ) : quota && !trialMode ? (
-          <QuotaPill quota={quota} />
-        ) : null}
+        <VoiceQuota
+          remaining={freemiumVoiceRemaining}
+          limit={freemiumVoiceLimit}
+          quota={quota}
+          trialMode={trialMode}
+        />
         <output className="text-fl-fg block font-mono text-xs font-semibold tracking-wide uppercase">
           {label}
         </output>
