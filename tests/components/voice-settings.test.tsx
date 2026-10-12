@@ -144,7 +144,7 @@ describe('OmniRoute voice settings', () => {
     expect(await byName('ttsApiKey')).toHaveValue('')
   })
 
-  it('plays a TTS connection-test sample from a bounded audio response', async () => {
+  it('plays a TTS test sample preserving binary audio bytes including values above 127', async () => {
     const play = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal(
       'Audio',
@@ -155,27 +155,52 @@ describe('OmniRoute voice settings', () => {
         constructor(public src: string) {}
       }
     )
-    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:voice-test')
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:voice-test')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-    setup()
-    await byName('ttsModel')
-    mocks.apiFetch.mockImplementation((path: string) =>
-      Promise.resolve(
-        response(
-          path.endsWith('/test')
-            ? { ok: true, audio_base64: 'SUQz', content_type: 'audio/mpeg' }
-            : ttsSaved
+    try {
+      setup()
+      await byName('ttsModel')
+      mocks.apiFetch.mockImplementation((path: string) =>
+        Promise.resolve(
+          response(
+            path.endsWith('/test')
+              ? {
+                  ok: true,
+                  audio_base64: 'AH+A/w==',
+                  content_type: 'audio/mpeg',
+                }
+              : ttsSaved
+          )
         )
       )
-    )
-    fireEvent.click(screen.getAllByRole('button', { name: 'test' })[0]!)
-    await screen.findByText('testSuccess')
-    expect(findBody('/api/admin/tts-settings/test').model).toBe(
-      'openai/gpt-4o-mini-tts'
-    )
-    expect(play).toHaveBeenCalledOnce()
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
+      fireEvent.click(screen.getAllByRole('button', { name: 'test' })[0]!)
+      await screen.findByText('testSuccess')
+      expect(findBody('/api/admin/tts-settings/test').model).toBe(
+        'openai/gpt-4o-mini-tts'
+      )
+      expect(play).toHaveBeenCalledOnce()
+      expect(createObjectURL).toHaveBeenCalledOnce()
+      const blob = createObjectURL.mock.calls[0]?.[0]
+      expect(blob).toBeInstanceOf(Blob)
+      if (!(blob instanceof Blob)) throw new Error('Expected an audio Blob')
+      expect(blob.type).toBe('audio/mpeg')
+      expect(blob.size).toBe(4)
+      const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (reader.result instanceof ArrayBuffer) resolve(reader.result)
+          else reject(new Error('Expected binary audio data'))
+        }
+        reader.onerror = () => reject(reader.error)
+        reader.readAsArrayBuffer(blob)
+      })
+      expect(Array.from(new Uint8Array(buffer))).toEqual([0, 127, 128, 255])
+    } finally {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    }
   })
 
   it('tests STT independently without placing the key in browser storage', async () => {

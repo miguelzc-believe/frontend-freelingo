@@ -30,3 +30,15 @@ Validation: 66 focused tests passed; after the harness adjustment all 39 lesson
 cases passed in ten consecutive fresh processes (five normal two-worker runs,
 five serial runs). Focused ESLint and strict typecheck passed. Full-suite results
 and final remote analysis are recorded below when actually completed.
+
+## 2. Linear normalization and binary audio integrity
+
+Base URL normalization uses a suffix index and one slice, preserving trim-then-
+remove-final-slashes semantics without regex backtracking. Base64 audio uses
+`codePointAt` only under the binary-string invariant of `atob` (bytes 0–255,
+no surrogate pairs, in-bounds index); it is not recoded as UTF-8.
+
+Validation: 44 utility/voice settings tests passed, including 100,000-slash
+suffix and nonfinal-run cases, and exact Blob bytes `[0, 127, 128, 255]` with
+MIME preservation. Scoped ESLint, formatting and diff checks passed. The binary
+fixture is synthetic and does not establish audible/device/provider acceptance.

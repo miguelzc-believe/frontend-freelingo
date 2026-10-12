@@ -448,8 +448,10 @@ function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
 function playTestAudio(result: TtsVoiceTestResult) {
   const binary = atob(result.audio_base64)
   const bytes = new Uint8Array(binary.length)
+  // atob returns one U+0000-U+00FF code point per byte, with no surrogate pairs.
+  // The loop keeps index in bounds, so codePointAt always returns a number.
   for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
+    bytes[index] = binary.codePointAt(index)!
   }
   const url = URL.createObjectURL(
     new Blob([bytes], { type: result.content_type })

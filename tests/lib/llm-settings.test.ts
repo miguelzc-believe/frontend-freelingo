@@ -173,11 +173,33 @@ describe('LLM settings API', () => {
     expect(isValidLlmBaseUrl(url)).toBe(false)
   })
 
-  it('normalizes whitespace and trailing slashes without stripping /v1', () => {
-    expect(normalizeLlmBaseUrl(' https://example.com/v1/// ')).toBe(
-      'https://example.com/v1'
-    )
-    expect(normalizeLlmBaseUrl(' ')).toBeNull()
-    expect(normalizeLlmBaseUrl(null)).toBeNull()
+  it.each<[string | null, string | null]>([
+    [null, null],
+    ['', null],
+    [' \t\r\n\u00a0\uFEFF ', null],
+    ['////', null],
+    [' \t///\n ', null],
+    [' \thttps://example.com/v1/// \r\n', 'https://example.com/v1'],
+    ['https://example.com/v1', 'https://example.com/v1'],
+    ['https://example.com//api//v1///', 'https://example.com//api//v1'],
+    ['//example.com/path', '//example.com/path'],
+    ['https://example.com/v1///?page=1', 'https://example.com/v1///?page=1'],
+    ['https://example.com/v1//#fragment', 'https://example.com/v1//#fragment'],
+    [' https://example.com/v1// / ', 'https://example.com/v1// '],
+    [' https://example.com/v1/\n/ \t', 'https://example.com/v1/\n'],
+  ])(
+    'preserves trim-then-trailing-slash semantics for %j',
+    (value, expected) => {
+      expect(normalizeLlmBaseUrl(value)).toBe(expected)
+    }
+  )
+
+  it('handles long slash suffixes and preserves nonfinal slash runs', () => {
+    const slashes = '/'.repeat(100_000)
+    const baseUrl = 'https://example.com/v1'
+    expect(normalizeLlmBaseUrl(` \t${baseUrl}${slashes} \n`)).toBe(baseUrl)
+    expect(normalizeLlmBaseUrl(slashes)).toBeNull()
+    const nonfinalSlashes = `${baseUrl}${slashes}not-final`
+    expect(normalizeLlmBaseUrl(nonfinalSlashes)).toBe(nonfinalSlashes)
   })
 })
