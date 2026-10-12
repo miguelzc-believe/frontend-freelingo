@@ -533,9 +533,20 @@ describe('explicit voice-message conversation', () => {
     expect(capture.close).toHaveBeenCalledOnce()
     expect(screen.getAllByRole('button', { name: 'play' })).toHaveLength(1)
     expect(screen.getByText('processing')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'play' })).not.toHaveAttribute(
+      'aria-describedby'
+    )
     await act(async () => pending.resolve(response(result)))
     expect(await screen.findByText('Hello there')).toBeInTheDocument()
     expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'play' })
+    ).toHaveAccessibleDescription('Hello there')
+    expect(
+      screen.getByRole('button', { name: 'pause' })
+    ).toHaveAccessibleDescription('Welcome back')
+    expect(screen.getByText('Hello there')).toHaveAttribute('lang', 'en-GB')
+    expect(screen.getByText('Welcome back')).toHaveAttribute('lang', 'en-GB')
     expect(await screen.findByText('memorySavedToast')).toBeInTheDocument()
     await waitFor(() => expect(play).toHaveBeenCalledOnce())
     expect(uploads()).toHaveLength(1)

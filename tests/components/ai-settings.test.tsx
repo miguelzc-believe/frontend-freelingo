@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore, type User } from '@/store/auth'
 
@@ -108,6 +114,11 @@ describe('AI settings', () => {
 
   it('shows only provider and model to regular users using the safe status API', async () => {
     setup(saved, 'user')
+    const loading = screen.getByRole('status')
+    expect(loading).toHaveTextContent('loading')
+    expect(loading.tagName).toBe('OUTPUT')
+    expect(loading).not.toHaveAttribute('role')
+    expect(loading).toHaveClass('block')
     expect(await screen.findByText('saved-model')).toBeInTheDocument()
     expect(screen.getByText('readonly')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
@@ -123,7 +134,11 @@ describe('AI settings', () => {
 
   it('tells regular users to contact the administrator when global configuration is empty', async () => {
     setup(empty, 'user')
-    expect(await screen.findByRole('status')).toHaveTextContent('missing')
+    const missing = await screen.findByText('missing')
+    expect(screen.getByRole('status')).toBe(missing)
+    expect(missing.tagName).toBe('OUTPUT')
+    expect(missing).not.toHaveAttribute('role')
+    expect(missing).toHaveClass('block')
     expect(screen.getByText('readonly')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'save' })
@@ -132,6 +147,11 @@ describe('AI settings', () => {
 
   it('loads metadata for admins without echoing a saved key', async () => {
     setup()
+    const loading = screen.getByRole('status')
+    expect(loading).toHaveTextContent('loading')
+    expect(loading.tagName).toBe('OUTPUT')
+    expect(loading).not.toHaveAttribute('role')
+    expect(loading).toHaveClass('block')
     const input = await screen.findByLabelText('apiKey')
     expect(input).toHaveValue('')
     expect(input).toHaveAttribute('type', 'password')
@@ -155,7 +175,10 @@ describe('AI settings', () => {
       Promise.resolve(response({ ...saved, model: 'new-model', revision: 2 }))
     )
     save()
-    expect(await screen.findByText('saveSuccess')).toBeInTheDocument()
+    const success = await screen.findByText('saveSuccess')
+    expect(screen.getByRole('status')).toBe(success)
+    expect(success.tagName).toBe('OUTPUT')
+    expect(success).not.toHaveAttribute('role')
     expect(submitted('/api/admin/llm-settings')).toEqual({
       provider: 'openai',
       model: 'new-model',
@@ -335,9 +358,9 @@ describe('AI settings', () => {
         )
       )
       fireEvent.click(screen.getByRole('button', { name: 'test' }))
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        message as string
-      )
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(message as string)
+      expect(alert.tagName).toBe('OUTPUT')
       expect(screen.getByLabelText('apiKey')).toHaveValue('test-only-key')
       expect(
         screen.queryByText(/unsafe-provider-detail/)
@@ -371,7 +394,11 @@ describe('AI settings', () => {
         })
     )
     save()
-    expect(await screen.findByRole('status')).toHaveTextContent('saving')
+    const saving = await screen.findByRole('status')
+    expect(saving).toHaveTextContent('saving')
+    expect(saving.tagName).toBe('OUTPUT')
+    expect(saving).not.toHaveAttribute('role')
+    expect(saving).toHaveClass('block', 'mt-3')
     expect(screen.getByLabelText('model')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'test' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'saving' })).toBeDisabled()
@@ -385,6 +412,7 @@ describe('AI settings', () => {
     mocks.apiFetch.mockRejectedValue(new Error('offline'))
     render(<AiSection />)
     expect(await screen.findByRole('alert')).toHaveTextContent('loadFailed')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('apiKey')).not.toBeInTheDocument()
     mocks.apiFetch.mockImplementation(() => Promise.resolve(response(saved)))
     fireEvent.click(screen.getByRole('button', { name: 'retry' }))
@@ -404,6 +432,11 @@ describe('AI settings', () => {
   it('validates provider/model, custom URL and Anthropic token count before submitting', async () => {
     setup(empty)
     await screen.findByLabelText('apiKey')
+    const missing = screen.getByRole('status')
+    expect(missing).toHaveTextContent('missing')
+    expect(missing.tagName).toBe('OUTPUT')
+    expect(missing).not.toHaveAttribute('role')
+    expect(missing).toHaveClass('block', 'mb-4')
     save()
     expect(screen.getByRole('alert')).toHaveTextContent('requiredFields')
     change('provider', 'custom')
@@ -476,6 +509,16 @@ describe('AI settings', () => {
     render(<AiConfigurationBanner />)
     const link = await screen.findByRole('link', { name: 'openSettings' })
     expect(link).toHaveAttribute('href', '/settings#ai')
+    const banner = link.parentElement!
+    expect(banner.tagName).toBe('DIV')
+    expect(banner).not.toHaveAttribute('role')
+    const status = within(banner).getByRole('status')
+    expect(status.tagName).toBe('OUTPUT')
+    expect(status).not.toHaveAttribute('role')
+    expect(status).not.toHaveClass('contents')
+    expect(status).toHaveTextContent('missing')
+    expect(status).toHaveTextContent('bannerAdmin')
+    expect(within(status).queryByRole('link')).not.toBeInTheDocument()
     expect(screen.getByText('bannerAdmin')).toBeInTheDocument()
     await screen.findByLabelText('apiKey')
     change('provider', 'ollama')

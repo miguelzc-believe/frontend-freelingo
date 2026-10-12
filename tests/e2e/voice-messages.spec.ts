@@ -277,6 +277,12 @@ test('explicit capture, valid WAV upload, authenticated per-message players and 
     exact: true,
   })
   await expect(sliders.nth(1)).toBeEnabled()
+  await expect(sliders.first()).toHaveAccessibleDescription(
+    'Generated input transcript'
+  )
+  await expect(sliders.nth(1)).toHaveAccessibleDescription(
+    'This is a fixture transcript.'
+  )
   await page
     .getByRole('button', { name: 'Pause voice message', exact: true })
     .click()

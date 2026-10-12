@@ -97,6 +97,12 @@ describe('OmniRoute voice settings', () => {
 
   it('renders independent admin TTS/STT forms and never echoes saved credentials', async () => {
     setup()
+    for (const loading of screen.getAllByRole('status')) {
+      expect(loading).toHaveTextContent('loading')
+      expect(loading.tagName).toBe('OUTPUT')
+      expect(loading).not.toHaveAttribute('role')
+      expect(loading).toHaveClass('block')
+    }
     expect(await byName('ttsModel')).toHaveValue(ttsSaved.model)
     expect(await byName('sttModel')).toHaveValue(sttSaved.model)
     expect(await byName('ttsBaseUrl')).toHaveValue(ttsSaved.base_url)
@@ -106,7 +112,14 @@ describe('OmniRoute voice settings', () => {
     expect(await byName('sttApiKey')).toHaveValue('')
     expect(await byName('ttsApiKey')).toHaveAttribute('type', 'password')
     expect(screen.getAllByText('keySaved')).toHaveLength(2)
-    expect(screen.getAllByRole('status')[0]).toHaveTextContent(ttsSaved.model)
+    const statuses = screen.getAllByRole('status')
+    expect(statuses).toHaveLength(2)
+    expect(statuses[0]).toHaveTextContent(ttsSaved.model)
+    for (const status of statuses) {
+      expect(status.tagName).toBe('OUTPUT')
+      expect(status).not.toHaveAttribute('role')
+      expect(status).toHaveClass('block')
+    }
   })
 
   it('uses the OmniRoute default URL and validates each draft before saving', async () => {
@@ -115,8 +128,18 @@ describe('OmniRoute voice settings', () => {
       'https://omniroute.miguel-zapata.com/v1'
     )
     expect(await byName('ttsSpeed')).toHaveValue(1)
+    const statuses = screen.getAllByRole('status')
+    expect(statuses).toHaveLength(2)
+    for (const status of statuses) {
+      expect(status).toHaveTextContent('missing')
+      expect(status.tagName).toBe('OUTPUT')
+      expect(status).not.toHaveAttribute('role')
+      expect(status).toHaveClass('block')
+    }
     fireEvent.click(screen.getAllByRole('button', { name: 'save' })[0]!)
-    expect(await screen.findByText('required')).toBeInTheDocument()
+    const error = await screen.findByRole('alert')
+    expect(error).toHaveTextContent('required')
+    expect(error.tagName).toBe('OUTPUT')
     view.unmount()
   })
 
@@ -131,7 +154,10 @@ describe('OmniRoute voice settings', () => {
       )
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'save' })[0]!)
-    await screen.findByText('saveSuccess')
+    const success = await screen.findByText('saveSuccess')
+    expect(screen.getAllByRole('status')).toContain(success)
+    expect(success.tagName).toBe('OUTPUT')
+    expect(success).not.toHaveAttribute('role')
     const submitted = findBody('/api/admin/tts-settings')
     expect(submitted).toMatchObject({
       base_url: ttsSaved.base_url,
@@ -143,6 +169,36 @@ describe('OmniRoute voice settings', () => {
     expect(JSON.stringify(submitted)).not.toContain('unexpected-provider-error')
     expect(await byName('ttsApiKey')).toHaveValue('')
   })
+
+  it.each([
+    ['save', 'saving', sttSaved, 'saveSuccess'],
+    ['test', 'testing', { ok: true }, 'testSuccess'],
+  ] as const)(
+    'announces STT %s progress with native status semantics',
+    async (action, progress, result, success) => {
+      setup()
+      await byName('sttModel')
+      let resolve: (value: Response) => void = () => {
+        throw new Error('not initialized')
+      }
+      mocks.apiFetch.mockImplementation(
+        () =>
+          new Promise<Response>((r) => {
+            resolve = r
+          })
+      )
+      fireEvent.click(screen.getAllByRole('button', { name: action })[1]!)
+      const loading = screen.getByText(progress, { selector: 'output' })
+      expect(screen.getAllByRole('status')).toContain(loading)
+      expect(loading.tagName).toBe('OUTPUT')
+      expect(loading).not.toHaveAttribute('role')
+      expect(loading).toHaveClass('block')
+      expect(await byName('sttModel')).toBeDisabled()
+      resolve(response(result))
+      expect(await screen.findByText(success)).toBeInTheDocument()
+      expect(await byName('sttModel')).toBeEnabled()
+    }
+  )
 
   it('plays a TTS test sample preserving binary audio bytes including values above 127', async () => {
     const play = vi.fn().mockResolvedValue(undefined)
@@ -226,9 +282,23 @@ describe('OmniRoute voice settings', () => {
 
   it('exposes only safe provider/model status to regular learners', async () => {
     setup('user')
+    const loadingStatuses = screen.getAllByRole('status')
+    expect(loadingStatuses).toHaveLength(2)
+    for (const loading of loadingStatuses) {
+      expect(loading).toHaveTextContent('loading')
+      expect(loading.tagName).toBe('OUTPUT')
+      expect(loading).not.toHaveAttribute('role')
+      expect(loading).toHaveClass('block')
+    }
     expect(
       await screen.findByText('openai/gpt-4o-mini-tts')
     ).toBeInTheDocument()
+    const missingStatus = await screen.findByText('missing')
+    expect(screen.getByRole('status')).toBe(missingStatus)
+    expect(missingStatus).toHaveTextContent('missing')
+    expect(missingStatus.tagName).toBe('OUTPUT')
+    expect(missingStatus).not.toHaveAttribute('role')
+    expect(missingStatus).toHaveClass('block')
     expect(screen.getAllByText('missing')).toHaveLength(1)
     expect(screen.queryByLabelText('ttsModel')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('sttApiKey')).not.toBeInTheDocument()
@@ -238,6 +308,16 @@ describe('OmniRoute voice settings', () => {
     expect(mocks.apiFetch).toHaveBeenCalledWith('/api/stt-settings/status', {
       cache: 'no-store',
     })
+  })
+
+  it('keeps failed read-only status requests as alerts rather than status outputs', async () => {
+    useAuthStore.setState({ user: learner, accessToken: 'test' })
+    mocks.apiFetch.mockRejectedValue(new Error('offline'))
+    render(<VoiceProviderSettings />)
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts).toHaveLength(2)
+    for (const alert of alerts) expect(alert).toHaveTextContent('loadFailed')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('clears the entered key and disallows reuse after the gateway URL changes', async () => {

@@ -63,14 +63,14 @@ function ReadonlyAiSettings() {
             </div>
           </dl>
         ) : (
-          <p role="status" className="text-fl-fg font-mono text-sm">
+          <output className="text-fl-fg block font-mono text-sm">
             {t('missing')}
-          </p>
+          </output>
         )
       ) : (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {tCommon('loading')}
-        </p>
+        </output>
       )}
     </>
   )
@@ -242,15 +242,15 @@ function AdminAiSettings() {
           </button>
         </div>
       ) : !draft || !settings ? (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {tCommon('loading')}
-        </p>
+        </output>
       ) : (
         <form onSubmit={handleSave} noValidate aria-busy={busy !== null}>
           {!settings.configured && (
-            <p className="text-fl-fg mb-4 font-mono text-sm" role="status">
+            <output className="text-fl-fg mb-4 block font-mono text-sm">
               {t('missing')}
-            </p>
+            </output>
           )}
           <fieldset
             disabled={busy !== null}
@@ -400,9 +400,9 @@ function AdminAiSettings() {
             </div>
           </fieldset>
           {busy && (
-            <p role="status" className="text-fl-muted-2 mt-3 font-mono text-sm">
+            <output className="text-fl-muted-2 mt-3 block font-mono text-sm">
               {busy === 'save' ? tCommon('saving') : t('testing')}
-            </p>
+            </output>
           )}
           {message && (
             <output

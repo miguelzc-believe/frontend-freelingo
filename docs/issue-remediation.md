@@ -54,3 +54,39 @@ Validation: 36 AI/voice component and API tests passed, including helper/error
 identity and a cancelable form submit that saves once without testing the draft.
 Strict typecheck and scoped ESLint passed. Dependencies and API payloads are
 unchanged.
+
+## 4. Native status semantics and audio text alternatives
+
+Status messages use native `output` elements, preserving block display and
+existing tokens. Interactive retry/settings controls remain outside the
+announcing region; structural containers are not converted to invalid output
+content. Alerts keep their urgent semantics.
+
+Audio and its keyboard controls reference the actual visible transcript with
+`aria-describedby`. IDs are unique per mounted conversation. Pending/failed STT
+placeholders are never described as transcripts. The same DOM node retains the
+target-language attributes and is updated when transcription is confirmed.
+
+S4084 remains a technical-review item, not a claimed caption fix. The current
+contract has no alignment timings. WCAG 2.2 criterion 1.2.1 permits an equivalent
+text alternative for audio-only; criterion 1.2.2 addresses synchronized media.
+That distinction does not prove that every generated/failed-STT sample is fully
+accessible or that Sonar's syntactic track requirement is satisfied. No empty
+track, fabricated timing, suppression or server issue-state change is used.
+True synchronized captions require actual alignment and a visible caption UI,
+with private session-bound resources and device/browser validation.
+
+References: [WCAG audio-only](https://www.w3.org/WAI/WCAG22/Understanding/audio-only-and-video-only-prerecorded.html)
+and [MDN audio accessibility](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/audio#accessibility).
+
+Validation: 59 conversation/player/API tests passed, including real transcript
+relations, exclusion of processing text, `en-GB` attributes and native error
+status semantics. Scoped ESLint and strict typecheck passed. Reader/device
+acceptance and synchronized-caption accuracy have not been tested.
+AI/voice status component tests passed 35 cases. Production-build Chromium E2E
+passed all 18 desktop/mobile cases after correcting the result selector to the
+existing full localized copy. The first run passed 16/18: its two failures were
+that selector, not a production change. The earlier full Vitest suite passed
+1,575 tests in 138 files; its first invocation had an external 120-second command
+limit and the completed rerun used a sufficient process limit without changing
+test timeouts. Existing bundler warnings remain non-fatal.

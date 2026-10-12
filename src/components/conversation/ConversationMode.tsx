@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useLocale, useTranslations } from 'use-intl'
 import { useAuthStore } from '@/store/auth'
 import { apiFetch } from '@/lib/api'
@@ -71,6 +71,13 @@ interface SessionRun {
 
 type Status = 'ready' | 'connecting' | 'live' | 'sending' | 'ended' | 'error'
 
+function transcriptDescriptionId(entry: TranscriptEntry, id: string) {
+  if (!entry.text) return undefined
+  if (entry.role === 'user' && entry.delivery !== 'confirmed') return undefined
+  if (entry.turnStatus === 'stt_failed') return undefined
+  return id
+}
+
 export default function ConversationMode({
   initialContext,
   autoStart,
@@ -100,6 +107,7 @@ export default function ConversationMode({
   const v = useTranslations('conversation.voiceMessages')
   const tCommon = useTranslations('common')
   const locale = useLocale()
+  const transcriptId = useId()
   const accessToken = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
   const setUser = useAuthStore((state) => state.setUser)
@@ -794,6 +802,7 @@ export default function ConversationMode({
             key={entry.id}
             role={entry.role}
             text={entry.text}
+            textId={`${transcriptId}-${entry.id}`}
             userAvatar={user?.avatar}
             userInitial={(user?.displayName || user?.username || '?')[0]}
             languageCode={language}
@@ -813,6 +822,10 @@ export default function ConversationMode({
             {entry.audio && (
               <MessageAudioPlayer
                 src={entry.audio}
+                transcriptId={transcriptDescriptionId(
+                  entry,
+                  `${transcriptId}-${entry.id}`
+                )}
                 playback={playback}
                 autoPlay={entry.autoPlay ?? false}
                 disabled={recording}
@@ -823,14 +836,14 @@ export default function ConversationMode({
               />
             )}
             {entry.audioError && (
-              <p role="status" className="text-fl-muted-2 font-mono text-xs">
+              <output className="text-fl-muted-2 block font-mono text-xs">
                 {v(entry.audioError)}
-              </p>
+              </output>
             )}
             {entry.deliveryError && (
-              <p role="status" className="text-fl-error font-mono text-xs">
+              <output className="text-fl-error block font-mono text-xs">
                 {entry.deliveryError}
-              </p>
+              </output>
             )}
             {entry.delivery === 'resend' && active && (
               <button
@@ -846,8 +859,8 @@ export default function ConversationMode({
             )}
             {entry.turnStatus === 'stt_failed' &&
               entry.delivery === 'confirmed' && (
-                <div className="text-fl-error font-mono text-xs" role="status">
-                  <p>{v('transcriptionFailed')}</p>
+                <div className="text-fl-error font-mono text-xs">
+                  <output className="block">{v('transcriptionFailed')}</output>
                   {(entry.attempts ?? 1) < 3 && active ? (
                     <button
                       disabled={busy || recording}
@@ -864,7 +877,7 @@ export default function ConversationMode({
                       })}
                     </button>
                   ) : (
-                    <p>{v('retryLimit')}</p>
+                    <output className="block">{v('retryLimit')}</output>
                   )}
                 </div>
               )}
@@ -924,12 +937,9 @@ export default function ConversationMode({
         ) : quota && !trialMode ? (
           <QuotaPill quota={quota} />
         ) : null}
-        <p
-          role="status"
-          className="text-fl-fg font-mono text-xs font-semibold tracking-wide uppercase"
-        >
+        <output className="text-fl-fg block font-mono text-xs font-semibold tracking-wide uppercase">
           {label}
-        </p>
+        </output>
         {active ? (
           <>
             <div className="flex flex-wrap justify-center gap-3">

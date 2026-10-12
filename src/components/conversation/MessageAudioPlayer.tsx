@@ -48,12 +48,14 @@ function time(seconds: number): string {
 
 export default function MessageAudioPlayer({
   src,
+  transcriptId,
   playback,
   autoPlay = false,
   disabled = false,
   onActivity,
 }: Readonly<{
   src: string
+  transcriptId?: string | undefined
   playback: VoicePlayback
   autoPlay?: boolean
   disabled?: boolean
@@ -112,6 +114,7 @@ export default function MessageAudioPlayer({
     <div className="border-fl-border bg-fl-surface text-fl-fg w-full min-w-48 border px-3 py-2 font-mono text-xs">
       <audio
         ref={audioRef}
+        aria-describedby={transcriptId}
         src={src}
         preload="metadata"
         onLoadedMetadata={() => {
@@ -140,6 +143,7 @@ export default function MessageAudioPlayer({
           type="button"
           disabled={disabled}
           aria-label={t(playing ? 'pause' : 'play')}
+          aria-describedby={transcriptId}
           onClick={() => {
             if (playing) audioRef.current?.pause()
             else void play(true)
@@ -151,6 +155,7 @@ export default function MessageAudioPlayer({
         <input
           type="range"
           aria-label={t('progress')}
+          aria-describedby={transcriptId}
           min={0}
           max={duration || 0}
           step={0.1}
@@ -168,9 +173,7 @@ export default function MessageAudioPlayer({
         </span>
       </div>
       {error && (
-        <p role="status" className="text-fl-error mt-1">
-          {t(error)}
-        </p>
+        <output className="text-fl-error mt-1 block">{t(error)}</output>
       )}
     </div>
   )

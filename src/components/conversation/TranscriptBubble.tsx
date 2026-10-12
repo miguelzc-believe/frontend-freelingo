@@ -7,6 +7,7 @@ import { AuthAvatarImage } from '@/components/AuthAvatarImage'
 interface Props {
   role: 'user' | 'assistant'
   text: string
+  textId?: string | undefined
   streaming?: boolean | undefined
   speaking?: boolean | undefined
   userAvatar?: string | null | undefined
@@ -55,6 +56,7 @@ function renderAvatar(
 export default function TranscriptBubble({
   role,
   text,
+  textId,
   streaming = false,
   speaking = false,
   userAvatar,
@@ -91,6 +93,7 @@ export default function TranscriptBubble({
           {isUser ? t('you') : t('assistant')}
         </span>
         <TargetLanguageText
+          id={textId}
           as="div"
           languageCode={languageCode}
           className={`max-w-[70ch] border px-4 py-3 ${

@@ -137,14 +137,14 @@ function VoiceServiceStatus({ kind }: { readonly kind: 'tts' | 'stt' }) {
             <dt className="text-fl-muted-2">{t('configured')}</dt>
           </dl>
         ) : (
-          <p role="status" className="text-fl-muted-2 font-mono text-sm">
+          <output className="text-fl-muted-2 block font-mono text-sm">
             {t('missing')}
-          </p>
+          </output>
         )
       ) : (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t('loading')}
-        </p>
+        </output>
       )}
     </section>
   )
@@ -293,9 +293,9 @@ function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
         <h3 className="text-fl-fg mb-3 font-mono text-xs tracking-widest uppercase">
           {t(kind)}
         </h3>
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t('loading')}
-        </p>
+        </output>
       </section>
     )
   }
@@ -311,14 +311,14 @@ function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
         </p>
       </div>
       {!saved.configured && (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t('missing')}
-        </p>
+        </output>
       )}
       {saved.configured && (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t('configured')}: {saved.model}
-        </p>
+        </output>
       )}
       <form
         className="space-y-4"
@@ -429,9 +429,9 @@ function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
         </fieldset>
       </form>
       {busy && (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t(busy === 'save' ? 'saving' : 'testing')}
-        </p>
+        </output>
       )}
       {message && (
         <output
