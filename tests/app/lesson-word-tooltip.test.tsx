@@ -143,7 +143,10 @@ describe('Lesson page word tooltip', () => {
   })
 
   it('keeps the word tooltip open when the exercises array is replaced without navigation', async () => {
-    render(<LessonPage />)
+    // Flush initial load effects before dispatching a synthetic selection.
+    await act(async () => {
+      render(<LessonPage />)
+    })
 
     await selectWordInQuestion('pregunta', 'Primera pregunta')
     expect(screen.getByText('saveWord')).toBeInTheDocument()
@@ -156,7 +159,10 @@ describe('Lesson page word tooltip', () => {
   })
 
   it('dismisses the word tooltip when navigating to the next exercise', async () => {
-    render(<LessonPage />)
+    // Flush initial load effects before dispatching a synthetic selection.
+    await act(async () => {
+      render(<LessonPage />)
+    })
 
     await selectWordInQuestion('pregunta', 'Primera pregunta')
     expect(screen.getByText('saveWord')).toBeInTheDocument()
@@ -178,7 +184,10 @@ describe('Lesson page word tooltip', () => {
           })
         : mockApiFetchImplementation(url)
     )
-    render(<LessonPage />)
+    // Flush initial load effects before dispatching a synthetic selection.
+    await act(async () => {
+      render(<LessonPage />)
+    })
     await screen.findByText('Primera pregunta')
     fireEvent.click(screen.getByRole('button', { name: 'regenerateExercise' }))
     await selectWordInQuestion('pregunta', 'Primera pregunta')

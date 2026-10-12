@@ -235,6 +235,29 @@ phases and readonly component props. Its focused guard/runner suite passed
 analysis is recorded separately below rather than attributing the earlier
 0.6% measurement to an unscanned revision.
 
+### PR integration follow-up
+
+All implementation work and the tooling follow-up are included in PR #4 to
+`development`. The first final-quality run passed 1,559 / 1,560 tests but failed
+the initial tooltip selection in `lesson-word-tooltip`; a nonconcurrent rerun
+failed an initial draft-entry case in `lesson-flow`. Both unchanged test files
+passed in isolation. Their synthetic interaction could race the initial
+answer-restoration/selection-dismissal passive effects. The test harness now
+awaits asynchronous `act` around those initial renders before entering input or
+selecting text; assertions, timeouts and production lesson code are unchanged.
+The two focused files passed all 39 cases after the synchronization change.
+
+GitHub Actions push/PR checks did not start: GitHub reported the account locked
+due to a billing issue. No workflow steps ran, and no repository protections or
+billing settings were changed. Local checks remain the available validation.
+The post-remediation scan of `229113b668be89f59486009feda6ce9c694d094b`
+(task `a688bafd-e0cb-479e-9d1f-f94b0eb42cd0`) measured 0.6% global duplication,
+214 / 33,977 lines and six blocks; the revision-bound guard passed. The issue
+query returned exactly 47 pre-existing findings, with none in the new tooling,
+auth or legal components. That scan had no LCOV because the failed full test
+runs had not generated it; it proves CPD/issue closure, not coverage acceptance.
+A fresh passing full coverage run and scan are required for final evidence.
+
 ## Removal
 
 To remove these controls, remove the Knip/Stryker configs, quality budgets,
