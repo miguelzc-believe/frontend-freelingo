@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import { deferred } from '../helpers/voice-capture'
 import spanishMessages from '../../messages/es.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -163,6 +164,20 @@ function mockLessonLoad(response: Response) {
       ? Promise.resolve(response)
       : Promise.resolve(jsonResponse({}))
   )
+}
+
+async function renderLoadedLesson() {
+  const request = mocks.apiFetch.getMockImplementation()!
+  const initialLesson = deferred<Response>()
+  mocks.apiFetch.mockImplementation((url: string, ...args: unknown[]) =>
+    url === '/api/lessons/1' ? initialLesson.promise : request(url, ...args)
+  )
+  const view = render(<LessonPage />)
+  // Resolve the initial external update before any synthetic answer interaction.
+  await act(async () => {
+    initialLesson.resolve(await request('/api/lessons/1'))
+  })
+  return view
 }
 
 async function enterAnswer(answer: string) {
@@ -376,10 +391,9 @@ describe('LessonPage lesson loading and answer flow', () => {
   })
 
   it('shows submit failure and allows the learner to retry the answer', async () => {
-    mockLessonLoad(jsonResponse(lessonPayload))
+    const initialLesson = deferred<Response>()
     mocks.apiFetch.mockImplementation((url: string) => {
-      if (url === '/api/lessons/1')
-        return Promise.resolve(jsonResponse(lessonPayload))
+      if (url === '/api/lessons/1') return initialLesson.promise
       if (url === '/api/lessons/exercises/10/answer') {
         if (
           mocks.apiFetch.mock.calls.filter(([calledUrl]) => calledUrl === url)
@@ -394,10 +408,13 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({}))
     })
 
-    // Settle initial answer restoration before entering the retry scenario.
+    render(<LessonPage />)
+    // Flush the controlled external update, including answer-restoration effects.
     await act(async () => {
-      render(<LessonPage />)
+      initialLesson.resolve(jsonResponse(lessonPayload))
     })
+    expect(screen.getByPlaceholderText('yourAnswer')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'submitAnswer' })).toBeDisabled()
     await enterAnswer('Ich lerne Deutsch.')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
 
@@ -445,7 +462,7 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({}))
     })
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     await enterAnswer('Antwort')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
 
@@ -475,7 +492,7 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({}))
     })
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     await screen.findByText('Beschreibe deinen Tag.')
     await enterAnswer('Meine Antwort')
     fireEvent.click(screen.getByRole('button', { name: 'regenerateExercise' }))
@@ -580,7 +597,7 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({}))
     })
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     await enterAnswer('Ich lerne Deutsch.')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
     await screen.findByText('Well done')
@@ -612,7 +629,7 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({ progress_day: 3 }))
     })
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     await enterAnswer('Ich lerne Deutsch.')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
     await screen.findByText('Well done')
@@ -654,7 +671,7 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({}))
     })
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     await screen.findByText('Beschreibe deinen Tag.')
     await enterAnswer('Ich lerne Deutsch.')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
@@ -704,7 +721,7 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({}))
     })
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     await screen.findByText('Beschreibe deinen Tag.')
     await enterAnswer('Ich lerne Deutsch.')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
@@ -751,7 +768,7 @@ describe('LessonPage lesson loading and answer flow', () => {
         return Promise.resolve(jsonResponse({}))
       })
 
-      render(<LessonPage />)
+      await renderLoadedLesson()
       await screen.findByText('Beschreibe deinen Tag.')
       await enterAnswer('Ich lerne Deutsch.')
       fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
@@ -792,7 +809,7 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({ progress_day: 3 }))
     })
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     await screen.findByText('Beschreibe deinen Tag.')
     await enterAnswer('Ich lerne Deutsch.')
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))

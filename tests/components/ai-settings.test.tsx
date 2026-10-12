@@ -177,8 +177,8 @@ describe('AI settings', () => {
     mocks.apiFetch.mockImplementation(() => Promise.resolve(response(saved)))
     save()
     await screen.findByText('saveSuccess')
-    expect(localStorage.length).toBe(0)
-    expect(sessionStorage.length).toBe(0)
+    expect(localStorage).toHaveLength(0)
+    expect(sessionStorage).toHaveLength(0)
     expect(JSON.stringify(useAuthStore.getState())).not.toContain(
       'test-only-key'
     )

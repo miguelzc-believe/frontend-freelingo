@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import LessonPage from '@/app/(app)/lesson/[id]/page'
+import { deferred } from '../helpers/voice-capture'
 
 const { mockApiFetch } = vi.hoisted(() => ({
   mockApiFetch: vi.fn(),
@@ -137,16 +138,33 @@ describe('Lesson page word tooltip', () => {
     Element.prototype.scrollIntoView = vi.fn()
   })
 
+  let initialLesson: ReturnType<typeof deferred<Response>>
+
   beforeEach(() => {
+    initialLesson = deferred<Response>()
     mockApiFetch.mockReset()
-    mockApiFetch.mockImplementation(mockApiFetchImplementation)
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/lessons/1'
+        ? initialLesson.promise
+        : mockApiFetchImplementation(url)
+    )
   })
 
-  it('keeps the word tooltip open when the exercises array is replaced without navigation', async () => {
-    // Flush initial load effects before dispatching a synthetic selection.
+  async function loadInitialLesson() {
+    // Resolve the external update under act, not RTL's already-wrapped render.
     await act(async () => {
-      render(<LessonPage />)
+      initialLesson.resolve(
+        new Response(JSON.stringify({ lesson, exercises }), { status: 200 })
+      )
     })
+    expect(screen.getByText('Primera pregunta')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('yourAnswer')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'submitAnswer' })).toBeDisabled()
+  }
+
+  it('keeps the word tooltip open when the exercises array is replaced without navigation', async () => {
+    render(<LessonPage />)
+    await loadInitialLesson()
 
     await selectWordInQuestion('pregunta', 'Primera pregunta')
     expect(screen.getByText('saveWord')).toBeInTheDocument()
@@ -159,10 +177,8 @@ describe('Lesson page word tooltip', () => {
   })
 
   it('dismisses the word tooltip when navigating to the next exercise', async () => {
-    // Flush initial load effects before dispatching a synthetic selection.
-    await act(async () => {
-      render(<LessonPage />)
-    })
+    render(<LessonPage />)
+    await loadInitialLesson()
 
     await selectWordInQuestion('pregunta', 'Primera pregunta')
     expect(screen.getByText('saveWord')).toBeInTheDocument()
@@ -182,12 +198,12 @@ describe('Lesson page word tooltip', () => {
         ? new Promise<Response>((resolve) => {
             resolveRegeneration = resolve
           })
-        : mockApiFetchImplementation(url)
+        : url === '/api/lessons/1'
+          ? initialLesson.promise
+          : mockApiFetchImplementation(url)
     )
-    // Flush initial load effects before dispatching a synthetic selection.
-    await act(async () => {
-      render(<LessonPage />)
-    })
+    render(<LessonPage />)
+    await loadInitialLesson()
     await screen.findByText('Primera pregunta')
     fireEvent.click(screen.getByRole('button', { name: 'regenerateExercise' }))
     await selectWordInQuestion('pregunta', 'Primera pregunta')

@@ -116,7 +116,7 @@ describe('session-scoped message player', () => {
     act(() => playback.stop())
     const calls = pause.mock.calls.length
     fireEvent.play(audios[1]!)
-    expect(pause.mock.calls.length).toBe(calls + 1)
+    expect(pause).toHaveBeenCalledTimes(calls + 1)
     expect(screen.queryByRole('button', { name: 'pause' })).toBeNull()
   })
 

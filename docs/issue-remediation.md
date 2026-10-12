@@ -1,0 +1,32 @@
+# Sonar issue remediation by category
+
+## Scope and acceptance
+
+The read-only inventory on 2026-10-12 contains 51 open issues, not 52:
+seven test findings, two utility findings, seven typing/export findings,
+18 accessibility findings, 13 nested-ternary findings and four cognitive
+complexity findings. Work is split into one local commit per category.
+
+Preserve backend authorization, memory-only credentials/audio, language scope,
+`en-GB`, URLs, themes, `fl-*` tokens and existing interaction contracts. No rule
+suppressions, weakened assertions, gate changes or artificial caption tracks.
+Only a final remote analysis is authorized; local checks do not prove remote
+closure. No push or deployment is authorized.
+
+## 1. Test stability and assertions
+
+Initial lesson responses are deferred and resolved under asynchronous `act`;
+RTL `render` is no longer wrapped. This flushes the external update and initial
+answer/selection effects before synthetic input. Legitimate `act` calls for
+manual promise settlement and playback remain. Storage and playback assertions
+use specific matchers without weakening their contracts.
+
+The first repetition batch exposed the same initial-answer race in an unchanged
+completion-rejection case. The controlled-load helper now also protects initial
+answer-entry scenarios in that file, rather than increasing timeouts or retrying
+input. Production lesson code is unchanged.
+
+Validation: 66 focused tests passed; after the harness adjustment all 39 lesson
+cases passed in ten consecutive fresh processes (five normal two-worker runs,
+five serial runs). Focused ESLint and strict typecheck passed. Full-suite results
+and final remote analysis are recorded below when actually completed.
