@@ -244,7 +244,8 @@ failed an initial draft-entry case in `lesson-flow`. Both unchanged test files
 passed in isolation. Their synthetic interaction could race the initial
 answer-restoration/selection-dismissal passive effects. The test harness now
 awaits asynchronous `act` around those initial renders before entering input or
-selecting text; assertions, timeouts and production lesson code are unchanged.
+selecting text; existing assertions are retained with a stronger answer-value
+check. Timeouts and production lesson code are unchanged.
 The two focused files passed all 39 cases after the synchronization change.
 
 GitHub Actions push/PR checks did not start: GitHub reported the account locked
@@ -256,7 +257,23 @@ The post-remediation scan of `229113b668be89f59486009feda6ce9c694d094b`
 query returned exactly 47 pre-existing findings, with none in the new tooling,
 auth or legal components. That scan had no LCOV because the failed full test
 runs had not generated it; it proves CPD/issue closure, not coverage acceptance.
-A fresh passing full coverage run and scan are required for final evidence.
+The final `pnpm quality:local` run passed all 1,560 tests in 138 files, lint,
+strict types, both Knip budgets and CRAP. Fresh coverage was 90.79% lines,
+84.27% branches, 88.87% statements and 86.35% functions; CRAP remained eight
+functions above 30 and maximum 56.00. Production E2E passed all 76 cases.
+
+The clean scan of `6d888459ee190bb7a8274583665b399f6eda679a` imported that LCOV
+and completed successfully (task `ce92829a-2a32-4418-99fa-a5b20eceb6dd`, analysis
+`536b8a74-57c9-4925-bd31-dd065bb0877c`). Global duplication remained 0.6%,
+214 / 33,977 lines and six blocks; the real revision-bound guard passed.
+Sonar combined coverage was 88.3%; new coverage 91.5% and new duplication
+0.08803% passed. The server gate still failed on 51 new-code issues: the 47
+pre-existing findings plus four S8980 findings on the awaited initial test
+renders. Sonar considers the act wrappers redundant because RTL wraps render
+synchronously, but the observed harness races required awaiting the asynchronous
+initial load/effects before synthetic interaction. The wrappers are retained
+with this evidence, without rule suppressions, issue acceptance or a green-gate
+claim. No new findings remain in the tooling/auth/legal components.
 
 ## Removal
 
