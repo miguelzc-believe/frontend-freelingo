@@ -108,7 +108,13 @@ export async function testLlmSettings(
 }
 
 export function normalizeLlmBaseUrl(value: string | null): string | null {
-  return value?.trim().replace(/\/+$/, '') || null
+  if (value === null) return null
+  const trimmed = value.trim()
+  let end = trimmed.length
+  while (end > 0 && trimmed[end - 1] === '/') {
+    end -= 1
+  }
+  return trimmed.slice(0, end) || null
 }
 
 export function isValidLlmBaseUrl(value: string): boolean {

@@ -1,11 +1,8 @@
 import { apiFetch } from '@/lib/api'
-import {
-  isValidLlmBaseUrl,
-  LlmSettingsApiError,
-  normalizeLlmBaseUrl,
-} from '@/lib/llm-settings'
+import { LlmSettingsApiError } from '@/lib/llm-settings'
 
-export { LlmSettingsApiError, isValidLlmBaseUrl, normalizeLlmBaseUrl }
+export { LlmSettingsApiError }
+export { isValidLlmBaseUrl, normalizeLlmBaseUrl } from '@/lib/llm-settings'
 
 export interface VoiceSettings {
   configured: boolean

@@ -60,6 +60,30 @@ describe('session-scoped message player', () => {
     expect(screen.getByRole('button', { name: 'play' })).toBeInTheDocument()
   })
 
+  it('associates audio and keyboard controls with the actual transcript', () => {
+    const { container } = render(
+      <>
+        <p id="transcript">Hello learner</p>
+        <MessageAudioPlayer
+          src="blob:generated"
+          transcriptId="transcript"
+          playback={new VoicePlayback()}
+          onActivity={vi.fn()}
+        />
+      </>
+    )
+    expect(container.querySelector('audio')).toHaveAttribute(
+      'aria-describedby',
+      'transcript'
+    )
+    expect(
+      screen.getByRole('button', { name: 'play' })
+    ).toHaveAccessibleDescription('Hello learner')
+    expect(
+      screen.getByRole('slider', { name: 'progress' })
+    ).toHaveAccessibleDescription('Hello learner')
+  })
+
   it('auto-plays a newly completed response once with visible rejection fallback', async () => {
     play.mockRejectedValueOnce(new DOMException('autoplay', 'NotAllowedError'))
     const playback = new VoicePlayback()
@@ -72,7 +96,10 @@ describe('session-scoped message player', () => {
         onActivity={activity}
       />
     )
-    expect(await screen.findByText('playbackBlocked')).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'playbackBlocked'
+    )
+    expect(screen.getByRole('status').tagName).toBe('OUTPUT')
     view.rerender(
       <MessageAudioPlayer
         src="blob:generated"
@@ -116,7 +143,7 @@ describe('session-scoped message player', () => {
     act(() => playback.stop())
     const calls = pause.mock.calls.length
     fireEvent.play(audios[1]!)
-    expect(pause.mock.calls.length).toBe(calls + 1)
+    expect(pause).toHaveBeenCalledTimes(calls + 1)
     expect(screen.queryByRole('button', { name: 'pause' })).toBeNull()
   })
 

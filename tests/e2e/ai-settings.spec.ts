@@ -230,14 +230,20 @@ test('admin tests and saves global draft, refreshes banner, reloads without expo
     .first()
     .getByRole('button', { name: 'Test connection', exact: true })
     .click()
-  await expect(panel.locator('output')).toContainText(
-    'Connection test succeeded'
-  )
+  await expect(
+    panel.getByRole('status').filter({
+      hasText: /^Connection test succeeded\. The draft has not been saved\.$/,
+    })
+  ).toHaveText('Connection test succeeded. The draft has not been saved.')
   expect(state.tests()).toBe(1)
   expect(state.saves()).toBe(0)
   await expect(key).toHaveValue('browser-fixture-only-key')
   await panel.getByRole('button', { name: 'Save changes', exact: true }).click()
-  await expect(panel.locator('output').first()).toHaveText('Global AI settings saved.')
+  await expect(
+    panel
+      .getByRole('status')
+      .filter({ hasText: /^Global AI settings saved\.$/ })
+  ).toHaveText('Global AI settings saved.')
   await expect(key).toHaveValue('')
   await expect(bannerLink).toBeVisible()
   expect(state.saves()).toBe(1)
@@ -253,9 +259,11 @@ test('admin tests and saves global draft, refreshes banner, reloads without expo
   expect(persistence).not.toContain('browser-fixture-only-key')
   await panel.getByLabel('Provider', { exact: true }).selectOption('deepseek')
   await panel.getByRole('button', { name: 'Save changes', exact: true }).click()
-  await expect(panel.getByRole('alert')).toHaveText(
+  const keyError = panel.getByRole('alert')
+  await expect(keyError).toHaveText(
     'Enter an API key for this provider and URL.'
   )
+  expect(await keyError.evaluate((element) => element.tagName)).toBe('OUTPUT')
   expect(state.saves()).toBe(1)
   await key.fill('replacement-fixture-only-key')
   await panel.getByLabel('Model', { exact: true }).fill('fail-test')
@@ -283,7 +291,12 @@ test('regular users see missing status and administrator guidance without an edi
   await page.getByRole('link', { name: 'AI settings', exact: true }).click()
   const panel = page.locator('#ai')
   await expect(panel).toContainText('Contact your administrator.')
-  await expect(panel.getByText('AI is not configured.', { exact: false })).toBeVisible()
+  const missing = panel
+    .getByRole('status')
+    .filter({ hasText: /^AI is not configured\./ })
+  await expect(missing).toBeVisible()
+  await expect(missing).toContainText('AI is not configured.')
+  expect(await missing.evaluate((element) => element.tagName)).toBe('OUTPUT')
   await expect(panel.locator('input, select, form')).toHaveCount(0)
   expect(state.adminReads()).toBe(0)
   expect(state.saves()).toBe(0)
@@ -297,17 +310,25 @@ test('admin configures OmniRoute TTS and STT independently from chat, and status
   await login(page)
   await page.getByRole('link', { name: 'AI settings', exact: true }).click()
   const panel = page.locator('#ai')
-  await expect(page.getByText('Text-to-speech is not configured. Voice playback is unavailable.')).toBeVisible()
-  await expect(page.getByText('Speech-to-text is not configured. Voice input is unavailable.')).toBeVisible()
+  await expect(
+    page.getByText(
+      'Text-to-speech is not configured. Voice playback is unavailable.'
+    )
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      'Speech-to-text is not configured. Voice input is unavailable.'
+    )
+  ).toBeVisible()
 
-  await panel.getByLabel('TTS model', { exact: true }).fill('openai/gpt-4o-mini-tts')
-  await panel.getByLabel('TTS API key', { exact: true }).fill('tts-fixture-only-key')
-  await expect(
-    page.getByText(/Text-to-speech is not configured/)
-  ).toBeVisible()
-  await expect(
-    page.getByText(/Speech-to-text is not configured/)
-  ).toBeVisible()
+  await panel
+    .getByLabel('TTS model', { exact: true })
+    .fill('openai/gpt-4o-mini-tts')
+  await panel
+    .getByLabel('TTS API key', { exact: true })
+    .fill('tts-fixture-only-key')
+  await expect(page.getByText(/Text-to-speech is not configured/)).toBeVisible()
+  await expect(page.getByText(/Speech-to-text is not configured/)).toBeVisible()
   await panel.getByRole('button', { name: 'Test connection' }).nth(1).click()
   await expect(panel.getByText('Connection test succeeded.')).toBeVisible()
   await panel.getByRole('button', { name: 'Save' }).nth(1).click()
@@ -315,17 +336,29 @@ test('admin configures OmniRoute TTS and STT independently from chat, and status
   await expect(panel.getByLabel('TTS API key')).toHaveValue('')
   expect(state.voiceSaves()).toBe(1)
 
-  await panel.getByLabel('STT model', { exact: true }).fill('groq/whisper-large-v3-turbo')
-  await panel.getByLabel('STT API key', { exact: true }).fill('stt-fixture-only-key')
+  await panel
+    .getByLabel('STT model', { exact: true })
+    .fill('groq/whisper-large-v3-turbo')
+  await panel
+    .getByLabel('STT API key', { exact: true })
+    .fill('stt-fixture-only-key')
   await panel.getByRole('button', { name: 'Test connection' }).nth(2).click()
   expect(state.voiceTests()).toBe(2)
   await panel.getByRole('button', { name: 'Save' }).nth(2).click()
   await expect(panel.getByLabel('STT API key')).toHaveValue('')
   expect(state.voiceSaves()).toBe(2)
-  await expect(panel.getByLabel('TTS model')).toHaveValue('openai/gpt-4o-mini-tts')
-  await expect(panel.getByLabel('STT model')).toHaveValue('groq/whisper-large-v3-turbo')
-  await expect(page.getByText(/Text-to-speech is not configured/)).toHaveCount(0)
-  await expect(page.getByText(/Speech-to-text is not configured/)).toHaveCount(0)
+  await expect(panel.getByLabel('TTS model')).toHaveValue(
+    'openai/gpt-4o-mini-tts'
+  )
+  await expect(panel.getByLabel('STT model')).toHaveValue(
+    'groq/whisper-large-v3-turbo'
+  )
+  await expect(page.getByText(/Text-to-speech is not configured/)).toHaveCount(
+    0
+  )
+  await expect(page.getByText(/Speech-to-text is not configured/)).toHaveCount(
+    0
+  )
 
   const browserState = await page.evaluate(() =>
     JSON.stringify({ ...localStorage, ...sessionStorage })

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type SubmitEvent } from 'react'
 import { useTranslations } from 'use-intl'
 import { useAuthStore } from '@/store/auth'
 import { useLlmStatus } from '@/hooks/useLlmStatus'
@@ -38,10 +38,9 @@ function ReadonlyAiSettings() {
   const t = useTranslations('settings.ai')
   const tCommon = useTranslations('common')
   const { status, error, retry } = useLlmStatus(true)
-  return (
-    <>
-      <p className="text-fl-muted-2 font-mono text-sm">{t('readonly')}</p>
-      {error ? (
+  function renderStatus() {
+    if (error) {
+      return (
         <div>
           <p role="alert" className="text-fl-error mb-3 font-mono text-sm">
             {t('loadFailed')}
@@ -50,28 +49,40 @@ function ReadonlyAiSettings() {
             {tCommon('retry')}
           </button>
         </div>
-      ) : status ? (
-        status.configured ? (
-          <dl className="grid gap-3 font-mono text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-fl-muted-2">{t('provider')}</dt>
-              <dd className="text-fl-fg mt-1 break-all">{status.provider}</dd>
-            </div>
-            <div>
-              <dt className="text-fl-muted-2">{t('model')}</dt>
-              <dd className="text-fl-fg mt-1 break-all">{status.model}</dd>
-            </div>
-          </dl>
-        ) : (
-          <p role="status" className="text-fl-fg font-mono text-sm">
-            {t('missing')}
-          </p>
-        )
-      ) : (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+      )
+    }
+    if (!status) {
+      return (
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {tCommon('loading')}
-        </p>
-      )}
+        </output>
+      )
+    }
+    if (!status.configured) {
+      return (
+        <output className="text-fl-fg block font-mono text-sm">
+          {t('missing')}
+        </output>
+      )
+    }
+    return (
+      <dl className="grid gap-3 font-mono text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-fl-muted-2">{t('provider')}</dt>
+          <dd className="text-fl-fg mt-1 break-all">{status.provider}</dd>
+        </div>
+        <div>
+          <dt className="text-fl-muted-2">{t('model')}</dt>
+          <dd className="text-fl-fg mt-1 break-all">{status.model}</dd>
+        </div>
+      </dl>
+    )
+  }
+
+  return (
+    <>
+      <p className="text-fl-muted-2 font-mono text-sm">{t('readonly')}</p>
+      {renderStatus()}
     </>
   )
 }
@@ -82,6 +93,20 @@ interface Draft {
   baseUrl: string
   apiKey: string
   maxTokens: string
+}
+
+interface AdminAiFormProps {
+  readonly draft: Readonly<Draft>
+  readonly settings: Readonly<LlmSettings>
+  readonly busy: 'save' | 'test' | null
+  readonly message: Readonly<{
+    kind: 'success' | 'error'
+    key: string
+  }> | null
+  readonly keyReusable: boolean
+  readonly onSave: (event: SubmitEvent<HTMLFormElement>) => void
+  readonly updateDraft: (change: Partial<Draft>) => void
+  readonly onTest: () => void
 }
 
 function draftFromSettings(settings: LlmSettings): Draft {
@@ -218,17 +243,14 @@ function AdminAiSettings() {
     }
   }
 
-  function handleSave(event: FormEvent<HTMLFormElement>) {
+  function handleSave(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     void submit('save')
   }
 
-  return (
-    <>
-      <p className="text-fl-muted-2 font-mono text-sm leading-relaxed">
-        {t('globalHint')}
-      </p>
-      {loadFailed ? (
+  function renderSettings() {
+    if (loadFailed) {
+      return (
         <div>
           <p role="alert" className="text-fl-error mb-3 font-mono text-sm">
             {t('loadFailed')}
@@ -241,179 +263,217 @@ function AdminAiSettings() {
             {tCommon('retry')}
           </button>
         </div>
-      ) : !draft || !settings ? (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+      )
+    }
+    if (!draft || !settings) {
+      return (
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {tCommon('loading')}
-        </p>
-      ) : (
-        <form onSubmit={handleSave} noValidate aria-busy={busy !== null}>
-          {!settings.configured && (
-            <p className="text-fl-fg mb-4 font-mono text-sm" role="status">
-              {t('missing')}
-            </p>
-          )}
-          <fieldset
-            disabled={busy !== null}
-            className="space-y-4 disabled:opacity-60"
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label
-                  htmlFor="ai-provider"
-                  className="text-fl-muted-2 block font-mono text-xs"
-                >
-                  {t('provider')}
-                </label>
-                <select
-                  id="ai-provider"
-                  value={draft.provider}
-                  onChange={(e) =>
-                    updateDraft({
-                      provider: e.target.value as LlmProvider | '',
-                    })
-                  }
-                  className={inputClass}
-                  required
-                >
-                  <option value="">{t('selectProvider')}</option>
-                  {LLM_PROVIDERS.map((provider) => (
-                    <option key={provider} value={provider}>
-                      {provider === 'custom'
-                        ? t('customProvider')
-                        : provider === 'ollama'
-                          ? 'Ollama'
-                          : provider === 'openai'
-                            ? 'OpenAI'
-                            : provider === 'anthropic'
-                              ? 'Anthropic'
-                              : 'DeepSeek'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label
-                  htmlFor="ai-model"
-                  className="text-fl-muted-2 block font-mono text-xs"
-                >
-                  {t('model')}
-                </label>
-                <input
-                  id="ai-model"
-                  maxLength={200}
-                  value={draft.model}
-                  onChange={(e) => updateDraft({ model: e.target.value })}
-                  className={inputClass}
-                  autoComplete="off"
-                  required
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label
-                htmlFor="ai-base-url"
-                className="text-fl-muted-2 block font-mono text-xs"
-              >
-                {t('baseUrl')}
-              </label>
-              <input
-                id="ai-base-url"
-                type="url"
-                maxLength={2048}
-                value={draft.baseUrl}
-                onChange={(e) => updateDraft({ baseUrl: e.target.value })}
-                className={inputClass}
-                autoComplete="off"
-                aria-describedby="ai-url-hint"
-                required={draft.provider === 'custom'}
-              />
-              <p
-                id="ai-url-hint"
-                className="text-fl-muted-3 font-mono text-xs leading-relaxed"
-              >
-                {t('urlHint')}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <label
-                htmlFor="ai-api-key"
-                className="text-fl-muted-2 block font-mono text-xs"
-              >
-                {t('apiKey')}
-              </label>
-              <input
-                id="ai-api-key"
-                type="password"
-                value={draft.apiKey}
-                onChange={(e) => updateDraft({ apiKey: e.target.value })}
-                className={inputClass}
-                autoComplete="new-password"
-                spellCheck={false}
-                aria-describedby="ai-key-hint"
-              />
-              <p
-                id="ai-key-hint"
-                className="text-fl-muted-3 font-mono text-xs leading-relaxed"
-              >
-                {t(keyReusable ? 'keySaved' : 'keyHint')}
-              </p>
-            </div>
-            {draft.provider === 'anthropic' && (
-              <div className="space-y-2">
-                <label
-                  htmlFor="ai-max-tokens"
-                  className="text-fl-muted-2 block font-mono text-xs"
-                >
-                  {t('maxTokens')}
-                </label>
-                <input
-                  id="ai-max-tokens"
-                  type="number"
-                  min={1}
-                  max={131072}
-                  step={1}
-                  value={draft.maxTokens}
-                  onChange={(e) => updateDraft({ maxTokens: e.target.value })}
-                  className={inputClass}
-                  aria-describedby="ai-tokens-hint"
-                />
-                <p
-                  id="ai-tokens-hint"
-                  className="text-fl-muted-3 font-mono text-xs"
-                >
-                  {t('maxTokensHint')}
-                </p>
-              </div>
-            )}
-            <p className="text-fl-muted-3 font-mono text-xs">{t('testHint')}</p>
-            <div className="flex flex-wrap gap-3">
-              <button type="submit" className={buttonClass}>
-                {busy === 'save' ? tCommon('saving') : tCommon('save')}
-              </button>
-              <button
-                type="button"
-                onClick={() => void submit('test')}
-                className={buttonClass}
-              >
-                {busy === 'test' ? t('testing') : t('test')}
-              </button>
-            </div>
-          </fieldset>
-          {busy && (
-            <p role="status" className="text-fl-muted-2 mt-3 font-mono text-sm">
-              {busy === 'save' ? tCommon('saving') : t('testing')}
-            </p>
-          )}
-          {message && (
-            <output
-              role={message.kind === 'error' ? 'alert' : undefined}
-              className={`mt-3 block font-mono text-sm ${message.kind === 'error' ? 'text-fl-error' : 'text-fl-fg'}`}
-            >
-              {t(message.key)}
-            </output>
-          )}
-        </form>
-      )}
+        </output>
+      )
+    }
+    return (
+      <AdminAiForm
+        draft={draft}
+        settings={settings}
+        busy={busy}
+        message={message}
+        keyReusable={keyReusable}
+        onSave={handleSave}
+        updateDraft={updateDraft}
+        onTest={() => void submit('test')}
+      />
+    )
+  }
+
+  return (
+    <>
+      <p className="text-fl-muted-2 font-mono text-sm leading-relaxed">
+        {t('globalHint')}
+      </p>
+      {renderSettings()}
     </>
+  )
+}
+
+function AdminAiForm({
+  draft,
+  settings,
+  busy,
+  message,
+  keyReusable,
+  onSave,
+  updateDraft,
+  onTest,
+}: AdminAiFormProps) {
+  const t = useTranslations('settings.ai')
+  const tCommon = useTranslations('common')
+
+  function getProviderLabel(provider: LlmProvider) {
+    if (provider === 'custom') return t('customProvider')
+    return {
+      ollama: 'Ollama',
+      openai: 'OpenAI',
+      anthropic: 'Anthropic',
+      deepseek: 'DeepSeek',
+    }[provider]
+  }
+
+  return (
+    <form onSubmit={onSave} noValidate aria-busy={busy !== null}>
+      {!settings.configured && (
+        <output className="text-fl-fg mb-4 block font-mono text-sm">
+          {t('missing')}
+        </output>
+      )}
+      <fieldset
+        disabled={busy !== null}
+        className="space-y-4 disabled:opacity-60"
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label
+              htmlFor="ai-provider"
+              className="text-fl-muted-2 block font-mono text-xs"
+            >
+              {t('provider')}
+            </label>
+            <select
+              id="ai-provider"
+              value={draft.provider}
+              onChange={(e) =>
+                updateDraft({
+                  provider: e.target.value as LlmProvider | '',
+                })
+              }
+              className={inputClass}
+              required
+            >
+              <option value="">{t('selectProvider')}</option>
+              {LLM_PROVIDERS.map((provider) => (
+                <option key={provider} value={provider}>
+                  {getProviderLabel(provider)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="ai-model"
+              className="text-fl-muted-2 block font-mono text-xs"
+            >
+              {t('model')}
+            </label>
+            <input
+              id="ai-model"
+              maxLength={200}
+              value={draft.model}
+              onChange={(e) => updateDraft({ model: e.target.value })}
+              className={inputClass}
+              autoComplete="off"
+              required
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label
+            htmlFor="ai-base-url"
+            className="text-fl-muted-2 block font-mono text-xs"
+          >
+            {t('baseUrl')}
+          </label>
+          <input
+            id="ai-base-url"
+            type="url"
+            maxLength={2048}
+            value={draft.baseUrl}
+            onChange={(e) => updateDraft({ baseUrl: e.target.value })}
+            className={inputClass}
+            autoComplete="off"
+            aria-describedby="ai-url-hint"
+            required={draft.provider === 'custom'}
+          />
+          <p
+            id="ai-url-hint"
+            className="text-fl-muted-3 font-mono text-xs leading-relaxed"
+          >
+            {t('urlHint')}
+          </p>
+        </div>
+        <div className="space-y-2">
+          <label
+            htmlFor="ai-api-key"
+            className="text-fl-muted-2 block font-mono text-xs"
+          >
+            {t('apiKey')}
+          </label>
+          <input
+            id="ai-api-key"
+            type="password"
+            value={draft.apiKey}
+            onChange={(e) => updateDraft({ apiKey: e.target.value })}
+            className={inputClass}
+            autoComplete="new-password"
+            spellCheck={false}
+            aria-describedby="ai-key-hint"
+          />
+          <p
+            id="ai-key-hint"
+            className="text-fl-muted-3 font-mono text-xs leading-relaxed"
+          >
+            {t(keyReusable ? 'keySaved' : 'keyHint')}
+          </p>
+        </div>
+        {draft.provider === 'anthropic' && (
+          <div className="space-y-2">
+            <label
+              htmlFor="ai-max-tokens"
+              className="text-fl-muted-2 block font-mono text-xs"
+            >
+              {t('maxTokens')}
+            </label>
+            <input
+              id="ai-max-tokens"
+              type="number"
+              min={1}
+              max={131072}
+              step={1}
+              value={draft.maxTokens}
+              onChange={(e) => updateDraft({ maxTokens: e.target.value })}
+              className={inputClass}
+              aria-describedby="ai-tokens-hint"
+            />
+            <p
+              id="ai-tokens-hint"
+              className="text-fl-muted-3 font-mono text-xs"
+            >
+              {t('maxTokensHint')}
+            </p>
+          </div>
+        )}
+        <p className="text-fl-muted-3 font-mono text-xs">{t('testHint')}</p>
+        <div className="flex flex-wrap gap-3">
+          <button type="submit" className={buttonClass}>
+            {busy === 'save' ? tCommon('saving') : tCommon('save')}
+          </button>
+          <button type="button" onClick={onTest} className={buttonClass}>
+            {busy === 'test' ? t('testing') : t('test')}
+          </button>
+        </div>
+      </fieldset>
+      {busy && (
+        <output className="text-fl-muted-2 mt-3 block font-mono text-sm">
+          {busy === 'save' ? tCommon('saving') : t('testing')}
+        </output>
+      )}
+      {message && (
+        <output
+          role={message.kind === 'error' ? 'alert' : undefined}
+          className={`mt-3 block font-mono text-sm ${message.kind === 'error' ? 'text-fl-error' : 'text-fl-fg'}`}
+        >
+          {t(message.key)}
+        </output>
+      )}
+    </form>
   )
 }

@@ -52,8 +52,8 @@ function VoiceProviderContent({
   userId,
   role,
 }: {
-  userId: number
-  role: User['role']
+  readonly userId: number
+  readonly role: User['role']
 }) {
   const t = useTranslations('settings.ai.voice')
   return (
@@ -76,7 +76,7 @@ function VoiceProviderContent({
   )
 }
 
-function VoiceServiceStatus({ kind }: { kind: 'tts' | 'stt' }) {
+function VoiceServiceStatus({ kind }: { readonly kind: 'tts' | 'stt' }) {
   const t = useTranslations('settings.ai.voice')
   const [saved, setSaved] = useState<VoiceSettings | null>(null)
   const [failed, setFailed] = useState(false)
@@ -103,12 +103,9 @@ function VoiceServiceStatus({ kind }: { kind: 'tts' | 'stt' }) {
     }
   }, [attempt, kind])
 
-  return (
-    <section className="border-fl-border space-y-3 border p-4">
-      <h3 className="text-fl-fg font-mono text-xs tracking-widest uppercase">
-        {t(kind)}
-      </h3>
-      {failed && !saved ? (
+  function renderStatus() {
+    if (failed && !saved) {
+      return (
         <div>
           <p role="alert" className="text-fl-error mb-3 font-mono text-sm">
             {t('loadFailed')}
@@ -121,36 +118,50 @@ function VoiceServiceStatus({ kind }: { kind: 'tts' | 'stt' }) {
             {t('retry')}
           </button>
         </div>
-      ) : saved ? (
-        saved.configured ? (
-          <dl className="grid gap-2 font-mono text-sm">
-            <div>
-              <dt className="text-fl-muted-2">{t('model')}</dt>
-              <dd className="text-fl-fg break-all">{saved.model}</dd>
-            </div>
-            {kind === 'tts' && (
-              <div>
-                <dt className="text-fl-muted-2">{t('voice')}</dt>
-                <dd className="text-fl-fg">{saved.voice}</dd>
-              </div>
-            )}
-            <dt className="text-fl-muted-2">{t('configured')}</dt>
-          </dl>
-        ) : (
-          <p role="status" className="text-fl-muted-2 font-mono text-sm">
-            {t('missing')}
-          </p>
-        )
-      ) : (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+      )
+    }
+    if (!saved) {
+      return (
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t('loading')}
-        </p>
-      )}
+        </output>
+      )
+    }
+    if (!saved.configured) {
+      return (
+        <output className="text-fl-muted-2 block font-mono text-sm">
+          {t('missing')}
+        </output>
+      )
+    }
+    return (
+      <dl className="grid gap-2 font-mono text-sm">
+        <div>
+          <dt className="text-fl-muted-2">{t('model')}</dt>
+          <dd className="text-fl-fg break-all">{saved.model}</dd>
+        </div>
+        {kind === 'tts' && (
+          <div>
+            <dt className="text-fl-muted-2">{t('voice')}</dt>
+            <dd className="text-fl-fg">{saved.voice}</dd>
+          </div>
+        )}
+        <dt className="text-fl-muted-2">{t('configured')}</dt>
+      </dl>
+    )
+  }
+
+  return (
+    <section className="border-fl-border space-y-3 border p-4">
+      <h3 className="text-fl-fg font-mono text-xs tracking-widest uppercase">
+        {t(kind)}
+      </h3>
+      {renderStatus()}
     </section>
   )
 }
 
-function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
+function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
   const t = useTranslations('settings.ai.voice')
   const [saved, setSaved] = useState<VoiceSettings | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -233,6 +244,14 @@ function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
     }
   }
 
+  async function testDraft(input: VoiceSettingsInput) {
+    if (kind === 'tts') {
+      playTestAudio(await testVoiceSettings('tts', input))
+      return
+    }
+    await testVoiceSettings('stt', input)
+  }
+
   async function submit(action: 'save' | 'test') {
     if (busy) return
     const input = validatedInput()
@@ -241,12 +260,7 @@ function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
     setMessage(null)
     try {
       if (action === 'test') {
-        if (kind === 'tts') {
-          const result = await testVoiceSettings('tts', input)
-          playTestAudio(result)
-        } else {
-          await testVoiceSettings('stt', input)
-        }
+        await testDraft(input)
         setMessage({ kind: 'success', key: 'testSuccess' })
       } else {
         const canonical = await saveVoiceSettings(kind, input)
@@ -256,13 +270,7 @@ function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
         setMessage({ kind: 'success', key: 'saveSuccess' })
       }
     } catch (error) {
-      let key = action === 'test' ? 'testFailed' : 'saveFailed'
-      if (error instanceof LlmSettingsApiError) {
-        if (error.status === 403) key = 'adminRequired'
-        else if (error.status === 422) key = 'validationFailed'
-        else if (action === 'test' && error.status === 504) key = 'testTimeout'
-      }
-      setMessage({ kind: 'error', key })
+      setMessage({ kind: 'error', key: submissionErrorKey(action, error) })
     } finally {
       setBusy(null)
     }
@@ -293,9 +301,9 @@ function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
         <h3 className="text-fl-fg mb-3 font-mono text-xs tracking-widest uppercase">
           {t(kind)}
         </h3>
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t('loading')}
-        </p>
+        </output>
       </section>
     )
   }
@@ -311,14 +319,14 @@ function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
         </p>
       </div>
       {!saved.configured && (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t('missing')}
-        </p>
+        </output>
       )}
       {saved.configured && (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t('configured')}: {saved.model}
-        </p>
+        </output>
       )}
       <form
         className="space-y-4"
@@ -429,9 +437,9 @@ function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
         </fieldset>
       </form>
       {busy && (
-        <p role="status" className="text-fl-muted-2 font-mono text-sm">
+        <output className="text-fl-muted-2 block font-mono text-sm">
           {t(busy === 'save' ? 'saving' : 'testing')}
-        </p>
+        </output>
       )}
       {message && (
         <output
@@ -445,11 +453,22 @@ function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
   )
 }
 
+function submissionErrorKey(action: 'save' | 'test', error: unknown) {
+  if (error instanceof LlmSettingsApiError) {
+    if (error.status === 403) return 'adminRequired'
+    if (error.status === 422) return 'validationFailed'
+    if (action === 'test' && error.status === 504) return 'testTimeout'
+  }
+  return action === 'test' ? 'testFailed' : 'saveFailed'
+}
+
 function playTestAudio(result: TtsVoiceTestResult) {
   const binary = atob(result.audio_base64)
   const bytes = new Uint8Array(binary.length)
+  // atob returns one U+0000-U+00FF code point per byte, with no surrogate pairs.
+  // The loop keeps index in bounds, so codePointAt always returns a number.
   for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
+    bytes[index] = binary.codePointAt(index)!
   }
   const url = URL.createObjectURL(
     new Blob([bytes], { type: result.content_type })

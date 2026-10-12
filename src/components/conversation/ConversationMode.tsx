@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useLocale, useTranslations } from 'use-intl'
 import { useAuthStore } from '@/store/auth'
 import { apiFetch } from '@/lib/api'
@@ -21,12 +21,15 @@ import {
   VoiceRecordingError,
   type VoiceRecording,
 } from '@/lib/voice-recording'
-import TranscriptBubble from './TranscriptBubble'
+import ConversationMessage, {
+  type TranscriptEntry,
+} from './ConversationMessage'
 import SessionTimeoutBanner from './SessionTimeoutBanner'
-import MessageAudioPlayer, { VoicePlayback } from './MessageAudioPlayer'
-import { QuotaPill, TrialPremiumCta } from './VoiceSessionExtras'
+import { VoicePlayback } from './MessageAudioPlayer'
+import { VoiceQuota, TrialPremiumCta } from './VoiceSessionExtras'
 import { WordTooltip, useWordSave } from '@/components/ui/WordTooltip'
 import type { QuotaStatus } from '@/types/api'
+import { voiceStatusLabel, type VoiceStatus } from '@/lib/voice-presentation'
 import {
   ReviewPrompt,
   getReviewPromptDismissal,
@@ -34,20 +37,6 @@ import {
 import { shouldShowVoiceReviewPrompt } from '@/lib/review-prompt-triggers'
 import { MemorySavedToast } from '@/components/memory/MemorySavedToast'
 import { useTransientToast } from '@/hooks/useTransientToast'
-
-interface TranscriptEntry {
-  id: string
-  role: 'user' | 'assistant'
-  text: string
-  audio?: string | undefined
-  audioError?: 'audioExpired' | 'playbackFailed' | undefined
-  turnStatus?: VoiceTurnResult['status'] | undefined
-  attempts?: number | undefined
-  autoPlay?: boolean | undefined
-  cefrLevel?: string | undefined
-  delivery?: 'pending' | 'resend' | 'rejected' | 'confirmed' | undefined
-  deliveryError?: string | undefined
-}
 
 interface PendingTurn {
   blob: Blob
@@ -68,8 +57,6 @@ interface SessionRun {
   ownerToken: string
   expiryCheckPending: boolean
 }
-
-type Status = 'ready' | 'connecting' | 'live' | 'sending' | 'ended' | 'error'
 
 export default function ConversationMode({
   initialContext,
@@ -100,6 +87,7 @@ export default function ConversationMode({
   const v = useTranslations('conversation.voiceMessages')
   const tCommon = useTranslations('common')
   const locale = useLocale()
+  const transcriptId = useId()
   const accessToken = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
   const setUser = useAuthStore((state) => state.setUser)
@@ -112,7 +100,7 @@ export default function ConversationMode({
     conversationId ?? null,
     trialMode ?? false,
   ])
-  const [status, setStatus] = useState<Status>('ready')
+  const [status, setStatus] = useState<VoiceStatus>('ready')
   const [recording, setRecording] = useState(false)
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [warningSeconds, setWarningSeconds] = useState<number | null>(null)
@@ -307,6 +295,100 @@ export default function ConversationMode({
     return url
   }
 
+  function confirmUserTurn(
+    run: SessionRun,
+    result: VoiceTurnResult,
+    clientTurnId: string
+  ) {
+    const pending = run.turns.get(clientTurnId)
+    if (pending) {
+      pending.status = result.status
+      pending.attempts = result.stt_attempts
+      pending.delivery = 'confirmed'
+    }
+    setTranscript((entries) =>
+      entries.map((entry) => {
+        if (entry.id !== clientTurnId) return entry
+        const text =
+          result.status === 'stt_failed' && entry.text === v('processing')
+            ? ''
+            : entry.text
+        return {
+          ...entry,
+          text: result.user_text ?? text,
+          turnStatus: result.status,
+          attempts: pending?.attempts ?? result.stt_attempts,
+          delivery: 'confirmed',
+          deliveryError: undefined,
+        }
+      })
+    )
+  }
+
+  function insertAssistantText(
+    run: SessionRun,
+    turnId: string,
+    text: string
+  ): string {
+    const id = `assistant-${turnId}`
+    setTranscript((entries) => {
+      if (entries.some((entry) => entry.id === id)) return entries
+      return [
+        ...entries,
+        {
+          id,
+          role: 'assistant',
+          text,
+          cefrLevel: run.session?.cefr_level ?? cefrLevel ?? undefined,
+        },
+      ]
+    })
+    return id
+  }
+
+  async function loadAssistantAudio(
+    run: SessionRun,
+    result: VoiceTurnResult,
+    id: string,
+    audioUrl: string
+  ) {
+    try {
+      const blob = await fetchVoiceAudio(audioUrl, run.abort.signal)
+      if (!isCurrent(run)) return
+      const audio = objectUrl(run, blob)
+      setTranscript((entries) =>
+        entries.map((entry) =>
+          entry.id === id
+            ? { ...entry, audio, autoPlay: result.status === 'complete' }
+            : entry
+        )
+      )
+    } catch (error) {
+      if (!isCurrent(run)) return
+      if (
+        error instanceof ConversationApiError &&
+        [401, 410, 429, 503].includes(error.status)
+      ) {
+        requestFailed(run, error)
+        return
+      }
+      setTranscript((entries) =>
+        entries.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                audioError:
+                  error instanceof ConversationApiError &&
+                  [404, 410].includes(error.status)
+                    ? 'audioExpired'
+                    : 'playbackFailed',
+              }
+            : entry
+        )
+      )
+    }
+  }
+
   async function applyResult(
     run: SessionRun,
     result: VoiceTurnResult,
@@ -315,91 +397,12 @@ export default function ConversationMode({
     if (!isCurrent(run)) return
     updateExpiry(run, result)
     if (result.memory_updated) showMemoryToast()
-    if (clientTurnId) {
-      const pending = run.turns.get(clientTurnId)
-      if (pending) {
-        pending.status = result.status
-        pending.attempts = result.stt_attempts
-        pending.delivery = 'confirmed'
-      }
-      setTranscript((entries) =>
-        entries.map((entry) =>
-          entry.id === clientTurnId
-            ? {
-                ...entry,
-                text:
-                  result.user_text ??
-                  (result.status === 'stt_failed' &&
-                  entry.text === v('processing')
-                    ? ''
-                    : entry.text),
-                turnStatus: result.status,
-                attempts: pending?.attempts ?? result.stt_attempts,
-                delivery: 'confirmed',
-                deliveryError: undefined,
-              }
-            : entry
-        )
-      )
-    }
+    if (clientTurnId) confirmUserTurn(run, result, clientTurnId)
     if (result.assistant_text !== null) {
-      const id = `assistant-${result.turn_id}`
-      setTranscript((entries) =>
-        entries.some((entry) => entry.id === id)
-          ? entries
-          : [
-              ...entries,
-              {
-                id,
-                role: 'assistant',
-                text: result.assistant_text!,
-                cefrLevel: run.session?.cefr_level ?? cefrLevel ?? undefined,
-              },
-            ]
-      )
+      const id = insertAssistantText(run, result.turn_id, result.assistant_text)
       if (result.assistant_audio_url) {
-        try {
-          const blob = await fetchVoiceAudio(
-            result.assistant_audio_url,
-            run.abort.signal
-          )
-          if (!isCurrent(run)) return
-          const audio = objectUrl(run, blob)
-          setTranscript((entries) =>
-            entries.map((entry) =>
-              entry.id === id
-                ? {
-                    ...entry,
-                    audio,
-                    autoPlay: result.status === 'complete',
-                  }
-                : entry
-            )
-          )
-        } catch (error) {
-          if (!isCurrent(run)) return
-          if (
-            error instanceof ConversationApiError &&
-            [401, 410, 429, 503].includes(error.status)
-          ) {
-            requestFailed(run, error)
-            return
-          }
-          setTranscript((entries) =>
-            entries.map((entry) =>
-              entry.id === id
-                ? {
-                    ...entry,
-                    audioError:
-                      error instanceof ConversationApiError &&
-                      [404, 410].includes(error.status)
-                        ? 'audioExpired'
-                        : 'playbackFailed',
-                  }
-                : entry
-            )
-          )
-        }
+        await loadAssistantAudio(run, result, id, result.assistant_audio_url)
+        if (!isCurrent(run)) return
       }
     }
     if (result.status === 'llm_failed' || result.status === 'tts_failed')
@@ -747,15 +750,8 @@ export default function ConversationMode({
   const active =
     status === 'connecting' || status === 'live' || status === 'sending'
   const busy = status === 'connecting' || status === 'sending'
-  const label = recording
-    ? v('recording')
-    : busy
-      ? v('sending')
-      : active
-        ? v('ready')
-        : status === 'ended'
-          ? t('sessionEnded')
-          : v('ready')
+  const labelKey = voiceStatusLabel(status, recording)
+  const label = labelKey === 'sessionEnded' ? t(labelKey) : v(labelKey)
 
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col overflow-hidden p-4 md:p-6">
@@ -790,85 +786,35 @@ export default function ConversationMode({
       <MemorySavedToast visible={memoryToast} announcementId={memoryToastId} />
       <div className="mb-4 min-h-0 flex-1 space-y-3 overflow-y-auto px-2">
         {transcript.map((entry) => (
-          <TranscriptBubble
+          <ConversationMessage
             key={entry.id}
-            role={entry.role}
-            text={entry.text}
+            entry={entry}
+            textId={`${transcriptId}-${entry.id}`}
             userAvatar={user?.avatar}
             userInitial={(user?.displayName || user?.username || '?')[0]}
-            languageCode={language}
-            onPointerUp={
-              entry.role === 'assistant'
-                ? () =>
-                    handleTextSelection(
-                      entry.text,
-                      entry.cefrLevel ??
-                        runRef.current?.session?.cefr_level ??
-                        cefrLevel ??
-                        undefined
-                    )
-                : undefined
+            language={language}
+            playback={playback}
+            recording={recording}
+            busy={busy}
+            active={active}
+            onSelect={() =>
+              handleTextSelection(
+                entry.text,
+                entry.cefrLevel ??
+                  runRef.current?.session?.cefr_level ??
+                  cefrLevel ??
+                  undefined
+              )
             }
-          >
-            {entry.audio && (
-              <MessageAudioPlayer
-                src={entry.audio}
-                playback={playback}
-                autoPlay={entry.autoPlay ?? false}
-                disabled={recording}
-                onActivity={() => {
-                  const run = runRef.current
-                  if (run) activity(run)
-                }}
-              />
-            )}
-            {entry.audioError && (
-              <p role="status" className="text-fl-muted-2 font-mono text-xs">
-                {v(entry.audioError)}
-              </p>
-            )}
-            {entry.deliveryError && (
-              <p role="status" className="text-fl-error font-mono text-xs">
-                {entry.deliveryError}
-              </p>
-            )}
-            {entry.delivery === 'resend' && active && (
-              <button
-                disabled={busy || recording}
-                onClick={() => {
-                  const run = runRef.current
-                  if (run) void send(run, entry.id, false)
-                }}
-                className="border-fl-border mt-2 border px-3 py-2 font-mono text-xs disabled:opacity-40"
-              >
-                {tCommon('retry')}
-              </button>
-            )}
-            {entry.turnStatus === 'stt_failed' &&
-              entry.delivery === 'confirmed' && (
-                <div className="text-fl-error font-mono text-xs" role="status">
-                  <p>{v('transcriptionFailed')}</p>
-                  {(entry.attempts ?? 1) < 3 && active ? (
-                    <button
-                      disabled={busy || recording}
-                      onClick={() => {
-                        const run = runRef.current
-                        if (run) void send(run, entry.id, true)
-                      }}
-                      className="border-fl-border mt-2 border px-3 py-2 disabled:opacity-40"
-                    >
-                      {v('retry')} ·{' '}
-                      {v('retryCount', {
-                        count: Math.max(0, (entry.attempts ?? 1) - 1),
-                        max: 2,
-                      })}
-                    </button>
-                  ) : (
-                    <p>{v('retryLimit')}</p>
-                  )}
-                </div>
-              )}
-          </TranscriptBubble>
+            onActivity={() => {
+              const run = runRef.current
+              if (run) activity(run)
+            }}
+            onRetry={(retryTranscription) => {
+              const run = runRef.current
+              if (run) void send(run, entry.id, retryTranscription)
+            }}
+          />
         ))}
         <div ref={transcriptEndRef} />
       </div>
@@ -912,24 +858,15 @@ export default function ConversationMode({
             <SessionTimeoutBanner seconds={warningSeconds} />
           </div>
         )}
-        {freemiumVoiceRemaining != null && freemiumVoiceLimit != null ? (
-          <span
-            className={`text-fl-label font-mono tracking-widest uppercase ${freemiumVoiceRemaining <= 0 ? 'text-red-500' : 'text-fl-muted-2'}`}
-          >
-            {t('freemiumVoiceRemaining', {
-              remaining: freemiumVoiceRemaining,
-              limit: freemiumVoiceLimit,
-            })}
-          </span>
-        ) : quota && !trialMode ? (
-          <QuotaPill quota={quota} />
-        ) : null}
-        <p
-          role="status"
-          className="text-fl-fg font-mono text-xs font-semibold tracking-wide uppercase"
-        >
+        <VoiceQuota
+          remaining={freemiumVoiceRemaining}
+          limit={freemiumVoiceLimit}
+          quota={quota}
+          trialMode={trialMode}
+        />
+        <output className="text-fl-fg block font-mono text-xs font-semibold tracking-wide uppercase">
           {label}
-        </p>
+        </output>
         {active ? (
           <>
             <div className="flex flex-wrap justify-center gap-3">

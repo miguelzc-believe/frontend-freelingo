@@ -40,16 +40,18 @@ export function AiConfigurationBanner() {
       window.removeEventListener('focus', reload)
     }
   }, [userId])
-  if (
-    !user ||
-    ((!status || status.configured) && missingVoice.length === 0)
-  )
+  if (!user || ((!status || status.configured) && missingVoice.length === 0))
     return null
+
+  function getHintKey() {
+    if (status?.configured !== false) return 'voice.globalHint'
+    if (userRole === 'admin') return 'bannerAdmin'
+    return 'readonly'
+  }
+
   return (
-    <div
-      role="status"
-      className="border-fl-border bg-fl-surface flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3 font-mono text-xs"
-    >
+    <div className="border-fl-border bg-fl-surface flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3 font-mono text-xs">
+      <output className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
         {status?.configured === false && (
           <span className="text-fl-fg">{t('missing')}</span>
         )}
@@ -58,15 +60,8 @@ export function AiConfigurationBanner() {
             {t(`voice.${key}`)}
           </span>
         ))}
-        <span className="text-fl-muted-2">
-          {t(
-            status?.configured === false
-              ? userRole === 'admin'
-                ? 'bannerAdmin'
-                : 'readonly'
-              : 'voice.globalHint'
-          )}
-      </span>
+        <span className="text-fl-muted-2">{t(getHintKey())}</span>
+      </output>
       <Link
         href="/settings#ai"
         className="text-fl-fg underline underline-offset-2"

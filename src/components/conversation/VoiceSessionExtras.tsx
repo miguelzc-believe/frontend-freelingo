@@ -105,6 +105,31 @@ export function QuotaPill({ quota }: Readonly<{ quota: QuotaStatus }>) {
   )
 }
 
+export function VoiceQuota({
+  remaining,
+  limit,
+  quota,
+  trialMode,
+}: Readonly<{
+  remaining?: number | undefined
+  limit?: number | undefined
+  quota: QuotaStatus | null
+  trialMode?: boolean | undefined
+}>) {
+  const t = useTranslations('conversation')
+  if (remaining != null && limit != null) {
+    return (
+      <span
+        className={`text-fl-label font-mono tracking-widest uppercase ${remaining <= 0 ? 'text-red-500' : 'text-fl-muted-2'}`}
+      >
+        {t('freemiumVoiceRemaining', { remaining, limit })}
+      </span>
+    )
+  }
+  if (quota && !trialMode) return <QuotaPill quota={quota} />
+  return null
+}
+
 export function TrialPremiumCta() {
   const t = useTranslations('billing')
   const tConversation = useTranslations('conversation')

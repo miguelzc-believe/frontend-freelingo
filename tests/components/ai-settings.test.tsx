@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore, type User } from '@/store/auth'
 
@@ -21,6 +28,7 @@ vi.mock('@/components/settings/VoiceProviderSettings', () => ({
 import { AiSection } from '@/components/settings/AiSection'
 import { AiConfigurationBanner } from '@/components/AiConfigurationBanner'
 import type { LlmSettings } from '@/lib/llm-settings'
+import { deferred } from '../helpers/voice-capture'
 
 const saved: LlmSettings = {
   configured: true,
@@ -108,6 +116,11 @@ describe('AI settings', () => {
 
   it('shows only provider and model to regular users using the safe status API', async () => {
     setup(saved, 'user')
+    const loading = screen.getByRole('status')
+    expect(loading).toHaveTextContent('loading')
+    expect(loading.tagName).toBe('OUTPUT')
+    expect(loading).not.toHaveAttribute('role')
+    expect(loading).toHaveClass('block')
     expect(await screen.findByText('saved-model')).toBeInTheDocument()
     expect(screen.getByText('readonly')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
@@ -123,7 +136,11 @@ describe('AI settings', () => {
 
   it('tells regular users to contact the administrator when global configuration is empty', async () => {
     setup(empty, 'user')
-    expect(await screen.findByRole('status')).toHaveTextContent('missing')
+    const missing = await screen.findByText('missing')
+    expect(screen.getByRole('status')).toBe(missing)
+    expect(missing.tagName).toBe('OUTPUT')
+    expect(missing).not.toHaveAttribute('role')
+    expect(missing).toHaveClass('block')
     expect(screen.getByText('readonly')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'save' })
@@ -132,6 +149,11 @@ describe('AI settings', () => {
 
   it('loads metadata for admins without echoing a saved key', async () => {
     setup()
+    const loading = screen.getByRole('status')
+    expect(loading).toHaveTextContent('loading')
+    expect(loading.tagName).toBe('OUTPUT')
+    expect(loading).not.toHaveAttribute('role')
+    expect(loading).toHaveClass('block')
     const input = await screen.findByLabelText('apiKey')
     expect(input).toHaveValue('')
     expect(input).toHaveAttribute('type', 'password')
@@ -147,6 +169,28 @@ describe('AI settings', () => {
     expect(screen.getByRole('combobox')).toHaveValue('openai')
   })
 
+  it('preserves every provider option label, value and order', async () => {
+    setup()
+    const provider = await screen.findByRole('combobox')
+    const options = within(provider).getAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([
+      'selectProvider',
+      'Ollama',
+      'OpenAI',
+      'Anthropic',
+      'DeepSeek',
+      'customProvider',
+    ])
+    expect(options.map((option) => option.getAttribute('value'))).toEqual([
+      '',
+      'ollama',
+      'openai',
+      'anthropic',
+      'deepseek',
+      'custom',
+    ])
+  })
+
   it('retains a key for the same provider and normalized URL and clears typed keys on canonical save', async () => {
     setup()
     await screen.findByLabelText('apiKey')
@@ -155,7 +199,10 @@ describe('AI settings', () => {
       Promise.resolve(response({ ...saved, model: 'new-model', revision: 2 }))
     )
     save()
-    expect(await screen.findByText('saveSuccess')).toBeInTheDocument()
+    const success = await screen.findByText('saveSuccess')
+    expect(screen.getByRole('status')).toBe(success)
+    expect(success.tagName).toBe('OUTPUT')
+    expect(success).not.toHaveAttribute('role')
     expect(submitted('/api/admin/llm-settings')).toEqual({
       provider: 'openai',
       model: 'new-model',
@@ -177,8 +224,8 @@ describe('AI settings', () => {
     mocks.apiFetch.mockImplementation(() => Promise.resolve(response(saved)))
     save()
     await screen.findByText('saveSuccess')
-    expect(localStorage.length).toBe(0)
-    expect(sessionStorage.length).toBe(0)
+    expect(localStorage).toHaveLength(0)
+    expect(sessionStorage).toHaveLength(0)
     expect(JSON.stringify(useAuthStore.getState())).not.toContain(
       'test-only-key'
     )
@@ -274,6 +321,26 @@ describe('AI settings', () => {
     })
   })
 
+  it('cancels native form submission and saves exactly once', async () => {
+    const view = setup()
+    await screen.findByLabelText('apiKey')
+    const form = view.container.querySelector('form')!
+    const event = new Event('submit', { bubbles: true, cancelable: true })
+    const preventDefault = vi.spyOn(event, 'preventDefault')
+    fireEvent(form, event)
+    await screen.findByText('saveSuccess')
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(event.defaultPrevented).toBe(true)
+    expect(
+      mocks.apiFetch.mock.calls.filter(
+        ([, options]) => options?.method === 'PUT'
+      )
+    ).toHaveLength(1)
+    expect(
+      mocks.apiFetch.mock.calls.some(([path]) => path.endsWith('/test'))
+    ).toBe(false)
+  })
+
   it('tests the draft without saving and keeps its key and model', async () => {
     setup()
     await screen.findByLabelText('apiKey')
@@ -315,9 +382,9 @@ describe('AI settings', () => {
         )
       )
       fireEvent.click(screen.getByRole('button', { name: 'test' }))
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        message as string
-      )
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(message as string)
+      expect(alert.tagName).toBe('OUTPUT')
       expect(screen.getByLabelText('apiKey')).toHaveValue('test-only-key')
       expect(
         screen.queryByText(/unsafe-provider-detail/)
@@ -351,7 +418,11 @@ describe('AI settings', () => {
         })
     )
     save()
-    expect(await screen.findByRole('status')).toHaveTextContent('saving')
+    const saving = await screen.findByRole('status')
+    expect(saving).toHaveTextContent('saving')
+    expect(saving.tagName).toBe('OUTPUT')
+    expect(saving).not.toHaveAttribute('role')
+    expect(saving).toHaveClass('block', 'mt-3')
     expect(screen.getByLabelText('model')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'test' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'saving' })).toBeDisabled()
@@ -365,6 +436,7 @@ describe('AI settings', () => {
     mocks.apiFetch.mockRejectedValue(new Error('offline'))
     render(<AiSection />)
     expect(await screen.findByRole('alert')).toHaveTextContent('loadFailed')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('apiKey')).not.toBeInTheDocument()
     mocks.apiFetch.mockImplementation(() => Promise.resolve(response(saved)))
     fireEvent.click(screen.getByRole('button', { name: 'retry' }))
@@ -381,9 +453,38 @@ describe('AI settings', () => {
     expect(await screen.findByText('saved-model')).toBeInTheDocument()
   })
 
+  it('shows a read-only refresh error instead of stale configured status until retry succeeds', async () => {
+    setup(saved, 'user')
+    await screen.findByText('saved-model')
+    mocks.apiFetch.mockRejectedValue(new Error('offline'))
+    act(() => window.dispatchEvent(new Event('freelingo:llm-settings-saved')))
+    expect(await screen.findByRole('alert')).toHaveTextContent('loadFailed')
+    expect(screen.getByText('readonly')).toBeInTheDocument()
+    expect(screen.queryByText('saved-model')).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    mocks.apiFetch.mockResolvedValue(response(empty))
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('missing')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'retry' })
+    ).not.toBeInTheDocument()
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(3)
+    for (const [path, options] of mocks.apiFetch.mock.calls) {
+      expect(path).toBe('/api/llm-settings/status')
+      expect(options).toEqual({ cache: 'no-store' })
+    }
+  })
+
   it('validates provider/model, custom URL and Anthropic token count before submitting', async () => {
     setup(empty)
     await screen.findByLabelText('apiKey')
+    const missing = screen.getByRole('status')
+    expect(missing).toHaveTextContent('missing')
+    expect(missing.tagName).toBe('OUTPUT')
+    expect(missing).not.toHaveAttribute('role')
+    expect(missing).toHaveClass('block', 'mb-4')
     save()
     expect(screen.getByRole('alert')).toHaveTextContent('requiredFields')
     change('provider', 'custom')
@@ -451,11 +552,76 @@ describe('AI settings', () => {
     })
   })
 
+  it.each([
+    ['admin', false, false, 'bannerAdmin'],
+    ['user', false, false, 'readonly'],
+    ['admin', false, true, 'bannerAdmin'],
+    ['user', false, true, 'readonly'],
+    ['admin', true, true, 'voice.globalHint'],
+    ['user', true, true, 'voice.globalHint'],
+    ['admin', true, false, null],
+    ['user', true, false, null],
+  ] as const)(
+    'renders the banner for role=%s, LLM configured=%s, voice missing=%s',
+    async (role, configured, voiceMissing, hint) => {
+      useAuthStore.setState({ user: { ...user, role } })
+      const llmStatus = deferred<Response>()
+      const voiceStatus = deferred<Response>()
+      mocks.apiFetch.mockImplementation((path: string) =>
+        path === '/api/llm-settings/status'
+          ? llmStatus.promise
+          : voiceStatus.promise.then((value) => value.clone())
+      )
+      render(<AiConfigurationBanner />)
+      await act(async () => {
+        llmStatus.resolve(response({ ...saved, configured }))
+        voiceStatus.resolve(response({ configured: !voiceMissing }))
+      })
+      expect(mocks.apiFetch).toHaveBeenCalledTimes(3)
+      expect(mocks.apiFetch.mock.calls.map(([path]) => path)).toEqual([
+        '/api/llm-settings/status',
+        '/api/tts-settings/status',
+        '/api/stt-settings/status',
+      ])
+      if (hint === null) {
+        expect(screen.queryByRole('status')).not.toBeInTheDocument()
+        expect(screen.queryByRole('link')).not.toBeInTheDocument()
+        return
+      }
+      const status = screen.getByRole('status')
+      expect(status.tagName).toBe('OUTPUT')
+      expect(status).not.toHaveAttribute('role')
+      expect(within(status).getByText(hint)).toHaveClass('text-fl-muted-2')
+      expect(within(status).queryAllByText('missing')).toHaveLength(
+        Number(!configured)
+      )
+      for (const key of ['voice.bannerMissingTts', 'voice.bannerMissingStt']) {
+        expect(within(status).queryAllByText(key)).toHaveLength(
+          Number(voiceMissing)
+        )
+      }
+      expect(
+        screen.getByRole('link', { name: 'openSettings' })
+      ).toHaveAttribute('href', '/settings#ai')
+      expect(within(status).queryByRole('link')).not.toBeInTheDocument()
+    }
+  )
+
   it('shows missing voice configuration after the LLM is saved', async () => {
     setup(empty)
     render(<AiConfigurationBanner />)
     const link = await screen.findByRole('link', { name: 'openSettings' })
     expect(link).toHaveAttribute('href', '/settings#ai')
+    const banner = link.parentElement!
+    expect(banner.tagName).toBe('DIV')
+    expect(banner).not.toHaveAttribute('role')
+    const status = within(banner).getByRole('status')
+    expect(status.tagName).toBe('OUTPUT')
+    expect(status).not.toHaveAttribute('role')
+    expect(status).not.toHaveClass('contents')
+    expect(status).toHaveTextContent('missing')
+    expect(status).toHaveTextContent('bannerAdmin')
+    expect(within(status).queryByRole('link')).not.toBeInTheDocument()
     expect(screen.getByText('bannerAdmin')).toBeInTheDocument()
     await screen.findByLabelText('apiKey')
     change('provider', 'ollama')

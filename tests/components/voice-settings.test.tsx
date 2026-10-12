@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore, type User } from '@/store/auth'
 
@@ -7,6 +14,7 @@ vi.mock('@/lib/api', () => mocks)
 vi.mock('use-intl', () => ({ useTranslations: () => (key: string) => key }))
 
 import { VoiceProviderSettings } from '@/components/settings/VoiceProviderSettings'
+import { deferred } from '../helpers/voice-capture'
 
 const ttsSaved = {
   configured: true,
@@ -97,6 +105,12 @@ describe('OmniRoute voice settings', () => {
 
   it('renders independent admin TTS/STT forms and never echoes saved credentials', async () => {
     setup()
+    for (const loading of screen.getAllByRole('status')) {
+      expect(loading).toHaveTextContent('loading')
+      expect(loading.tagName).toBe('OUTPUT')
+      expect(loading).not.toHaveAttribute('role')
+      expect(loading).toHaveClass('block')
+    }
     expect(await byName('ttsModel')).toHaveValue(ttsSaved.model)
     expect(await byName('sttModel')).toHaveValue(sttSaved.model)
     expect(await byName('ttsBaseUrl')).toHaveValue(ttsSaved.base_url)
@@ -106,7 +120,14 @@ describe('OmniRoute voice settings', () => {
     expect(await byName('sttApiKey')).toHaveValue('')
     expect(await byName('ttsApiKey')).toHaveAttribute('type', 'password')
     expect(screen.getAllByText('keySaved')).toHaveLength(2)
-    expect(screen.getAllByRole('status')[0]).toHaveTextContent(ttsSaved.model)
+    const statuses = screen.getAllByRole('status')
+    expect(statuses).toHaveLength(2)
+    expect(statuses[0]).toHaveTextContent(ttsSaved.model)
+    for (const status of statuses) {
+      expect(status.tagName).toBe('OUTPUT')
+      expect(status).not.toHaveAttribute('role')
+      expect(status).toHaveClass('block')
+    }
   })
 
   it('uses the OmniRoute default URL and validates each draft before saving', async () => {
@@ -115,8 +136,18 @@ describe('OmniRoute voice settings', () => {
       'https://omniroute.miguel-zapata.com/v1'
     )
     expect(await byName('ttsSpeed')).toHaveValue(1)
+    const statuses = screen.getAllByRole('status')
+    expect(statuses).toHaveLength(2)
+    for (const status of statuses) {
+      expect(status).toHaveTextContent('missing')
+      expect(status.tagName).toBe('OUTPUT')
+      expect(status).not.toHaveAttribute('role')
+      expect(status).toHaveClass('block')
+    }
     fireEvent.click(screen.getAllByRole('button', { name: 'save' })[0]!)
-    expect(await screen.findByText('required')).toBeInTheDocument()
+    const error = await screen.findByRole('alert')
+    expect(error).toHaveTextContent('required')
+    expect(error.tagName).toBe('OUTPUT')
     view.unmount()
   })
 
@@ -131,7 +162,10 @@ describe('OmniRoute voice settings', () => {
       )
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'save' })[0]!)
-    await screen.findByText('saveSuccess')
+    const success = await screen.findByText('saveSuccess')
+    expect(screen.getAllByRole('status')).toContain(success)
+    expect(success.tagName).toBe('OUTPUT')
+    expect(success).not.toHaveAttribute('role')
     const submitted = findBody('/api/admin/tts-settings')
     expect(submitted).toMatchObject({
       base_url: ttsSaved.base_url,
@@ -144,7 +178,37 @@ describe('OmniRoute voice settings', () => {
     expect(await byName('ttsApiKey')).toHaveValue('')
   })
 
-  it('plays a TTS connection-test sample from a bounded audio response', async () => {
+  it.each([
+    ['save', 'saving', sttSaved, 'saveSuccess'],
+    ['test', 'testing', { ok: true }, 'testSuccess'],
+  ] as const)(
+    'announces STT %s progress with native status semantics',
+    async (action, progress, result, success) => {
+      setup()
+      await byName('sttModel')
+      let resolve: (value: Response) => void = () => {
+        throw new Error('not initialized')
+      }
+      mocks.apiFetch.mockImplementation(
+        () =>
+          new Promise<Response>((r) => {
+            resolve = r
+          })
+      )
+      fireEvent.click(screen.getAllByRole('button', { name: action })[1]!)
+      const loading = screen.getByText(progress, { selector: 'output' })
+      expect(screen.getAllByRole('status')).toContain(loading)
+      expect(loading.tagName).toBe('OUTPUT')
+      expect(loading).not.toHaveAttribute('role')
+      expect(loading).toHaveClass('block')
+      expect(await byName('sttModel')).toBeDisabled()
+      resolve(response(result))
+      expect(await screen.findByText(success)).toBeInTheDocument()
+      expect(await byName('sttModel')).toBeEnabled()
+    }
+  )
+
+  it('plays a TTS test sample preserving binary audio bytes including values above 127', async () => {
     const play = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal(
       'Audio',
@@ -155,28 +219,91 @@ describe('OmniRoute voice settings', () => {
         constructor(public src: string) {}
       }
     )
-    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:voice-test')
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:voice-test')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-    setup()
-    await byName('ttsModel')
-    mocks.apiFetch.mockImplementation((path: string) =>
-      Promise.resolve(
-        response(
-          path.endsWith('/test')
-            ? { ok: true, audio_base64: 'SUQz', content_type: 'audio/mpeg' }
-            : ttsSaved
+    try {
+      setup()
+      await byName('ttsModel')
+      mocks.apiFetch.mockImplementation((path: string) =>
+        Promise.resolve(
+          response(
+            path.endsWith('/test')
+              ? {
+                  ok: true,
+                  audio_base64: 'AH+A/w==',
+                  content_type: 'audio/mpeg',
+                }
+              : ttsSaved
+          )
         )
       )
-    )
-    fireEvent.click(screen.getAllByRole('button', { name: 'test' })[0]!)
-    await screen.findByText('testSuccess')
-    expect(findBody('/api/admin/tts-settings/test').model).toBe(
-      'openai/gpt-4o-mini-tts'
-    )
-    expect(play).toHaveBeenCalledOnce()
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
+      fireEvent.click(screen.getAllByRole('button', { name: 'test' })[0]!)
+      await screen.findByText('testSuccess')
+      expect(findBody('/api/admin/tts-settings/test').model).toBe(
+        'openai/gpt-4o-mini-tts'
+      )
+      expect(play).toHaveBeenCalledOnce()
+      expect(createObjectURL).toHaveBeenCalledOnce()
+      const blob = createObjectURL.mock.calls[0]?.[0]
+      expect(blob).toBeInstanceOf(Blob)
+      if (!(blob instanceof Blob)) throw new Error('Expected an audio Blob')
+      expect(blob.type).toBe('audio/mpeg')
+      expect(blob.size).toBe(4)
+      const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (reader.result instanceof ArrayBuffer) resolve(reader.result)
+          else reject(new Error('Expected binary audio data'))
+        }
+        reader.onerror = () => reject(reader.error)
+        reader.readAsArrayBuffer(blob)
+      })
+      expect(Array.from(new Uint8Array(buffer))).toEqual([0, 127, 128, 255])
+    } finally {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    }
   })
+
+  it.each([
+    ['test', 403, 'adminRequired'],
+    ['test', 422, 'validationFailed'],
+    ['test', 504, 'testTimeout'],
+    ['test', 502, 'testFailed'],
+    ['save', 403, 'adminRequired'],
+    ['save', 422, 'validationFailed'],
+    ['save', 504, 'saveFailed'],
+    ['save', 502, 'saveFailed'],
+  ] as const)(
+    'sanitizes %s failures for HTTP %s as %s and retains the draft',
+    async (action, status, message) => {
+      setup()
+      await change('sttModel', 'draft-model')
+      await change('sttApiKey', 'synthetic-private-key')
+      mocks.apiFetch.mockResolvedValue(
+        response({ detail: 'unsafe-synthetic-private-key' }, status)
+      )
+      const section = screen
+        .getByRole('heading', {
+          name: 'stt',
+        })
+        .closest('section')!
+      fireEvent.click(within(section).getByRole('button', { name: action }))
+      expect(await within(section).findByRole('alert')).toHaveTextContent(
+        message
+      )
+      expect(screen.queryByText(/unsafe-synthetic/)).not.toBeInTheDocument()
+      expect(screen.getByLabelText('sttModel')).toHaveValue('draft-model')
+      expect(screen.getByLabelText('sttApiKey')).toHaveValue(
+        'synthetic-private-key'
+      )
+      expect(
+        within(section).getByRole('button', { name: action })
+      ).toBeEnabled()
+    }
+  )
 
   it('tests STT independently without placing the key in browser storage', async () => {
     setup()
@@ -201,9 +328,23 @@ describe('OmniRoute voice settings', () => {
 
   it('exposes only safe provider/model status to regular learners', async () => {
     setup('user')
+    const loadingStatuses = screen.getAllByRole('status')
+    expect(loadingStatuses).toHaveLength(2)
+    for (const loading of loadingStatuses) {
+      expect(loading).toHaveTextContent('loading')
+      expect(loading.tagName).toBe('OUTPUT')
+      expect(loading).not.toHaveAttribute('role')
+      expect(loading).toHaveClass('block')
+    }
     expect(
       await screen.findByText('openai/gpt-4o-mini-tts')
     ).toBeInTheDocument()
+    const missingStatus = await screen.findByText('missing')
+    expect(screen.getByRole('status')).toBe(missingStatus)
+    expect(missingStatus).toHaveTextContent('missing')
+    expect(missingStatus.tagName).toBe('OUTPUT')
+    expect(missingStatus).not.toHaveAttribute('role')
+    expect(missingStatus).toHaveClass('block')
     expect(screen.getAllByText('missing')).toHaveLength(1)
     expect(screen.queryByLabelText('ttsModel')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('sttApiKey')).not.toBeInTheDocument()
@@ -214,6 +355,87 @@ describe('OmniRoute voice settings', () => {
       cache: 'no-store',
     })
   })
+
+  it('keeps failed read-only status requests as alerts rather than status outputs', async () => {
+    useAuthStore.setState({ user: learner, accessToken: 'test' })
+    mocks.apiFetch.mockRejectedValue(new Error('offline'))
+    render(<VoiceProviderSettings />)
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts).toHaveLength(2)
+    for (const alert of alerts) expect(alert).toHaveTextContent('loadFailed')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it.each(['tts', 'stt'] as const)(
+    'retries a failed read-only %s status without requesting admin settings',
+    async (kind) => {
+      useAuthStore.setState({ user: learner, accessToken: 'test' })
+      mocks.apiFetch.mockRejectedValue(new Error('offline'))
+      render(<VoiceProviderSettings />)
+      expect(await screen.findAllByRole('alert')).toHaveLength(2)
+      const section = screen.getByRole('heading', { name: kind }).parentElement!
+      mocks.apiFetch.mockResolvedValue(response({ configured: false }))
+      fireEvent.click(within(section).getByRole('button', { name: 'retry' }))
+      expect(await within(section).findByRole('status')).toHaveTextContent(
+        'missing'
+      )
+      expect(within(section).queryByRole('alert')).not.toBeInTheDocument()
+      expect(within(section).queryByRole('button')).not.toBeInTheDocument()
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      expect(mocks.apiFetch).toHaveBeenCalledTimes(3)
+      expect(mocks.apiFetch).toHaveBeenLastCalledWith(
+        `/api/${kind}-settings/status`,
+        { cache: 'no-store' }
+      )
+    }
+  )
+
+  it.each([true, false])(
+    'preserves read-only voice status after a failed refresh with configured=%s',
+    async (configured) => {
+      useAuthStore.setState({ user: learner, accessToken: 'test' })
+      const initialStatus = deferred<void>()
+      mocks.apiFetch.mockImplementation(async (path: string) => {
+        await initialStatus.promise
+        const saved = path === '/api/tts-settings/status' ? ttsSaved : sttSaved
+        return response({ ...saved, configured })
+      })
+      render(<VoiceProviderSettings />)
+      await act(async () => {
+        initialStatus.resolve()
+      })
+      mocks.apiFetch.mockRejectedValue(new Error('offline'))
+      await act(async () => {
+        window.dispatchEvent(new Event('freelingo:voice-settings-saved'))
+      })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button')).not.toBeInTheDocument()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      expect(screen.queryByText('loading')).not.toBeInTheDocument()
+      expect(mocks.apiFetch).toHaveBeenCalledTimes(4)
+      if (!configured) {
+        expect(screen.getAllByRole('status')).toHaveLength(2)
+        for (const status of screen.getAllByRole('status')) {
+          expect(status).toHaveTextContent('missing')
+          expect(status.tagName).toBe('OUTPUT')
+        }
+        return
+      }
+      expect(screen.getByText(ttsSaved.model)).toBeInTheDocument()
+      expect(screen.getByText(sttSaved.model)).toBeInTheDocument()
+      expect(screen.getAllByText('configured')).toHaveLength(2)
+      const ttsSection = screen.getByRole('heading', {
+        name: 'tts',
+      }).parentElement!
+      const sttSection = screen.getByRole('heading', {
+        name: 'stt',
+      }).parentElement!
+      expect(within(ttsSection).getByText('voice')).toBeInTheDocument()
+      expect(within(sttSection).queryByText('voice')).not.toBeInTheDocument()
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    }
+  )
 
   it('clears the entered key and disallows reuse after the gateway URL changes', async () => {
     setup()
