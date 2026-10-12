@@ -42,3 +42,15 @@ Validation: 44 utility/voice settings tests passed, including 100,000-slash
 suffix and nonfinal-run cases, and exact Blob bytes `[0, 127, 128, 255]` with
 MIME preservation. Scoped ESLint, formatting and diff checks passed. The binary
 fixture is synthetic and does not establish audible/device/provider acceptance.
+
+## 3. Readonly props, submit events and direct re-exports
+
+Voice component props are readonly without freezing state or changing keyed
+account remounts. AI form submission uses React's `SubmitEvent`, supported by the
+installed types, rather than deprecated `FormEvent`. Shared URL helpers are
+re-exported directly; the locally used error constructor retains its identity.
+
+Validation: 36 AI/voice component and API tests passed, including helper/error
+identity and a cancelable form submit that saves once without testing the draft.
+Strict typecheck and scoped ESLint passed. Dependencies and API payloads are
+unchanged.

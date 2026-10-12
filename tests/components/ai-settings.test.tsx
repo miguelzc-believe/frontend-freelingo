@@ -274,6 +274,26 @@ describe('AI settings', () => {
     })
   })
 
+  it('cancels native form submission and saves exactly once', async () => {
+    const view = setup()
+    await screen.findByLabelText('apiKey')
+    const form = view.container.querySelector('form')!
+    const event = new Event('submit', { bubbles: true, cancelable: true })
+    const preventDefault = vi.spyOn(event, 'preventDefault')
+    fireEvent(form, event)
+    await screen.findByText('saveSuccess')
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(event.defaultPrevented).toBe(true)
+    expect(
+      mocks.apiFetch.mock.calls.filter(
+        ([, options]) => options?.method === 'PUT'
+      )
+    ).toHaveLength(1)
+    expect(
+      mocks.apiFetch.mock.calls.some(([path]) => path.endsWith('/test'))
+    ).toBe(false)
+  })
+
   it('tests the draft without saving and keeps its key and model', async () => {
     setup()
     await screen.findByLabelText('apiKey')

@@ -52,8 +52,8 @@ function VoiceProviderContent({
   userId,
   role,
 }: {
-  userId: number
-  role: User['role']
+  readonly userId: number
+  readonly role: User['role']
 }) {
   const t = useTranslations('settings.ai.voice')
   return (
@@ -76,7 +76,7 @@ function VoiceProviderContent({
   )
 }
 
-function VoiceServiceStatus({ kind }: { kind: 'tts' | 'stt' }) {
+function VoiceServiceStatus({ kind }: { readonly kind: 'tts' | 'stt' }) {
   const t = useTranslations('settings.ai.voice')
   const [saved, setSaved] = useState<VoiceSettings | null>(null)
   const [failed, setFailed] = useState(false)
@@ -150,7 +150,7 @@ function VoiceServiceStatus({ kind }: { kind: 'tts' | 'stt' }) {
   )
 }
 
-function VoiceServiceForm({ kind }: { kind: 'tts' | 'stt' }) {
+function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
   const t = useTranslations('settings.ai.voice')
   const [saved, setSaved] = useState<VoiceSettings | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)

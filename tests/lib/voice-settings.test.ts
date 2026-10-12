@@ -5,9 +5,13 @@ vi.mock('@/lib/api', () => mocks)
 
 import {
   LlmSettingsApiError,
+  isValidLlmBaseUrl,
+  normalizeLlmBaseUrl,
   testVoiceSettings,
   type VoiceSettingsInput,
 } from '@/lib/voice-settings'
+
+import * as llmSettings from '@/lib/llm-settings'
 
 const input: VoiceSettingsInput = {
   base_url: 'https://voice.example/v1',
@@ -26,6 +30,15 @@ function response(data: unknown, status = 200) {
 
 describe('voice settings tests', () => {
   beforeEach(() => mocks.apiFetch.mockReset())
+
+  it('preserves the identity of shared helpers and the error constructor', () => {
+    expect(isValidLlmBaseUrl).toBe(llmSettings.isValidLlmBaseUrl)
+    expect(normalizeLlmBaseUrl).toBe(llmSettings.normalizeLlmBaseUrl)
+    expect(LlmSettingsApiError).toBe(llmSettings.LlmSettingsApiError)
+    expect(new LlmSettingsApiError(403)).toBeInstanceOf(
+      llmSettings.LlmSettingsApiError
+    )
+  })
 
   it('returns generated TTS preview data without saving the draft', async () => {
     const result = {

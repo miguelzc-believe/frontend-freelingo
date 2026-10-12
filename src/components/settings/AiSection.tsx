@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type SubmitEvent } from 'react'
 import { useTranslations } from 'use-intl'
 import { useAuthStore } from '@/store/auth'
 import { useLlmStatus } from '@/hooks/useLlmStatus'
@@ -218,7 +218,7 @@ function AdminAiSettings() {
     }
   }
 
-  function handleSave(event: FormEvent<HTMLFormElement>) {
+  function handleSave(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     void submit('save')
   }
