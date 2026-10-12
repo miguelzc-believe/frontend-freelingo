@@ -10,7 +10,7 @@ export function LegalSection({
   body,
   items,
   footer,
-}: LegalSectionProps) {
+}: Readonly<LegalSectionProps>) {
   return (
     <section className="space-y-3">
       <h2 className="text-fl-fg font-mono text-sm font-bold tracking-widest uppercase">

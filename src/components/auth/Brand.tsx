@@ -6,7 +6,7 @@ type BrandProps = {
   tagline: string
 }
 
-export function Brand({ variant, tagline }: BrandProps) {
+export function Brand({ variant, tagline }: Readonly<BrandProps>) {
   const isLegal = variant === 'legal'
   const logo = (
     <Image

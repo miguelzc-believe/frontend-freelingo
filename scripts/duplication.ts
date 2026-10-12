@@ -2,7 +2,13 @@ import {
   execFileSync,
   type ExecFileSyncOptionsWithStringEncoding,
 } from 'node:child_process'
-import { readFileSync, rmSync } from 'node:fs'
+import {
+  accessSync,
+  constants,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
@@ -20,6 +26,22 @@ function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+export function findGit() {
+  // Only trust system installation locations, never PATH or relative entries.
+  // Resolve symlinks once and launch the resulting absolute executable.
+  for (const candidate of ['/usr/bin/git', '/usr/local/bin/git', '/bin/git']) {
+    try {
+      accessSync(candidate, constants.X_OK)
+      return realpathSync(candidate)
+    } catch {
+      // Continue to the next trusted system installation location.
+    }
+  }
+  throw new DuplicationError(
+    'Could not locate Git in a trusted system installation directory.'
+  )
+}
+
 export function readCleanRevision() {
   const env = { ...process.env }
   delete env.SONAR_TOKEN
@@ -27,23 +49,24 @@ export function readCleanRevision() {
   let trackedStatus: string
   let authoredStatus: string
   try {
+    const git = findGit()
     const options: ExecFileSyncOptionsWithStringEncoding = {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       env,
     }
     revision = execFileSync(
-      'git',
+      git,
       ['rev-parse', '--verify', 'HEAD'],
       options
     ).trim()
     trackedStatus = execFileSync(
-      'git',
+      git,
       ['status', '--porcelain=v1', '--untracked-files=no'],
       options
     ).trim()
     authoredStatus = execFileSync(
-      'git',
+      git,
       [
         'status',
         '--porcelain=v1',
@@ -122,7 +145,9 @@ export function validateSonarHost(value: string) {
   ) {
     throw new DuplicationError('Invalid SonarQube server URL.')
   }
-  return url.href.replace(/\/+$/, '')
+  let host = url.href
+  while (host.endsWith('/')) host = host.slice(0, -1)
+  return host
 }
 
 function readTaskReport(host: string, project: string) {
@@ -192,6 +217,65 @@ async function requestJson(
   }
 }
 
+function readReportedRevisions(context: string) {
+  const revisions: string[] = []
+  // Sonar's scannerContext lists properties as plain key=value lines or
+  // indented '- key=value' lines. Parse exact keys rather than regex matching.
+  for (const line of context.split('\n')) {
+    let property = line.trim()
+    if (property.startsWith('-')) property = property.slice(1).trimStart()
+    const separator = property.indexOf('=')
+    if (separator < 0) continue
+    if (property.slice(0, separator).trimEnd() === 'sonar.scm.revision') {
+      revisions.push(property.slice(separator + 1).trim())
+    }
+  }
+  return revisions
+}
+
+function validateSuccessfulTask(task: JsonObject, revision: string) {
+  if (typeof task.analysisId !== 'string' || !task.analysisId.trim()) {
+    throw new DuplicationError(
+      'Successful SonarQube task is missing its analysis ID.'
+    )
+  }
+  if (typeof task.scannerContext !== 'string') {
+    throw new DuplicationError(
+      'SonarQube task is missing its explicit scanner revision.'
+    )
+  }
+  const revisions = readReportedRevisions(task.scannerContext)
+  if (revisions.length !== 1 || revisions[0] !== revision) {
+    throw new DuplicationError(
+      'SonarQube scanner revision does not match the expected Git HEAD.'
+    )
+  }
+}
+
+function isTaskComplete(
+  payload: unknown,
+  taskId: string,
+  project: string,
+  revision: string
+) {
+  const task = isObject(payload) ? payload.task : undefined
+  if (!isObject(task) || task.id !== taskId || task.componentKey !== project) {
+    throw new DuplicationError(
+      'SonarQube compute task does not match the scanner report and project.'
+    )
+  }
+  if (task.status === 'SUCCESS') {
+    validateSuccessfulTask(task, revision)
+    return true
+  }
+  if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
+    throw new DuplicationError(
+      'SonarQube compute task was unsuccessful or has an invalid status.'
+    )
+  }
+  return false
+}
+
 async function verifyTask(
   host: string,
   project: string,
@@ -210,49 +294,12 @@ async function verifyTask(
       'compute task',
       Math.min(requestTimeout, deadline - Date.now())
     )
-    const task = isObject(payload) ? payload.task : undefined
-    if (
-      !isObject(task) ||
-      task.id !== taskId ||
-      task.componentKey !== project
-    ) {
-      throw new DuplicationError(
-        'SonarQube compute task does not match the scanner report and project.'
-      )
+    if (!isTaskComplete(payload, taskId, project, revision)) {
+      const remaining = deadline - Date.now()
+      if (remaining > 0) await delay(Math.min(1_000, remaining))
+      continue
     }
-    if (task.status === 'SUCCESS') {
-      if (typeof task.analysisId !== 'string' || !task.analysisId.trim()) {
-        throw new DuplicationError(
-          'Successful SonarQube task is missing its analysis ID.'
-        )
-      }
-      if (typeof task.scannerContext !== 'string') {
-        throw new DuplicationError(
-          'SonarQube task is missing its explicit scanner revision.'
-        )
-      }
-      const revisions = task.scannerContext
-        .split(/\r?\n/)
-        .map((line) =>
-          line.match(
-            /^[ \t]*(?:-[ \t]*)?sonar\.scm\.revision[ \t]*=[ \t]*(.*?)[ \t]*$/
-          )
-        )
-        .filter((match) => match !== null)
-      if (revisions.length !== 1 || revisions[0]?.[1] !== revision) {
-        throw new DuplicationError(
-          'SonarQube scanner revision does not match the expected Git HEAD.'
-        )
-      }
-      return
-    }
-    if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
-      throw new DuplicationError(
-        'SonarQube compute task was unsuccessful or has an invalid status.'
-      )
-    }
-    const remaining = deadline - Date.now()
-    if (remaining > 0) await delay(Math.min(1_000, remaining))
+    return
   }
   throw new DuplicationError(
     'Timed out waiting for the SonarQube compute task.'

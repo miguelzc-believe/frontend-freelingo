@@ -20,7 +20,7 @@ export function findPnpm() {
   throw new Error('Could not locate an absolute pnpm executable')
 }
 
-export function runQuality() {
+function readSonarConnection() {
   const token = process.env.SONAR_TOKEN?.trim()
   const host = process.env.SONAR_HOST_URL?.trim()
   const project = process.env.SONAR_PROJECT_KEY?.trim()
@@ -35,14 +35,35 @@ export function runQuality() {
     console.error(
       `Missing SonarQube environment variables: ${missing.join(', ')}.`
     )
-    return 1
+    return null
   }
   try {
     validateSonarHost(host || '')
   } catch {
     console.error('Invalid SonarQube server URL.')
+    return null
+  }
+  return { token, host, project }
+}
+
+function runQualityPhase(
+  executable: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  label: string
+) {
+  const result = spawnSync(executable, args, { stdio: 'inherit', env })
+  if (result.error) {
+    console.error(`Could not start ${label}.`)
     return 1
   }
+  return result.status ?? 1
+}
+
+export function runQuality() {
+  const connection = readSonarConnection()
+  if (!connection) return 1
+  const { token, host, project } = connection
   const pnpm = findPnpm()
   const script = /\.[cm]?js$/.test(pnpm)
   // Resolve once, then launch absolute paths; use this Node for JS launchers.
@@ -50,58 +71,50 @@ export function runQuality() {
   const prefix = script ? [pnpm] : []
   const checkEnv = { ...process.env }
   delete checkEnv.SONAR_TOKEN
-  let revision = ''
-  for (const args of [
-    ['quality:local'],
+  const localStatus = runQualityPhase(
+    executable,
+    [...prefix, 'quality:local'],
+    checkEnv,
+    'local quality checks'
+  )
+  if (localStatus !== 0) return localStatus
+
+  let revision: string
+  try {
+    revision = prepareDuplicationScan()
+  } catch {
+    console.error(
+      'Could not prepare SonarQube scan: require clean tracked files, no untracked authored files and a removable previous task report.'
+    )
+    return 1
+  }
+  const scannerStatus = runQualityPhase(
+    executable,
     [
+      ...prefix,
       'exec',
       'sonar-scanner-npm',
       `-Dsonar.host.url=${host}`,
       `-Dsonar.projectKey=${project}`,
       '-Dsonar.verbose=false',
       '-Dsonar.log.level=INFO',
+      `-Dsonar.scm.revision=${revision}`,
     ],
-    ['quality:duplication'],
-  ]) {
-    const isScanner = args[0] === 'exec'
-    const isGuard = args[0] === 'quality:duplication'
-    if (isScanner) {
-      try {
-        revision = prepareDuplicationScan()
-      } catch {
-        console.error(
-          'Could not prepare SonarQube scan: require clean tracked files, no untracked authored files and a removable previous task report.'
-        )
-        return 1
-      }
-      args.push(`-Dsonar.scm.revision=${revision}`)
-    }
-    if (isGuard) args.push(revision)
-    const result = spawnSync(executable, [...prefix, ...args], {
-      stdio: 'inherit',
-      env: isScanner
-        ? {
-            ...checkEnv,
-            SONAR_TOKEN: token,
-            SONAR_VERBOSE: 'false',
-            SONAR_LOG_LEVEL: 'INFO',
-          }
-        : isGuard
-          ? { ...checkEnv, SONAR_TOKEN: token }
-          : checkEnv,
-    })
-    if (result.error) {
-      const phase = isScanner
-        ? 'SonarQube scanner'
-        : isGuard
-          ? 'global duplication guard'
-          : 'local quality checks'
-      console.error(`Could not start ${phase}.`)
-      return 1
-    }
-    if (result.status !== 0) return result.status ?? 1
-  }
-  return 0
+    {
+      ...checkEnv,
+      SONAR_TOKEN: token,
+      SONAR_VERBOSE: 'false',
+      SONAR_LOG_LEVEL: 'INFO',
+    },
+    'SonarQube scanner'
+  )
+  if (scannerStatus !== 0) return scannerStatus
+  return runQualityPhase(
+    executable,
+    [...prefix, 'quality:duplication', revision],
+    { ...checkEnv, SONAR_TOKEN: token },
+    'global duplication guard'
+  )
 }
 
 if (

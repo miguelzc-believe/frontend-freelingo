@@ -13,7 +13,7 @@ export function AuthShell({
   tagline,
   headerAside,
   children,
-}: AuthShellProps) {
+}: Readonly<AuthShellProps>) {
   return (
     <div className="bg-fl-bg flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">

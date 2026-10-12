@@ -18,7 +18,7 @@ export function PasswordField({
   hidePasswordLabel,
   autoComplete,
   required,
-}: PasswordFieldProps) {
+}: Readonly<PasswordFieldProps>) {
   const [showPassword, setShowPassword] = useState(false)
 
   return (

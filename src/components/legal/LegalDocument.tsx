@@ -21,7 +21,7 @@ export function LegalDocument({
   backHref,
   backLabel,
   children,
-}: LegalDocumentProps) {
+}: Readonly<LegalDocumentProps>) {
   const tCommon = useTranslations('common')
 
   return (

@@ -1,8 +1,15 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process'
-import { readFileSync, rmSync } from 'node:fs'
+import {
+  accessSync,
+  constants,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
+  findGit,
   prepareDuplicationScan,
   readCleanRevision,
   runDuplication,
@@ -15,7 +22,13 @@ vi.mock('node:child_process', async (importOriginal) => {
 })
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
-  return { ...actual, readFileSync: vi.fn(), rmSync: vi.fn() }
+  return {
+    ...actual,
+    accessSync: vi.fn(),
+    realpathSync: vi.fn(),
+    readFileSync: vi.fn(),
+    rmSync: vi.fn(),
+  }
 })
 vi.mock('node:timers/promises', () => ({ setTimeout: vi.fn() }))
 
@@ -77,6 +90,10 @@ beforeEach(() => {
     .mockImplementation((_file, args) =>
       args?.[0] === 'rev-parse' ? `${revision}\n` : ''
     )
+  vi.mocked(accessSync).mockReset()
+  vi.mocked(realpathSync)
+    .mockReset()
+    .mockImplementation((path) => String(path))
   vi.mocked(readFileSync).mockReset().mockReturnValue(report)
   vi.mocked(rmSync).mockReset()
   vi.mocked(delay)
@@ -259,6 +276,11 @@ test.each([
     scannerContext: `sonar.scm.revision=wrong value\nsonar.scm.revision=${revision}`,
   }),
   task({ scannerContext: `other.sonar.scm.revision=${revision}` }),
+  task({ scannerContext: `prefix sonar.scm.revision=${revision}` }),
+  task({ scannerContext: `-- sonar.scm.revision=${revision}` }),
+  task({ scannerContext: `sonar.scm.revision=${revision} wrong-value` }),
+  task({ scannerContext: `sonar.scm.revision=${revision}=suffix` }),
+  task({ scannerContext: `sonar.scm.revision\nsonar.projectKey=${project}` }),
   // Do not trust automatic SCM detection in place of the explicit scanner property.
   task({ scannerContext: `sonar.analysis.revision=${revision}` }),
 ])(
@@ -273,10 +295,17 @@ test.each([
   }
 )
 
-test('accepts explicit revision in plain or CRLF scanner context', async () => {
-  queue(task({ scannerContext: `sonar.scm.revision=${revision}\r\n` }))
-  expect(await runDuplication()).toBe(0)
-})
+test.each([
+  `sonar.scm.revision=${revision}\r\n`,
+  `\t - sonar.scm.revision \t= ${revision} \t\r\n`,
+  `\t-sonar.scm.revision=${revision}\n`,
+])(
+  'accepts explicit exact revision with scanner context formatting %#',
+  async (scannerContext) => {
+    queue(task({ scannerContext }))
+    expect(await runDuplication()).toBe(0)
+  }
+)
 
 test.each([
   '',
@@ -434,11 +463,11 @@ test('verifies full HEAD, global tracked edits and scoped authored files without
   expect(readCleanRevision()).toBe(revision)
   const calls = vi.mocked(execFileSync).mock.calls
   expect(calls[0]?.slice(0, 2)).toEqual([
-    'git',
+    '/usr/bin/git',
     ['rev-parse', '--verify', 'HEAD'],
   ])
   expect(calls[1]?.slice(0, 2)).toEqual([
-    'git',
+    '/usr/bin/git',
     ['status', '--porcelain=v1', '--untracked-files=no'],
   ])
   expect(calls[2]?.[1]?.slice(0, 4)).toEqual([
@@ -498,6 +527,52 @@ test('supports full SHA-256 Git revisions', () => {
   expect(readCleanRevision()).toBe('a'.repeat(64))
 })
 
+test('resolves Git from trusted absolute locations, ignoring inherited PATH', () => {
+  vi.stubEnv('PATH', 'relative:/untrusted/bin')
+  vi.mocked(accessSync).mockImplementationOnce(() => {
+    throw new Error('ENOENT')
+  })
+  vi.mocked(realpathSync).mockReturnValueOnce('/opt/system-git/bin/git')
+  expect(findGit()).toBe('/opt/system-git/bin/git')
+  expect(vi.mocked(accessSync).mock.calls).toEqual([
+    ['/usr/bin/git', constants.X_OK],
+    ['/usr/local/bin/git', constants.X_OK],
+  ])
+  expect(realpathSync).toHaveBeenCalledExactlyOnceWith('/usr/local/bin/git')
+})
+
+test('all revision commands launch the same resolved absolute Git without PATH lookup', () => {
+  vi.mocked(realpathSync).mockReturnValueOnce('/opt/system-git/bin/git')
+  expect(readCleanRevision()).toBe(revision)
+  expect(vi.mocked(execFileSync).mock.calls.map(([file]) => file)).toEqual(
+    Array(3).fill('/opt/system-git/bin/git')
+  )
+  expect(realpathSync).toHaveBeenCalledOnce()
+})
+
+test('fails safely without launching commands when trusted Git is unavailable', async () => {
+  vi.mocked(accessSync).mockImplementation(() => {
+    throw new Error('test-only-token')
+  })
+  expect(await runDuplication()).toBe(1)
+  expect(execFileSync).not.toHaveBeenCalled()
+  expect(fetchMock).not.toHaveBeenCalled()
+  expect(console.error).toHaveBeenCalledExactlyOnceWith(
+    'Could not verify the Git revision and worktree.'
+  )
+})
+
+test('falls back to /bin/git after missing or unreadable trusted installations', () => {
+  vi.mocked(accessSync).mockImplementationOnce(() => {
+    throw new Error('ENOENT')
+  })
+  vi.mocked(realpathSync).mockImplementationOnce(() => {
+    throw new Error('EACCES')
+  })
+  expect(findGit()).toBe('/bin/git')
+  expect(accessSync).toHaveBeenLastCalledWith('/bin/git', constants.X_OK)
+})
+
 test('reports Git failures safely', async () => {
   vi.mocked(execFileSync).mockImplementationOnce(() => {
     throw new Error('test-only-token')
@@ -541,6 +616,15 @@ test.each([
     expect(fetchMock).not.toHaveBeenCalled()
   }
 )
+
+test('normalizes trailing slashes without regex backtracking', () => {
+  expect(
+    validateSonarHost(`https://sonar.example.test/sonar${'/'.repeat(10_000)}`)
+  ).toBe('https://sonar.example.test/sonar')
+  expect(validateSonarHost('https://sonar.example.test/')).toBe(
+    'https://sonar.example.test'
+  )
+})
 
 test('safe connection validation and valid preparation work without the token', () => {
   vi.stubEnv('SONAR_TOKEN', '')

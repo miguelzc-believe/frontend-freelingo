@@ -217,7 +217,23 @@ Final local validation passed lint, strict types, both Knip budgets and all
 The mechanical UI detector reported no findings on the changed screens and
 shared components. Build succeeded with existing non-fatal Vite/Rolldown
 warnings. CRAP passed: 1,925 functions, eight above 30 and maximum 56.00.
-Remote duplication measurements are recorded after the clean scan.
+The clean analysis of `d2718314edee50a6711858d2f0caaf49fb93aa53` completed
+successfully with no scanner warnings (task
+`7afad1b3-7f25-4556-a07b-72379244d650`, analysis
+`05993d08-64aa-4bd5-8208-0c939d6c86d0`). Sonar measured **0.6% global
+duplication**, 214 duplicated lines / 33,917 lines and six blocks; the actual
+`pnpm quality:duplication` command passed against the same clean HEAD. This is
+1,195 fewer duplicated lines than the fresh starting analysis. Sonar combined
+coverage was 88.2%. The independent server gate remained ERROR: new coverage
+91.5% and new duplication 0.08843% passed, while the 62 new-code findings failed
+its zero-issues condition. Read-only issue enumeration separated 47 pre-existing
+findings from 15 findings introduced by the new tooling/component prop types.
+The follow-up uses trusted absolute Git locations instead of PATH, exact
+scanner-property parsing instead of backtracking regexes, smaller quality
+phases and readonly component props. Its focused guard/runner suite passed
+142 tests; independent review found no blockers. The post-remediation remote
+analysis is recorded separately below rather than attributing the earlier
+0.6% measurement to an unscanned revision.
 
 ## Removal
 
