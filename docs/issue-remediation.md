@@ -106,3 +106,76 @@ request ownership and hooks. All 69 settings/presentation cases passed, includin
 provider option order and values, eight banner combinations, readonly refresh
 errors and TTS/STT retries. New asynchronous tests settle external promises, not
 `act`-wrapped renders. Scoped ESLint and strict typecheck passed.
+
+## 6. Focused responsibilities and cognitive complexity
+
+Message presentation is a stable top-level component keyed by the existing entry
+ID. Playback remains owned by the mounted conversation; callbacks consult the
+current run at interaction time, and session tokens/controllers/maps never enter
+presentation props. Transcription retry presentation is separate from transport
+recovery. The parent still owns scope invalidation, capture, deadlines and cleanup.
+
+Result application delegates to user confirmation, idempotent assistant text
+insertion and awaited audio loading. Nullish/empty text, authoritative attempts,
+CEFR, memory announcement ordering, audio error classification and post-await
+run checks are retained. Deduplicated text does not skip audio recovery. Voice
+settings split test execution and sanitized error selection without changing
+saved-key rules, busy lifetime or independent TTS/STT requests.
+
+Validation so far: 79 message/conversation/player/voice-settings cases passed,
+including eight sanitized error combinations and STT-failure transcript recovery.
+The new error-matrix test initially selected the heading's inner wrapper rather
+than its section; the selector was corrected without changing production logic.
+Seven API/recording/i18n files passed 142 cases. Final local gates, browser checks
+and the remote inventory below remain the acceptance evidence, not an assumed
+cognitive-complexity score.
+
+AI form markup is a stable top-level component with readonly presentation props;
+requests, draft validation and submission stay with the admin owner. Its 34
+component tests passed. The temporary pnpm-dlx SonarJS 4.2.2 rule preflight found
+no cognitive-complexity-over-15 or nested-conditional findings in the five
+changed target components. It added no repository dependency or configuration;
+this local preflight is not a substitute for the server analysis.
+
+## Final local validation
+
+`pnpm quality:local` passed lint, strict types, both unchanged dead-code budgets,
+all 1,630 tests in 141 files and CRAP. Fresh V8 coverage: 91.00% lines, 84.62%
+branches, 89.13% statements and 86.62% functions. CRAP measured 1,942 functions,
+eight above 30 and a maximum of 56.00. Existing unused-code findings remain
+visible; no budgets or source exclusions were relaxed. Runtime was Node 25.9.0
+and pnpm 12.5.1; this is not a claim of Node 24/device/deployment acceptance.
+The mechanical UI detector found no findings on the eight changed components.
+Production-build Chromium E2E passed all 76 cases (desktop and mobile emulation),
+including the complete route sweep, settings/keyboard flows, native AudioWorklet,
+private audio and lifecycle regressions. Build succeeded with the existing
+non-fatal Vite/Rolldown warnings. Two independent code reviews found no blockers.
+These checks do not validate physical devices, live FastAPI/providers or screen
+reader announcements. S4084 is explicitly pending the agreed technical review.
+Interactive production-fixture checks also measured zero horizontal overflow at
+1440px and 390px and no links inside status outputs. Screenshots were captured
+under `/tmp/opencode`, but this model cannot inspect image input, so no visual
+screenshot acceptance is claimed. The minimal interactive fixture logged four
+unhandled optional dashboard request errors; the full deterministic E2E suite
+above is the regression evidence, not a claim of a clean live-provider console.
+
+## Final remote analysis
+
+The single authorized scan analyzed clean revision
+`e51d1904b65e7741bfa293740872732c075a6fbc`, with fresh LCOV. Compute task
+`d433c621-4f45-4932-9c74-060d21bebe22` completed successfully on 2026-10-12;
+analysis ID `35fc2451-c8ab-4564-a2a0-82c4a766ce41`.
+
+Read-only enumeration confirmed **one open issue**, the original S4084 in
+`src/components/conversation/MessageAudioPlayer.tsx`: **50 of 51 issues closed**,
+with no new findings. Zero bugs, vulnerabilities and security hotspots. Overall
+combined coverage is 88.5%, new coverage 92.2% and new duplication 0.08568%.
+Global duplication remains 0.6%: 214 duplicated lines / 34,172 lines, six blocks.
+The actual revision-bound `pnpm quality:duplication` command passed.
+
+The server Quality Gate remains **ERROR solely for that one issue**; coverage
+and duplication pass. The scanner's nonzero exit reports this genuine gate
+failure, not a failed compute task. No issue was accepted/resolved manually, no
+rules or thresholds changed and no second scan published. This measurement is
+bound to the revision above; the subsequent final-commit amendment records only
+this documentation/result notice, with no source/test/configuration change.

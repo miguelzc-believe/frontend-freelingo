@@ -21,9 +21,11 @@ import {
   VoiceRecordingError,
   type VoiceRecording,
 } from '@/lib/voice-recording'
-import TranscriptBubble from './TranscriptBubble'
+import ConversationMessage, {
+  type TranscriptEntry,
+} from './ConversationMessage'
 import SessionTimeoutBanner from './SessionTimeoutBanner'
-import MessageAudioPlayer, { VoicePlayback } from './MessageAudioPlayer'
+import { VoicePlayback } from './MessageAudioPlayer'
 import { VoiceQuota, TrialPremiumCta } from './VoiceSessionExtras'
 import { WordTooltip, useWordSave } from '@/components/ui/WordTooltip'
 import type { QuotaStatus } from '@/types/api'
@@ -35,20 +37,6 @@ import {
 import { shouldShowVoiceReviewPrompt } from '@/lib/review-prompt-triggers'
 import { MemorySavedToast } from '@/components/memory/MemorySavedToast'
 import { useTransientToast } from '@/hooks/useTransientToast'
-
-interface TranscriptEntry {
-  id: string
-  role: 'user' | 'assistant'
-  text: string
-  audio?: string | undefined
-  audioError?: 'audioExpired' | 'playbackFailed' | undefined
-  turnStatus?: VoiceTurnResult['status'] | undefined
-  attempts?: number | undefined
-  autoPlay?: boolean | undefined
-  cefrLevel?: string | undefined
-  delivery?: 'pending' | 'resend' | 'rejected' | 'confirmed' | undefined
-  deliveryError?: string | undefined
-}
 
 interface PendingTurn {
   blob: Blob
@@ -68,13 +56,6 @@ interface SessionRun {
   ownerId: number | null
   ownerToken: string
   expiryCheckPending: boolean
-}
-
-function transcriptDescriptionId(entry: TranscriptEntry, id: string) {
-  if (!entry.text) return undefined
-  if (entry.role === 'user' && entry.delivery !== 'confirmed') return undefined
-  if (entry.turnStatus === 'stt_failed') return undefined
-  return id
 }
 
 export default function ConversationMode({
@@ -314,6 +295,100 @@ export default function ConversationMode({
     return url
   }
 
+  function confirmUserTurn(
+    run: SessionRun,
+    result: VoiceTurnResult,
+    clientTurnId: string
+  ) {
+    const pending = run.turns.get(clientTurnId)
+    if (pending) {
+      pending.status = result.status
+      pending.attempts = result.stt_attempts
+      pending.delivery = 'confirmed'
+    }
+    setTranscript((entries) =>
+      entries.map((entry) => {
+        if (entry.id !== clientTurnId) return entry
+        const text =
+          result.status === 'stt_failed' && entry.text === v('processing')
+            ? ''
+            : entry.text
+        return {
+          ...entry,
+          text: result.user_text ?? text,
+          turnStatus: result.status,
+          attempts: pending?.attempts ?? result.stt_attempts,
+          delivery: 'confirmed',
+          deliveryError: undefined,
+        }
+      })
+    )
+  }
+
+  function insertAssistantText(
+    run: SessionRun,
+    turnId: string,
+    text: string
+  ): string {
+    const id = `assistant-${turnId}`
+    setTranscript((entries) => {
+      if (entries.some((entry) => entry.id === id)) return entries
+      return [
+        ...entries,
+        {
+          id,
+          role: 'assistant',
+          text,
+          cefrLevel: run.session?.cefr_level ?? cefrLevel ?? undefined,
+        },
+      ]
+    })
+    return id
+  }
+
+  async function loadAssistantAudio(
+    run: SessionRun,
+    result: VoiceTurnResult,
+    id: string,
+    audioUrl: string
+  ) {
+    try {
+      const blob = await fetchVoiceAudio(audioUrl, run.abort.signal)
+      if (!isCurrent(run)) return
+      const audio = objectUrl(run, blob)
+      setTranscript((entries) =>
+        entries.map((entry) =>
+          entry.id === id
+            ? { ...entry, audio, autoPlay: result.status === 'complete' }
+            : entry
+        )
+      )
+    } catch (error) {
+      if (!isCurrent(run)) return
+      if (
+        error instanceof ConversationApiError &&
+        [401, 410, 429, 503].includes(error.status)
+      ) {
+        requestFailed(run, error)
+        return
+      }
+      setTranscript((entries) =>
+        entries.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                audioError:
+                  error instanceof ConversationApiError &&
+                  [404, 410].includes(error.status)
+                    ? 'audioExpired'
+                    : 'playbackFailed',
+              }
+            : entry
+        )
+      )
+    }
+  }
+
   async function applyResult(
     run: SessionRun,
     result: VoiceTurnResult,
@@ -322,91 +397,12 @@ export default function ConversationMode({
     if (!isCurrent(run)) return
     updateExpiry(run, result)
     if (result.memory_updated) showMemoryToast()
-    if (clientTurnId) {
-      const pending = run.turns.get(clientTurnId)
-      if (pending) {
-        pending.status = result.status
-        pending.attempts = result.stt_attempts
-        pending.delivery = 'confirmed'
-      }
-      setTranscript((entries) =>
-        entries.map((entry) =>
-          entry.id === clientTurnId
-            ? {
-                ...entry,
-                text:
-                  result.user_text ??
-                  (result.status === 'stt_failed' &&
-                  entry.text === v('processing')
-                    ? ''
-                    : entry.text),
-                turnStatus: result.status,
-                attempts: pending?.attempts ?? result.stt_attempts,
-                delivery: 'confirmed',
-                deliveryError: undefined,
-              }
-            : entry
-        )
-      )
-    }
+    if (clientTurnId) confirmUserTurn(run, result, clientTurnId)
     if (result.assistant_text !== null) {
-      const id = `assistant-${result.turn_id}`
-      setTranscript((entries) =>
-        entries.some((entry) => entry.id === id)
-          ? entries
-          : [
-              ...entries,
-              {
-                id,
-                role: 'assistant',
-                text: result.assistant_text!,
-                cefrLevel: run.session?.cefr_level ?? cefrLevel ?? undefined,
-              },
-            ]
-      )
+      const id = insertAssistantText(run, result.turn_id, result.assistant_text)
       if (result.assistant_audio_url) {
-        try {
-          const blob = await fetchVoiceAudio(
-            result.assistant_audio_url,
-            run.abort.signal
-          )
-          if (!isCurrent(run)) return
-          const audio = objectUrl(run, blob)
-          setTranscript((entries) =>
-            entries.map((entry) =>
-              entry.id === id
-                ? {
-                    ...entry,
-                    audio,
-                    autoPlay: result.status === 'complete',
-                  }
-                : entry
-            )
-          )
-        } catch (error) {
-          if (!isCurrent(run)) return
-          if (
-            error instanceof ConversationApiError &&
-            [401, 410, 429, 503].includes(error.status)
-          ) {
-            requestFailed(run, error)
-            return
-          }
-          setTranscript((entries) =>
-            entries.map((entry) =>
-              entry.id === id
-                ? {
-                    ...entry,
-                    audioError:
-                      error instanceof ConversationApiError &&
-                      [404, 410].includes(error.status)
-                        ? 'audioExpired'
-                        : 'playbackFailed',
-                  }
-                : entry
-            )
-          )
-        }
+        await loadAssistantAudio(run, result, id, result.assistant_audio_url)
+        if (!isCurrent(run)) return
       }
     }
     if (result.status === 'llm_failed' || result.status === 'tts_failed')
@@ -790,90 +786,35 @@ export default function ConversationMode({
       <MemorySavedToast visible={memoryToast} announcementId={memoryToastId} />
       <div className="mb-4 min-h-0 flex-1 space-y-3 overflow-y-auto px-2">
         {transcript.map((entry) => (
-          <TranscriptBubble
+          <ConversationMessage
             key={entry.id}
-            role={entry.role}
-            text={entry.text}
+            entry={entry}
             textId={`${transcriptId}-${entry.id}`}
             userAvatar={user?.avatar}
             userInitial={(user?.displayName || user?.username || '?')[0]}
-            languageCode={language}
-            onPointerUp={
-              entry.role === 'assistant'
-                ? () =>
-                    handleTextSelection(
-                      entry.text,
-                      entry.cefrLevel ??
-                        runRef.current?.session?.cefr_level ??
-                        cefrLevel ??
-                        undefined
-                    )
-                : undefined
+            language={language}
+            playback={playback}
+            recording={recording}
+            busy={busy}
+            active={active}
+            onSelect={() =>
+              handleTextSelection(
+                entry.text,
+                entry.cefrLevel ??
+                  runRef.current?.session?.cefr_level ??
+                  cefrLevel ??
+                  undefined
+              )
             }
-          >
-            {entry.audio && (
-              <MessageAudioPlayer
-                src={entry.audio}
-                transcriptId={transcriptDescriptionId(
-                  entry,
-                  `${transcriptId}-${entry.id}`
-                )}
-                playback={playback}
-                autoPlay={entry.autoPlay ?? false}
-                disabled={recording}
-                onActivity={() => {
-                  const run = runRef.current
-                  if (run) activity(run)
-                }}
-              />
-            )}
-            {entry.audioError && (
-              <output className="text-fl-muted-2 block font-mono text-xs">
-                {v(entry.audioError)}
-              </output>
-            )}
-            {entry.deliveryError && (
-              <output className="text-fl-error block font-mono text-xs">
-                {entry.deliveryError}
-              </output>
-            )}
-            {entry.delivery === 'resend' && active && (
-              <button
-                disabled={busy || recording}
-                onClick={() => {
-                  const run = runRef.current
-                  if (run) void send(run, entry.id, false)
-                }}
-                className="border-fl-border mt-2 border px-3 py-2 font-mono text-xs disabled:opacity-40"
-              >
-                {tCommon('retry')}
-              </button>
-            )}
-            {entry.turnStatus === 'stt_failed' &&
-              entry.delivery === 'confirmed' && (
-                <div className="text-fl-error font-mono text-xs">
-                  <output className="block">{v('transcriptionFailed')}</output>
-                  {(entry.attempts ?? 1) < 3 && active ? (
-                    <button
-                      disabled={busy || recording}
-                      onClick={() => {
-                        const run = runRef.current
-                        if (run) void send(run, entry.id, true)
-                      }}
-                      className="border-fl-border mt-2 border px-3 py-2 disabled:opacity-40"
-                    >
-                      {v('retry')} ·{' '}
-                      {v('retryCount', {
-                        count: Math.max(0, (entry.attempts ?? 1) - 1),
-                        max: 2,
-                      })}
-                    </button>
-                  ) : (
-                    <output className="block">{v('retryLimit')}</output>
-                  )}
-                </div>
-              )}
-          </TranscriptBubble>
+            onActivity={() => {
+              const run = runRef.current
+              if (run) activity(run)
+            }}
+            onRetry={(retryTranscription) => {
+              const run = runRef.current
+              if (run) void send(run, entry.id, retryTranscription)
+            }}
+          />
         ))}
         <div ref={transcriptEndRef} />
       </div>

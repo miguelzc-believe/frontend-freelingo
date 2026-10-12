@@ -267,6 +267,44 @@ describe('OmniRoute voice settings', () => {
     }
   })
 
+  it.each([
+    ['test', 403, 'adminRequired'],
+    ['test', 422, 'validationFailed'],
+    ['test', 504, 'testTimeout'],
+    ['test', 502, 'testFailed'],
+    ['save', 403, 'adminRequired'],
+    ['save', 422, 'validationFailed'],
+    ['save', 504, 'saveFailed'],
+    ['save', 502, 'saveFailed'],
+  ] as const)(
+    'sanitizes %s failures for HTTP %s as %s and retains the draft',
+    async (action, status, message) => {
+      setup()
+      await change('sttModel', 'draft-model')
+      await change('sttApiKey', 'synthetic-private-key')
+      mocks.apiFetch.mockResolvedValue(
+        response({ detail: 'unsafe-synthetic-private-key' }, status)
+      )
+      const section = screen
+        .getByRole('heading', {
+          name: 'stt',
+        })
+        .closest('section')!
+      fireEvent.click(within(section).getByRole('button', { name: action }))
+      expect(await within(section).findByRole('alert')).toHaveTextContent(
+        message
+      )
+      expect(screen.queryByText(/unsafe-synthetic/)).not.toBeInTheDocument()
+      expect(screen.getByLabelText('sttModel')).toHaveValue('draft-model')
+      expect(screen.getByLabelText('sttApiKey')).toHaveValue(
+        'synthetic-private-key'
+      )
+      expect(
+        within(section).getByRole('button', { name: action })
+      ).toBeEnabled()
+    }
+  )
+
   it('tests STT independently without placing the key in browser storage', async () => {
     setup()
     await byName('sttModel')

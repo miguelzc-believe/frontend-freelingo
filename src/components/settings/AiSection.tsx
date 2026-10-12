@@ -95,6 +95,20 @@ interface Draft {
   maxTokens: string
 }
 
+interface AdminAiFormProps {
+  readonly draft: Readonly<Draft>
+  readonly settings: Readonly<LlmSettings>
+  readonly busy: 'save' | 'test' | null
+  readonly message: Readonly<{
+    kind: 'success' | 'error'
+    key: string
+  }> | null
+  readonly keyReusable: boolean
+  readonly onSave: (event: SubmitEvent<HTMLFormElement>) => void
+  readonly updateDraft: (change: Partial<Draft>) => void
+  readonly onTest: () => void
+}
+
 function draftFromSettings(settings: LlmSettings): Draft {
   return {
     provider: settings.provider ?? '',
@@ -234,16 +248,6 @@ function AdminAiSettings() {
     void submit('save')
   }
 
-  function getProviderLabel(provider: LlmProvider) {
-    if (provider === 'custom') return t('customProvider')
-    return {
-      ollama: 'Ollama',
-      openai: 'OpenAI',
-      anthropic: 'Anthropic',
-      deepseek: 'DeepSeek',
-    }[provider]
-  }
-
   function renderSettings() {
     if (loadFailed) {
       return (
@@ -269,165 +273,16 @@ function AdminAiSettings() {
       )
     }
     return (
-      <form onSubmit={handleSave} noValidate aria-busy={busy !== null}>
-        {!settings.configured && (
-          <output className="text-fl-fg mb-4 block font-mono text-sm">
-            {t('missing')}
-          </output>
-        )}
-        <fieldset
-          disabled={busy !== null}
-          className="space-y-4 disabled:opacity-60"
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label
-                htmlFor="ai-provider"
-                className="text-fl-muted-2 block font-mono text-xs"
-              >
-                {t('provider')}
-              </label>
-              <select
-                id="ai-provider"
-                value={draft.provider}
-                onChange={(e) =>
-                  updateDraft({
-                    provider: e.target.value as LlmProvider | '',
-                  })
-                }
-                className={inputClass}
-                required
-              >
-                <option value="">{t('selectProvider')}</option>
-                {LLM_PROVIDERS.map((provider) => (
-                  <option key={provider} value={provider}>
-                    {getProviderLabel(provider)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label
-                htmlFor="ai-model"
-                className="text-fl-muted-2 block font-mono text-xs"
-              >
-                {t('model')}
-              </label>
-              <input
-                id="ai-model"
-                maxLength={200}
-                value={draft.model}
-                onChange={(e) => updateDraft({ model: e.target.value })}
-                className={inputClass}
-                autoComplete="off"
-                required
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label
-              htmlFor="ai-base-url"
-              className="text-fl-muted-2 block font-mono text-xs"
-            >
-              {t('baseUrl')}
-            </label>
-            <input
-              id="ai-base-url"
-              type="url"
-              maxLength={2048}
-              value={draft.baseUrl}
-              onChange={(e) => updateDraft({ baseUrl: e.target.value })}
-              className={inputClass}
-              autoComplete="off"
-              aria-describedby="ai-url-hint"
-              required={draft.provider === 'custom'}
-            />
-            <p
-              id="ai-url-hint"
-              className="text-fl-muted-3 font-mono text-xs leading-relaxed"
-            >
-              {t('urlHint')}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <label
-              htmlFor="ai-api-key"
-              className="text-fl-muted-2 block font-mono text-xs"
-            >
-              {t('apiKey')}
-            </label>
-            <input
-              id="ai-api-key"
-              type="password"
-              value={draft.apiKey}
-              onChange={(e) => updateDraft({ apiKey: e.target.value })}
-              className={inputClass}
-              autoComplete="new-password"
-              spellCheck={false}
-              aria-describedby="ai-key-hint"
-            />
-            <p
-              id="ai-key-hint"
-              className="text-fl-muted-3 font-mono text-xs leading-relaxed"
-            >
-              {t(keyReusable ? 'keySaved' : 'keyHint')}
-            </p>
-          </div>
-          {draft.provider === 'anthropic' && (
-            <div className="space-y-2">
-              <label
-                htmlFor="ai-max-tokens"
-                className="text-fl-muted-2 block font-mono text-xs"
-              >
-                {t('maxTokens')}
-              </label>
-              <input
-                id="ai-max-tokens"
-                type="number"
-                min={1}
-                max={131072}
-                step={1}
-                value={draft.maxTokens}
-                onChange={(e) => updateDraft({ maxTokens: e.target.value })}
-                className={inputClass}
-                aria-describedby="ai-tokens-hint"
-              />
-              <p
-                id="ai-tokens-hint"
-                className="text-fl-muted-3 font-mono text-xs"
-              >
-                {t('maxTokensHint')}
-              </p>
-            </div>
-          )}
-          <p className="text-fl-muted-3 font-mono text-xs">{t('testHint')}</p>
-          <div className="flex flex-wrap gap-3">
-            <button type="submit" className={buttonClass}>
-              {busy === 'save' ? tCommon('saving') : tCommon('save')}
-            </button>
-            <button
-              type="button"
-              onClick={() => void submit('test')}
-              className={buttonClass}
-            >
-              {busy === 'test' ? t('testing') : t('test')}
-            </button>
-          </div>
-        </fieldset>
-        {busy && (
-          <output className="text-fl-muted-2 mt-3 block font-mono text-sm">
-            {busy === 'save' ? tCommon('saving') : t('testing')}
-          </output>
-        )}
-        {message && (
-          <output
-            role={message.kind === 'error' ? 'alert' : undefined}
-            className={`mt-3 block font-mono text-sm ${message.kind === 'error' ? 'text-fl-error' : 'text-fl-fg'}`}
-          >
-            {t(message.key)}
-          </output>
-        )}
-      </form>
+      <AdminAiForm
+        draft={draft}
+        settings={settings}
+        busy={busy}
+        message={message}
+        keyReusable={keyReusable}
+        onSave={handleSave}
+        updateDraft={updateDraft}
+        onTest={() => void submit('test')}
+      />
     )
   }
 
@@ -438,5 +293,187 @@ function AdminAiSettings() {
       </p>
       {renderSettings()}
     </>
+  )
+}
+
+function AdminAiForm({
+  draft,
+  settings,
+  busy,
+  message,
+  keyReusable,
+  onSave,
+  updateDraft,
+  onTest,
+}: AdminAiFormProps) {
+  const t = useTranslations('settings.ai')
+  const tCommon = useTranslations('common')
+
+  function getProviderLabel(provider: LlmProvider) {
+    if (provider === 'custom') return t('customProvider')
+    return {
+      ollama: 'Ollama',
+      openai: 'OpenAI',
+      anthropic: 'Anthropic',
+      deepseek: 'DeepSeek',
+    }[provider]
+  }
+
+  return (
+    <form onSubmit={onSave} noValidate aria-busy={busy !== null}>
+      {!settings.configured && (
+        <output className="text-fl-fg mb-4 block font-mono text-sm">
+          {t('missing')}
+        </output>
+      )}
+      <fieldset
+        disabled={busy !== null}
+        className="space-y-4 disabled:opacity-60"
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label
+              htmlFor="ai-provider"
+              className="text-fl-muted-2 block font-mono text-xs"
+            >
+              {t('provider')}
+            </label>
+            <select
+              id="ai-provider"
+              value={draft.provider}
+              onChange={(e) =>
+                updateDraft({
+                  provider: e.target.value as LlmProvider | '',
+                })
+              }
+              className={inputClass}
+              required
+            >
+              <option value="">{t('selectProvider')}</option>
+              {LLM_PROVIDERS.map((provider) => (
+                <option key={provider} value={provider}>
+                  {getProviderLabel(provider)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="ai-model"
+              className="text-fl-muted-2 block font-mono text-xs"
+            >
+              {t('model')}
+            </label>
+            <input
+              id="ai-model"
+              maxLength={200}
+              value={draft.model}
+              onChange={(e) => updateDraft({ model: e.target.value })}
+              className={inputClass}
+              autoComplete="off"
+              required
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label
+            htmlFor="ai-base-url"
+            className="text-fl-muted-2 block font-mono text-xs"
+          >
+            {t('baseUrl')}
+          </label>
+          <input
+            id="ai-base-url"
+            type="url"
+            maxLength={2048}
+            value={draft.baseUrl}
+            onChange={(e) => updateDraft({ baseUrl: e.target.value })}
+            className={inputClass}
+            autoComplete="off"
+            aria-describedby="ai-url-hint"
+            required={draft.provider === 'custom'}
+          />
+          <p
+            id="ai-url-hint"
+            className="text-fl-muted-3 font-mono text-xs leading-relaxed"
+          >
+            {t('urlHint')}
+          </p>
+        </div>
+        <div className="space-y-2">
+          <label
+            htmlFor="ai-api-key"
+            className="text-fl-muted-2 block font-mono text-xs"
+          >
+            {t('apiKey')}
+          </label>
+          <input
+            id="ai-api-key"
+            type="password"
+            value={draft.apiKey}
+            onChange={(e) => updateDraft({ apiKey: e.target.value })}
+            className={inputClass}
+            autoComplete="new-password"
+            spellCheck={false}
+            aria-describedby="ai-key-hint"
+          />
+          <p
+            id="ai-key-hint"
+            className="text-fl-muted-3 font-mono text-xs leading-relaxed"
+          >
+            {t(keyReusable ? 'keySaved' : 'keyHint')}
+          </p>
+        </div>
+        {draft.provider === 'anthropic' && (
+          <div className="space-y-2">
+            <label
+              htmlFor="ai-max-tokens"
+              className="text-fl-muted-2 block font-mono text-xs"
+            >
+              {t('maxTokens')}
+            </label>
+            <input
+              id="ai-max-tokens"
+              type="number"
+              min={1}
+              max={131072}
+              step={1}
+              value={draft.maxTokens}
+              onChange={(e) => updateDraft({ maxTokens: e.target.value })}
+              className={inputClass}
+              aria-describedby="ai-tokens-hint"
+            />
+            <p
+              id="ai-tokens-hint"
+              className="text-fl-muted-3 font-mono text-xs"
+            >
+              {t('maxTokensHint')}
+            </p>
+          </div>
+        )}
+        <p className="text-fl-muted-3 font-mono text-xs">{t('testHint')}</p>
+        <div className="flex flex-wrap gap-3">
+          <button type="submit" className={buttonClass}>
+            {busy === 'save' ? tCommon('saving') : tCommon('save')}
+          </button>
+          <button type="button" onClick={onTest} className={buttonClass}>
+            {busy === 'test' ? t('testing') : t('test')}
+          </button>
+        </div>
+      </fieldset>
+      {busy && (
+        <output className="text-fl-muted-2 mt-3 block font-mono text-sm">
+          {busy === 'save' ? tCommon('saving') : t('testing')}
+        </output>
+      )}
+      {message && (
+        <output
+          role={message.kind === 'error' ? 'alert' : undefined}
+          className={`mt-3 block font-mono text-sm ${message.kind === 'error' ? 'text-fl-error' : 'text-fl-fg'}`}
+        >
+          {t(message.key)}
+        </output>
+      )}
+    </form>
   )
 }

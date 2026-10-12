@@ -688,6 +688,9 @@ describe('explicit voice-message conversation', () => {
     await start()
     await recordAndStop()
     await screen.findByText('transcriptionFailed')
+    expect(screen.getByRole('button', { name: 'play' })).not.toHaveAttribute(
+      'aria-describedby'
+    )
     expect(uploads()).toHaveLength(1)
     result.stt_attempts = 2
     fireEvent.click(screen.getByRole('button', { name: /retry ·/ }))
@@ -712,6 +715,31 @@ describe('explicit voice-message conversation', () => {
       'true',
     ])
     expect(uploads()).toHaveLength(3)
+  })
+
+  it('associates user audio with confirmed text after recovering failed STT', async () => {
+    result = {
+      ...complete,
+      user_text: null,
+      assistant_text: null,
+      assistant_audio_url: null,
+      status: 'stt_failed',
+    }
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+    await screen.findByText('transcriptionFailed')
+    expect(screen.getByRole('button', { name: 'play' })).not.toHaveAttribute(
+      'aria-describedby'
+    )
+    result = { ...complete, stt_attempts: 2 }
+    fireEvent.click(screen.getByRole('button', { name: /retry ·/ }))
+    await screen.findByText('Hello there')
+    expect(
+      screen.getByRole('button', { name: 'play' })
+    ).toHaveAccessibleDescription('Hello there')
+    expect(screen.queryByText('transcriptionFailed')).not.toBeInTheDocument()
+    expect(uploads()).toHaveLength(2)
   })
 
   it.each(['llm_failed', 'tts_failed'] as const)(

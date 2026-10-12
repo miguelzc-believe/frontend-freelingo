@@ -244,6 +244,14 @@ function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
     }
   }
 
+  async function testDraft(input: VoiceSettingsInput) {
+    if (kind === 'tts') {
+      playTestAudio(await testVoiceSettings('tts', input))
+      return
+    }
+    await testVoiceSettings('stt', input)
+  }
+
   async function submit(action: 'save' | 'test') {
     if (busy) return
     const input = validatedInput()
@@ -252,12 +260,7 @@ function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
     setMessage(null)
     try {
       if (action === 'test') {
-        if (kind === 'tts') {
-          const result = await testVoiceSettings('tts', input)
-          playTestAudio(result)
-        } else {
-          await testVoiceSettings('stt', input)
-        }
+        await testDraft(input)
         setMessage({ kind: 'success', key: 'testSuccess' })
       } else {
         const canonical = await saveVoiceSettings(kind, input)
@@ -267,13 +270,7 @@ function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
         setMessage({ kind: 'success', key: 'saveSuccess' })
       }
     } catch (error) {
-      let key = action === 'test' ? 'testFailed' : 'saveFailed'
-      if (error instanceof LlmSettingsApiError) {
-        if (error.status === 403) key = 'adminRequired'
-        else if (error.status === 422) key = 'validationFailed'
-        else if (action === 'test' && error.status === 504) key = 'testTimeout'
-      }
-      setMessage({ kind: 'error', key })
+      setMessage({ kind: 'error', key: submissionErrorKey(action, error) })
     } finally {
       setBusy(null)
     }
@@ -454,6 +451,15 @@ function VoiceServiceForm({ kind }: { readonly kind: 'tts' | 'stt' }) {
       )}
     </section>
   )
+}
+
+function submissionErrorKey(action: 'save' | 'test', error: unknown) {
+  if (error instanceof LlmSettingsApiError) {
+    if (error.status === 403) return 'adminRequired'
+    if (error.status === 422) return 'validationFailed'
+    if (action === 'test' && error.status === 504) return 'testTimeout'
+  }
+  return action === 'test' ? 'testFailed' : 'saveFailed'
 }
 
 function playTestAudio(result: TtsVoiceTestResult) {

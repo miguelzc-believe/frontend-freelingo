@@ -275,6 +275,18 @@ initial load/effects before synthetic interaction. The wrappers are retained
 with this evidence, without rule suppressions, issue acceptance or a green-gate
 claim. No new findings remain in the tooling/auth/legal components.
 
+### Categorized issue remediation (2026-10-12)
+
+The six-category follow-up is documented in [issue remediation](issue-remediation.md).
+Fresh local checks passed 1,630 tests in 141 files (91.00% V8 line coverage),
+strict types, lint, unchanged Knip/CRAP budgets and all 76 production E2E cases.
+The clean scan of `e51d1904b65e7741bfa293740872732c075a6fbc` closed 50 of the
+51 findings without introducing new ones. Sonar combined coverage is 88.5%,
+new coverage 92.2% and global duplication remains 0.6%; the revision-bound guard
+passed. The server gate remains ERROR solely for S4084 (audio captions), pending
+the agreed audio-only applicability review. No empty tracks, synthetic timings,
+suppressions, accepted issues or green-gate claim were used.
+
 ## Removal
 
 To remove these controls, remove the Knip/Stryker configs, quality budgets,
