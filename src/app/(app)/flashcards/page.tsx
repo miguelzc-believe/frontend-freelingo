@@ -62,7 +62,7 @@ export default function FlashcardsPage() {
   const activeLangCode = activeLanguage?.code
 
   useEffect(() => {
-    loadDue()
+    void loadDue()
   }, [loadDue, activeLangCode])
 
   async function reviewCard(quality: number) {

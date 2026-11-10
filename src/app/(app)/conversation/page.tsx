@@ -147,7 +147,7 @@ export default function ConversationPage() {
 
   useEffect(() => {
     if (stripeEnabled && !isSubscribed(user, stripeEnabled)) {
-      fetchFreemium()
+      void fetchFreemium()
     }
   }, [stripeEnabled, user, fetchFreemium])
 

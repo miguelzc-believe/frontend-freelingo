@@ -50,7 +50,7 @@ export function LandingNav({
       const subscribed = await hasActiveLandingSubscription()
       if (!canceled) setShowPricing(!subscribed)
     }
-    checkSubscription()
+    void checkSubscription()
 
     return () => {
       canceled = true

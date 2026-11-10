@@ -105,7 +105,7 @@ export default function AdminSystemPage() {
       }
     }
 
-    loadBanner()
+    void loadBanner()
     // The admin state is loaded once; subsequent edits remain local until Save.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

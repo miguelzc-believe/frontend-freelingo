@@ -42,7 +42,7 @@ export default function MyLanguagesPage() {
   }, [fetchLanguages])
 
   useEffect(() => {
-    load()
+    void load()
   }, [load])
 
   async function handleSwitch(info: UserLanguageInfo) {

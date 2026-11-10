@@ -338,7 +338,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (stripeEnabled && !isSubscribed(user, stripeEnabled)) {
-      fetchFreemium()
+      void fetchFreemium()
     }
   }, [stripeEnabled, user, fetchFreemium])
 
@@ -406,14 +406,14 @@ export default function ChatPage() {
         return
       }
       if (data[0]) {
-        selectConversation(data[0].id)
+        void selectConversation(data[0].id)
       } else {
         setActiveId(null)
         setMessages([])
       }
       setLoadingConvs(false)
     }
-    init()
+    void init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLanguage?.code])
 
@@ -442,18 +442,18 @@ export default function ChatPage() {
   function retryConversations() {
     setConvLoadError(false)
     setLoadingConvs(true)
-    loadConversations()
+    void loadConversations()
       .then((data) => {
         if (data === null) {
           setConvLoadError(true)
         } else if (data[0]) {
-          selectConversation(data[0].id)
+          void selectConversation(data[0].id)
         }
       })
       .finally(() => setLoadingConvs(false))
   }
 
-  async function newChat() {
+  function newChat() {
     // Don't create — let the first message auto-create the conversation
     dismissTooltip()
     setActiveId(null)
@@ -491,7 +491,7 @@ export default function ChatPage() {
     }
     if (activeId === id) {
       if (updated[0]) {
-        selectConversation(updated[0].id)
+        void selectConversation(updated[0].id)
       } else {
         setActiveId(null)
         setMessages([])
@@ -521,7 +521,7 @@ export default function ChatPage() {
     function handleStreamEvent(data: ChatSseEvent) {
       if (data.conversation_id && !activeId) {
         setActiveId(data.conversation_id)
-        loadConversations().then((list) => list && setConversations(list))
+        void loadConversations().then((list) => list && setConversations(list))
       }
       if (data.response_reset) {
         dismissTooltip()
@@ -549,7 +549,7 @@ export default function ChatPage() {
         ) {
           decrementFreemium('chat_remaining')
         }
-        loadConversations().then((list) => list && setConversations(list))
+        void loadConversations().then((list) => list && setConversations(list))
       }
       if (data.memory_updated) showMemoryToast()
     }

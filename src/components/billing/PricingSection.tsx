@@ -87,7 +87,7 @@ export default function PricingSection({
       setSubscribed(state.subscribed)
       setTrialUsed(state.trialUsed)
     }
-    checkSubscription()
+    void checkSubscription()
   }, [hasSession])
 
   if (!stripeEnabled) return null

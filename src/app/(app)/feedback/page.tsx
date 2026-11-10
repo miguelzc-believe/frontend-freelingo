@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale, useTranslations } from 'use-intl'
 import { apiFetch } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
@@ -100,6 +100,11 @@ function CreateModal({ type, onClose, onCreated }: Readonly<CreateModalProps>) {
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const titleInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    titleInputRef.current?.focus()
+  }, [])
 
   const inputCls =
     'w-full bg-fl-bg border border-fl-border px-4 py-3 font-mono text-xs text-fl-fg placeholder:text-fl-muted-4 focus:outline-none focus:border-fl-border-2 transition-colors resize-none'
@@ -191,8 +196,8 @@ function CreateModal({ type, onClose, onCreated }: Readonly<CreateModalProps>) {
                   ? t('placeholderTitleFeature')
                   : t('placeholderTitleBug')
               }
+              ref={titleInputRef}
               className={inputCls}
-              autoFocus
             />
           </div>
           <div>
@@ -554,7 +559,7 @@ export default function FeedbackPage() {
 
   // Reload when page changes
   useEffect(() => {
-    loadEntries(page, tab, sort, statusFilter)
+    void loadEntries(page, tab, sort, statusFilter)
   }, [loadEntries, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset to page 0 when tab/sort/filter changes
@@ -562,7 +567,7 @@ export default function FeedbackPage() {
     if (page !== 0) {
       setPage(0)
     } else {
-      loadEntries(0, tab, sort, statusFilter)
+      void loadEntries(0, tab, sort, statusFilter)
     }
   }, [tab, sort, statusFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -598,7 +603,7 @@ export default function FeedbackPage() {
     if (targetPage !== page) {
       setPage(targetPage)
     } else {
-      loadEntries(targetPage, tab, sort, statusFilter)
+      void loadEntries(targetPage, tab, sort, statusFilter)
     }
   }
 
@@ -862,7 +867,7 @@ export default function FeedbackPage() {
           onCreated={() => {
             setShowCreate(false)
             setPage(0)
-            loadEntries(0, tab, sort, statusFilter)
+            void loadEntries(0, tab, sort, statusFilter)
           }}
         />
       )}

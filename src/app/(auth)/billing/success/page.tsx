@@ -24,7 +24,8 @@ async function pollSubscription(
   isCancelled: () => boolean,
   setUser: ReturnType<typeof useAuthStore.getState>['setUser']
 ): Promise<ConfirmationStatus> {
-  for (let attempt = 0; attempt < CONFIRMATION_ATTEMPTS; attempt += 1) {
+  // Poll sequentially via recursion — no `await` inside a loop (S9382).
+  const attempt = async (count: number): Promise<ConfirmationStatus> => {
     const res = await apiFetch('/api/auth/me')
     if (!res.ok) throw new Error('me failed')
     const me = await res.json()
@@ -32,12 +33,11 @@ async function pollSubscription(
     if (!isCancelled()) setUser(mappedUser)
 
     if (isPremiumStatus(mappedUser.subscription_status)) return 'confirmed'
-
-    if (attempt < CONFIRMATION_ATTEMPTS - 1) {
-      await wait(CONFIRMATION_DELAY_MS)
-    }
+    if (count >= CONFIRMATION_ATTEMPTS - 1) return 'pending'
+    await wait(CONFIRMATION_DELAY_MS)
+    return attempt(count + 1)
   }
-  return 'pending'
+  return attempt(0)
 }
 
 async function confirmSubscription(

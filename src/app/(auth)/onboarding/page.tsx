@@ -172,8 +172,8 @@ export default function OnboardingPage() {
   )
 
   useEffect(() => {
-    loadConfig()
-    fetchLanguages().then(() => {
+    void loadConfig()
+    void fetchLanguages().then(() => {
       setLanguagesLoaded(true)
       const codes = useLanguageStore.getState().availableLanguageCodes
       if (codes.length > 0 && !codes.includes(targetLanguage)) {
@@ -189,7 +189,7 @@ export default function OnboardingPage() {
     )
   }
 
-  async function handleStep1(e: React.SubmitEvent<HTMLFormElement>) {
+  function handleStep1(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setStep(2)
   }
@@ -323,7 +323,7 @@ export default function OnboardingPage() {
                   onChange={setTargetLanguage}
                   onRetry={() => {
                     setLanguagesLoaded(false)
-                    fetchLanguages()
+                    void fetchLanguages()
                   }}
                   t={t}
                   tCommon={tCommon}

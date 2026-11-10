@@ -87,7 +87,7 @@ export default function AppLayout({
     let cancelled = false
     async function init() {
       // Load Stripe config once (non-blocking)
-      loadConfig()
+      void loadConfig()
       try {
         if (!useAuthStore.getState().accessToken) {
           if (!(await refreshAccessToken())) {
@@ -186,7 +186,7 @@ export default function AppLayout({
       }
     }
 
-    loadFeedbackUnreadCount()
+    void loadFeedbackUnreadCount()
     window.addEventListener('freelingo:feedback-read', loadFeedbackUnreadCount)
     return () => {
       window.removeEventListener(
