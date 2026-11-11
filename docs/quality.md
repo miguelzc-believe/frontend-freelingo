@@ -18,10 +18,25 @@ critical session, API, assessment-answer and language-state code, or
 
 ## Limits and existing debt
 
-Coverage minimums are statements 48%, branches 44%, functions 43% and lines 49%.
-These floors preserve the measured starting point; raise them as coverage improves.
+The coverage campaign target is **above 95% for statements, branches, functions
+and lines**, both in Vitest and in SonarQube's combined and condition coverage.
+The latest complete run passed 2,055 tests in 161 files at 96.52% statements,
+95.00% branches (5,461/5,748), 96.03% functions and 97.76% lines. Vitest floors have been
+ratcheted to statements 90%, branches 85%, functions 87% and lines 91%; raise
+each floor as the measured result improves. SonarQube's global baseline is
+tracked independently because its source denominator includes `scripts/` and
+its coverage import is LCOV-based.
 Application files without tests remain included. Generated `src/routeTree.gen.ts`
 is the only source exclusion from coverage, CRAP and mutation analysis.
+
+The 2026-11-10 SonarQube scan imported that LCOV report and returned a passing
+Quality Gate: global combined coverage 96.5%, line coverage 97.5%, condition
+coverage 95.0% (5,461/5,748, approximately 95.007%) and duplication 0.6%.
+New-code coverage was 96.6%, with 94.7% new-code condition coverage. This was an
+explicitly requested scan of an uncommitted worktree, not a revision-bound clean
+scan: Sonar reported missing blame for modified or untracked tests, and the normal
+clean-revision and duplication guards were not run. Task ID:
+`18877128-d44d-4304-9a3d-dc7647176354`.
 
 `quality-budgets.json` records 19 Knip issues in each mode and CRAP caps of 91
 functions above 30 and a maximum score of 1185.77 (the measured maximum rounded

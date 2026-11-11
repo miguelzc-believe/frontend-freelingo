@@ -243,6 +243,35 @@ describe('PhrasebookPage', () => {
     expect(mockCategories).toHaveBeenNthCalledWith(2, 'de')
   })
 
+  it('retries a failed load using en-GB when no target language is selected', async () => {
+    useLanguageStore.setState({ activeLanguage: null })
+    mockCategories.mockRejectedValueOnce(new Error('offline'))
+    render(<PhrasebookPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'retry' }))
+    expect(await screen.findByText('Greetings')).toBeInTheDocument()
+    expect(mockCategories).toHaveBeenNthCalledWith(2, 'en-GB')
+  })
+
+  it('hides native-language help when the user is not loaded', async () => {
+    useAuthStore.setState({ user: null })
+    render(<PhrasebookPage />)
+    expect(await screen.findByText('Greetings')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /nativeHelpTitle/ })
+    ).not.toBeInTheDocument()
+  })
+
+  it('hides a category when register and search match different phrases', async () => {
+    render(<PhrasebookPage />)
+    await screen.findByText('Greetings')
+    fireEvent.click(screen.getByRole('button', { name: 'formal' }))
+    fireEvent.change(screen.getByPlaceholderText('searchPlaceholder'), {
+      target: { value: 'Hi there' },
+    })
+    expect(screen.queryByText('Greetings')).not.toBeInTheDocument()
+    expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
+  })
+
   it('applies level, register, and search together, then clears all filters', async () => {
     render(<PhrasebookPage />)
     await screen.findByText('Greetings')
@@ -333,5 +362,37 @@ describe('PhrasebookPage', () => {
     expect(await screen.findByText(nativeHelp.summary)).toBeInTheDocument()
     await waitFor(() => expect(mockNativeHelp).toHaveBeenCalledTimes(2))
     expect(mockNativeHelp).toHaveBeenNthCalledWith(2, 'greetings', 'de')
+  })
+
+  it('offers a retry when native help returns no content', async () => {
+    mockNativeHelp.mockResolvedValueOnce(null)
+    render(<PhrasebookPage />)
+    await screen.findByText('Greetings')
+    fireEvent.click(screen.getByRole('button', { name: 'nativeHelpShow' }))
+    expect(
+      await screen.findByRole('button', { name: 'retry' })
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(await screen.findByText(nativeHelp.summary)).toBeInTheDocument()
+  })
+
+  it('copies a phrase and displays confirmation', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    try {
+      render(<PhrasebookPage />)
+      await screen.findByText('Good morning')
+      const copy = screen.getAllByRole('button', { name: 'copyPhrase' })[0]!
+      fireEvent.click(copy)
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith('Good morning')
+      )
+      expect(copy).toHaveTextContent('✓')
+    } finally {
+      Reflect.deleteProperty(navigator, 'clipboard')
+    }
   })
 })

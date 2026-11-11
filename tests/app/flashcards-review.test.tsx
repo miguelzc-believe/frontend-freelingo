@@ -2,9 +2,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FlashcardsPage from '@/app/(app)/flashcards/page'
 
-const { mockApiFetch, mockPlayAudio } = vi.hoisted(() => ({
+const { mockApiFetch, mockPlayAudio, speech, language } = vi.hoisted(() => ({
   mockApiFetch: vi.fn(),
   mockPlayAudio: vi.fn(),
+  speech: { text: ' CIAO! ' },
+  language: { current: { code: 'it-IT' } as { code: string } | null },
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -18,7 +20,7 @@ vi.mock('use-intl', () => ({
 
 vi.mock('@/store/language', () => ({
   useLanguageStore: (selector: (state: object) => unknown) =>
-    selector({ activeLanguage: { code: 'it-IT' } }),
+    selector({ activeLanguage: language.current }),
 }))
 
 vi.mock('@/components/ui/AudioPlayer', () => ({
@@ -41,7 +43,10 @@ vi.mock('@/components/ui/VoiceRecorder', () => ({
     onTranscription: (text: string) => Promise<void>
     disabled: boolean
   }) => (
-    <button disabled={disabled} onClick={() => void onTranscription(' CIAO! ')}>
+    <button
+      disabled={disabled}
+      onClick={() => void onTranscription(speech.text)}
+    >
       Transcribe
     </button>
   ),
@@ -85,6 +90,47 @@ function dueResponse(due = cards) {
 describe('Flashcards review', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    speech.text = ' CIAO! '
+    language.current = { code: 'it-IT' }
+  })
+
+  it('uses the default language for cards when no target language is selected', async () => {
+    language.current = null
+    mockApiFetch.mockResolvedValue(dueResponse())
+    render(<FlashcardsPage />)
+    expect(await screen.findByText('ciao')).toHaveAttribute('lang', 'en-GB')
+  })
+
+  it.each(['http', 'network'] as const)(
+    'shows an empty state when loading cards fails: %s',
+    async (failure) => {
+      if (failure === 'http')
+        mockApiFetch.mockResolvedValue(new Response(null, { status: 503 }))
+      else mockApiFetch.mockRejectedValue(new Error('offline'))
+      render(<FlashcardsPage />)
+      expect(
+        await screen.findByRole('button', { name: '+ generateBtn' })
+      ).toBeEnabled()
+      expect(
+        screen.queryByRole('button', { name: 'tapToReveal' })
+      ).not.toBeInTheDocument()
+    }
+  )
+
+  it('does not generate flashcards for whitespace-only topics', async () => {
+    mockApiFetch.mockResolvedValue(dueResponse())
+    const view = render(<FlashcardsPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: '+ generateBtn' })
+    )
+    fireEvent.change(screen.getByPlaceholderText('topicPlaceholder'), {
+      target: { value: '   ' },
+    })
+    fireEvent.submit(view.container.querySelector('form')!)
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      '/api/flashcards/generate',
+      expect.anything()
+    )
   })
 
   it('provides a named native flip action on both faces, separate from audio and grading', async () => {
@@ -255,6 +301,49 @@ describe('Flashcards review', () => {
     expect(screen.getByText('grazie')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'good' })).toBeNull()
   })
+
+  it('grades a mismatched spoken answer as incorrect', async () => {
+    speech.text = 'arrivederci'
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/flashcards/due'
+          ? dueResponse()
+          : new Response(null, { status: 200 })
+      )
+    )
+    render(<FlashcardsPage />)
+    await screen.findByRole('button', { name: 'tapToReveal' })
+    fireEvent.click(screen.getByRole('button', { name: 'speakingMode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Transcribe' }))
+    expect(await screen.findByText('Grazie mille.')).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/flashcards/7/review',
+      expect.objectContaining({ body: JSON.stringify({ quality: 2 }) })
+    )
+  })
+
+  it.each(['empty response', 'invalid JSON', 'network'])(
+    'recovers from %s when generating cards',
+    async (failure) => {
+      mockApiFetch.mockImplementation((url: string) => {
+        if (url === '/api/flashcards/due') return Promise.resolve(dueResponse())
+        if (failure === 'network') return Promise.reject(new Error('offline'))
+        return Promise.resolve(
+          new Response(failure === 'invalid JSON' ? '{' : '{}', { status: 500 })
+        )
+      })
+      render(<FlashcardsPage />)
+      fireEvent.click(
+        await screen.findByRole('button', { name: '+ generateBtn' })
+      )
+      fireEvent.change(screen.getByPlaceholderText('topicPlaceholder'), {
+        target: { value: 'travel' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'submit' }))
+      expect(await screen.findByText('✕ errorMessage')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'submit' })).toBeEnabled()
+    }
+  )
 
   it('sends trimmed generation settings, closes and resets on success, then reloads due cards', async () => {
     mockApiFetch.mockImplementation((url: string) => {

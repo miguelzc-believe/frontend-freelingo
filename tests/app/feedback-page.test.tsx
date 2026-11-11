@@ -100,6 +100,35 @@ describe('FeedbackPage list and entry actions', () => {
     expect(screen.queryByText('errorLoad')).not.toBeInTheDocument()
   })
 
+  it('renders an unfamiliar status using the safe pending badge style', async () => {
+    mockApiFetch.mockResolvedValue(
+      listResponse([{ ...feature, status: 'legacy' }])
+    )
+    render(<FeedbackPage />)
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+    const badge = screen.getByText('legacy')
+    expect(badge).toHaveClass('border')
+    expect(badge).toBeInTheDocument()
+  })
+
+  it('ignores a whitespace-only comment submitted from the form', async () => {
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/comments') ? jsonResponse({ items: [] }) : listResponse()
+      )
+    )
+    render(<FeedbackPage />)
+    fireEvent.click(await screen.findByText('Add focused practice'))
+    const input = await screen.findByPlaceholderText('commentPlaceholder')
+    fireEvent.change(input, { target: { value: '   ' } })
+    fireEvent.submit(input.closest('form')!)
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      '/api/feedback/10/comments',
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(input).toHaveValue('   ')
+  })
+
   it('shows a load error when the server rejects the request', async () => {
     mockApiFetch.mockResolvedValue(new Response(null, { status: 503 }))
 
@@ -139,6 +168,54 @@ describe('FeedbackPage list and entry actions', () => {
     )
   })
 
+  it('returns to the first page when changing tabs from later results', async () => {
+    mockApiFetch.mockImplementation(async () => listResponse([feature], 11))
+    render(<FeedbackPage />)
+    await screen.findByText('Add focused practice')
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(([url]) => String(url).includes('skip=10'))
+      ).toBe(true)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'tabBugs' }))
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(
+          ([url]) =>
+            String(url).includes('type=bug') && String(url).includes('skip=0')
+        )
+      ).toBe(true)
+    )
+  })
+
+  it('keeps other entries unchanged when a vote succeeds', async () => {
+    const second = {
+      ...feature,
+      id: 11,
+      title: 'Another proposal',
+      vote_count: 9,
+    }
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/vote')
+          ? jsonResponse({ voted: true, vote_count: 4 })
+          : listResponse([feature, second])
+      )
+    )
+    render(<FeedbackPage />)
+    await screen.findByText('Another proposal')
+    const votes = screen.getAllByRole('button', { name: 'voteAction' })
+    fireEvent.click(votes[0]!)
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/10/vote', {
+        method: 'POST',
+      })
+    )
+    expect(screen.getByText('Another proposal')).toBeInTheDocument()
+    expect(screen.getByText('9')).toBeInTheDocument()
+  })
+
   it('cancels list deletion without sending a DELETE request', async () => {
     mockApiFetch.mockResolvedValue(
       listResponse([{ ...feature, author: { ...feature.author, id: 1 } }])
@@ -155,6 +232,37 @@ describe('FeedbackPage list and entry actions', () => {
       method: 'DELETE',
     })
     expect(screen.getByText('Add focused practice')).toBeInTheDocument()
+  })
+
+  it('allows the author to cancel and confirm deletion from the detail view', async () => {
+    let deleted = false
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/feedback/10' && options?.method === 'DELETE') {
+        deleted = true
+        return Promise.resolve(jsonResponse({}))
+      }
+      if (url.endsWith('/comments'))
+        return Promise.resolve(jsonResponse({ items: [] }))
+      return Promise.resolve(
+        deleted
+          ? listResponse([], 0)
+          : listResponse([{ ...feature, author: { ...feature.author, id: 1 } }])
+      )
+    })
+    render(<FeedbackPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Add focused practice/ })
+    )
+    await screen.findByPlaceholderText('commentPlaceholder')
+    fireEvent.click(screen.getByRole('button', { name: 'deleteEntry' }))
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'deleteEntry' }))
+    fireEvent.click(screen.getByRole('button', { name: 'deleteEntryConfirm' }))
+    expect(await screen.findByText('noEntries')).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/10', {
+      method: 'DELETE',
+    })
   })
 
   it('confirms list deletion, updates the list and total, and reloads', async () => {
@@ -460,6 +568,56 @@ describe('FeedbackPage list and entry actions', () => {
     ).toHaveLength(1)
     resolveVote(jsonResponse({ voted: true, vote_count: 4 }))
     expect(await screen.findByRole('button', { name: '▲ 4' })).toBeEnabled()
+  })
+
+  it('keeps detail available when read or comment loading fails and preserves rejected comments', async () => {
+    let commentAttempts = 0
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url.endsWith('/read'))
+        return Promise.resolve(new Response(null, { status: 503 }))
+      if (url.endsWith('/comments') && options?.method === 'POST') {
+        commentAttempts += 1
+        return Promise.resolve(new Response(null, { status: 503 }))
+      }
+      if (url.endsWith('/comments')) return Promise.reject(new Error('offline'))
+      return Promise.resolve(listResponse())
+    })
+    render(<FeedbackPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Add focused practice/ })
+    )
+    const comment = await screen.findByPlaceholderText('commentPlaceholder')
+    fireEvent.change(comment, { target: { value: 'Please add this' } })
+    fireEvent.click(screen.getByRole('button', { name: 'postComment' }))
+    expect(await screen.findByText(/errorSubmit/)).toBeInTheDocument()
+    expect(comment).toHaveValue('Please add this')
+    expect(screen.getByRole('button', { name: 'postComment' })).toBeEnabled()
+    expect(commentAttempts).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: 'backToList' }))
+    expect(await screen.findByText('Add focused practice')).toBeInTheDocument()
+  })
+
+  it('handles an unsuccessful vote without changing the detail vote count', async () => {
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/vote')
+          ? new Response(null, { status: 503 })
+          : url.endsWith('/comments')
+            ? jsonResponse({})
+            : listResponse()
+      )
+    )
+    render(<FeedbackPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Add focused practice/ })
+    )
+    const vote = await screen.findByRole('button', { name: '▲ 3' })
+    fireEvent.click(vote)
+    await waitFor(() => expect(vote).toBeEnabled())
+    expect(vote).toHaveTextContent('▲ 3')
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/10/vote', {
+      method: 'POST',
+    })
   })
 
   it('creates a trimmed feature and reloads the active list', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import React from 'react'
 
 const translate = vi.hoisted(() => (key: string) => key)
@@ -103,4 +103,37 @@ describe('AdminOverviewPage', () => {
     expect(screen.queryByText('4 / 3')).toBeNull()
     expect(screen.queryByText('pastDueSubscriptions')).toBeNull()
   })
+
+  it('displays the active maintenance state', async () => {
+    useConfigStore.setState({ maintenanceMode: true })
+    mockApiFetch.mockResolvedValueOnce(jsonResponse({}))
+    render(<AdminOverviewPage />)
+    expect(screen.getByText('maintenanceOnDesc')).toBeInTheDocument()
+    expect(screen.queryByText('maintenanceOffDesc')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/admin/stats')
+    )
+  })
+
+  it.each(['success', 'failure'] as const)(
+    'ignores a %s response after unmount',
+    async (outcome) => {
+      let resolve!: (response: Response) => void
+      const pending = new Promise<Response>((done) => {
+        resolve = done
+      })
+      mockApiFetch.mockReturnValueOnce(pending)
+      const view = render(<AdminOverviewPage />)
+      view.unmount()
+      await act(async () => {
+        resolve(
+          outcome === 'success'
+            ? jsonResponse({ users_total: 5 })
+            : jsonResponse({}, 503)
+        )
+        await pending
+      })
+      expect(view.container).toBeEmptyDOMElement()
+    }
+  )
 })

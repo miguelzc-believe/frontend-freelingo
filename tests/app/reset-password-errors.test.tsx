@@ -1,10 +1,13 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ResetPasswordPage from '@/app/(auth)/reset-password/page'
 
-const apiFetch = vi.hoisted(() => vi.fn())
+const { apiFetch, navigation } = vi.hoisted(() => ({
+  apiFetch: vi.fn(),
+  navigation: { token: 'valid', push: vi.fn() },
+}))
 
 vi.mock('@/lib/api', () => ({ apiFetch }))
 vi.mock('use-intl', () => ({
@@ -12,8 +15,9 @@ vi.mock('use-intl', () => ({
     `${namespace}.${key}`,
 }))
 vi.mock('@/lib/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
-  useSearchParams: () => new URLSearchParams('token=valid'),
+  useRouter: () => ({ push: navigation.push }),
+  useSearchParams: () =>
+    new URLSearchParams(navigation.token ? `token=${navigation.token}` : ''),
 }))
 vi.mock('@/components/ui/app-link', () => ({
   default: ({ href, children }: React.PropsWithChildren<{ href: string }>) => (
@@ -22,7 +26,11 @@ vi.mock('@/components/ui/app-link', () => ({
 }))
 
 describe('reset password errors', () => {
-  beforeEach(() => apiFetch.mockReset())
+  beforeEach(() => {
+    apiFetch.mockReset()
+    navigation.push.mockReset()
+    navigation.token = 'valid'
+  })
 
   it.each([
     [400, 'Invalid or expired reset token', 'auth.resetPassword.error'],
@@ -129,5 +137,64 @@ describe('reset password errors', () => {
     expect(
       screen.getByPlaceholderText('auth.resetPassword.newPassword')
     ).toHaveAccessibleDescription('auth.register.invalidPassword')
+  })
+
+  it('disables submission when the reset token is missing', () => {
+    navigation.token = ''
+    render(<ResetPasswordPage />)
+    expect(
+      screen.getByText('auth.resetPassword.missingToken')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'auth.resetPassword.submit' })
+    ).toBeDisabled()
+    expect(apiFetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects mismatched passwords without making a request', async () => {
+    render(<ResetPasswordPage />)
+    fireEvent.change(
+      screen.getByPlaceholderText('auth.resetPassword.newPassword'),
+      { target: { value: 'ValidPwd12!' } }
+    )
+    fireEvent.change(
+      screen.getByPlaceholderText('auth.resetPassword.confirmPassword'),
+      { target: { value: 'DifferentPwd12!' } }
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'auth.resetPassword.submit' })
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'auth.resetPassword.mismatch'
+    )
+    expect(apiFetch).not.toHaveBeenCalled()
+  })
+
+  it('shows success and redirects to login after two seconds', async () => {
+    apiFetch.mockResolvedValueOnce(new Response(null, { status: 200 }))
+    render(<ResetPasswordPage />)
+    fireEvent.change(
+      screen.getByPlaceholderText('auth.resetPassword.newPassword'),
+      { target: { value: 'ValidPwd12!' } }
+    )
+    fireEvent.change(
+      screen.getByPlaceholderText('auth.resetPassword.confirmPassword'),
+      { target: { value: 'ValidPwd12!' } }
+    )
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: 'auth.resetPassword.submit' })
+        )
+      })
+      expect(screen.getByText('auth.resetPassword.success')).toBeInTheDocument()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000)
+      })
+      expect(navigation.push).toHaveBeenCalledWith('/login')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -21,7 +21,22 @@ vi.mock('@/components/ui/page-loading', () => ({
   PageLoading: () => <div>loading</div>,
 }))
 vi.mock('@/components/ui/pagination', () => ({
-  Pagination: () => null,
+  Pagination: ({
+    page,
+    totalPages,
+    onPageChange,
+  }: {
+    page: number
+    totalPages: number
+    onPageChange: (page: number) => void
+  }) => (
+    <button
+      disabled={page + 1 >= totalPages}
+      onClick={() => onPageChange(page + 1)}
+    >
+      next page
+    </button>
+  ),
 }))
 
 function jsonResponse(data: unknown) {
@@ -105,5 +120,69 @@ describe('Saved vocabulary list', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('casualidad')).toBeInTheDocument()
     expect(screen.queryByText('myVocabularyEmpty')).not.toBeInTheDocument()
+  })
+
+  it('deletes a saved word and reloads the current page', async () => {
+    let deleted = false
+    mockApiFetch.mockImplementation((_url: string, options?: RequestInit) => {
+      if (options?.method === 'DELETE') {
+        deleted = true
+        return Promise.resolve(jsonResponse({}))
+      }
+      return Promise.resolve(
+        jsonResponse({
+          items: deleted
+            ? []
+            : [
+                {
+                  id: 12,
+                  word: 'hello',
+                  definition: 'greeting',
+                  translation: 'hola',
+                },
+              ],
+          total: deleted ? 0 : 1,
+          page: 1,
+          pages: 1,
+        })
+      )
+    })
+    render(<VocabularyPage />)
+    await screen.findByText('hello')
+    fireEvent.click(screen.getByRole('button', { name: 'delete' }))
+    expect(await screen.findByText('myVocabularyEmpty')).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/flashcards/12', {
+      method: 'DELETE',
+    })
+  })
+
+  it('loads the next page and retains the list after a delete error', async () => {
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'DELETE')
+        return Promise.reject(new Error('offline'))
+      const page = url.includes('page=2') ? 2 : 1
+      return Promise.resolve(
+        jsonResponse({
+          items: [
+            {
+              id: page,
+              word: `word ${page}`,
+              definition: 'definition',
+              translation: 'translation',
+            },
+          ],
+          total: 11,
+          page,
+          pages: 2,
+        })
+      )
+    })
+    render(<VocabularyPage />)
+    await screen.findByText('word 1')
+    fireEvent.click(screen.getByRole('button', { name: 'next page' }))
+    expect(await screen.findByText('word 2')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'delete' }))
+    expect(await screen.findByRole('button', { name: 'delete' })).toBeEnabled()
+    expect(screen.getByText('word 2')).toBeInTheDocument()
   })
 })

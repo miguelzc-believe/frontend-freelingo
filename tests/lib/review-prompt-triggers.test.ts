@@ -4,6 +4,7 @@ import {
   REVIEW_PROMPT_MAX_DISMISSALS,
   VOICE_REVIEW_PROMPT_MIN_SESSION_MS,
   isPlanPositionComplete,
+  shouldShowExerciseReviewPrompt,
   shouldShowUnitReviewPrompt,
   shouldShowVoiceReviewPrompt,
 } from '@/lib/review-prompt-triggers'
@@ -85,6 +86,38 @@ describe('review prompt triggers', () => {
       )
     ).toBe(false)
   })
+
+  it('only prompts after completed exercises outside the dismissal cooldown', () => {
+    const now = 2_000_000_000
+    expect(
+      shouldShowExerciseReviewPrompt(
+        { count: 0, lastDismissedAt: 0 },
+        false,
+        now
+      )
+    ).toBe(false)
+    expect(
+      shouldShowExerciseReviewPrompt(
+        { count: 0, lastDismissedAt: 0 },
+        true,
+        now
+      )
+    ).toBe(true)
+    expect(
+      shouldShowExerciseReviewPrompt(
+        { count: 1, lastDismissedAt: now - 1 },
+        true,
+        now
+      )
+    ).toBe(false)
+    expect(
+      shouldShowExerciseReviewPrompt(
+        { count: 3, lastDismissedAt: 0 },
+        true,
+        now
+      )
+    ).toBe(false)
+  })
 })
 
 describe('plan position completion', () => {
@@ -125,5 +158,18 @@ describe('plan position completion', () => {
     expect(isPlanPositionComplete({ progress_day: 15, total_days: 16 })).toBe(
       false
     )
+  })
+
+  it('does not infer completion from missing coordinates', () => {
+    expect(isPlanPositionComplete({})).toBe(false)
+    expect(isPlanPositionComplete({ progress_day: 16 })).toBe(false)
+    expect(isPlanPositionComplete({ total_days: 16 })).toBe(false)
+    expect(
+      isPlanPositionComplete({
+        completion: null,
+        progress_day: 17,
+        total_days: 16,
+      })
+    ).toBe(true)
   })
 })

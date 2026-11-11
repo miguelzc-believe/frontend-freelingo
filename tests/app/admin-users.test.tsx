@@ -316,6 +316,42 @@ describe('AdminUsersPage', () => {
     await waitFor(() => expect(latestUsersParams().get('skip')).toBe('10'))
   })
 
+  it('returns to the first page when filters change on later results', async () => {
+    mockApiFetch.mockImplementation(async () => listResponse([user], 11))
+    await renderLoadedPage()
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+    await waitFor(() => expect(latestUsersParams().get('skip')).toBe('10'))
+    fireEvent.change(screen.getByRole('combobox', { name: 'roleFilter' }), {
+      target: { value: 'admin' },
+    })
+    await waitFor(() => {
+      expect(latestUsersParams().get('skip')).toBe('0')
+      expect(latestUsersParams().get('role')).toBe('admin')
+    })
+  })
+
+  it('returns to page one when searching or clearing filters from later results', async () => {
+    mockApiFetch.mockImplementation(async () => listResponse([user], 11))
+    await renderLoadedPage()
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+    await waitFor(() => expect(latestUsersParams().get('skip')).toBe('10'))
+    fireEvent.change(screen.getByPlaceholderText('searchPlaceholder'), {
+      target: { value: 'ada' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'searchAction' }))
+    await waitFor(() => {
+      expect(latestUsersParams().get('skip')).toBe('0')
+      expect(latestUsersParams().get('q')).toBe('ada')
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+    await waitFor(() => expect(latestUsersParams().get('skip')).toBe('10'))
+    fireEvent.click(screen.getByRole('button', { name: 'clearFilters' }))
+    await waitFor(() => {
+      expect(latestUsersParams().get('skip')).toBe('0')
+      expect(latestUsersParams().has('q')).toBe(false)
+    })
+  })
+
   it('serializes trimmed search and selected filters and clears them', async () => {
     await renderLoadedPage()
 
@@ -795,5 +831,106 @@ describe('AdminUsersPage', () => {
 
     expect(await screen.findByText('updateUserError')).toBeInTheDocument()
     expect(usersCalls()).toHaveLength(initialCalls)
+  })
+
+  it('deactivates the selected user and refreshes their status', async () => {
+    let active = true
+    mockApiFetch.mockImplementation(
+      async (_url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') {
+          active = false
+          return jsonResponse({})
+        }
+        return listResponse([{ ...user, is_active: active }])
+      }
+    )
+    const { row } = await renderLoadedPage()
+    fireEvent.click(row.getByRole('button', { name: 'deactivate' }))
+    fireEvent.click(
+      within(
+        screen.getByRole('alertdialog', { name: 'deactivateUser' })
+      ).getByRole('button', { name: 'deactivate' })
+    )
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/admin/users/17',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ is_active: false }),
+        })
+      )
+    )
+    expect(
+      await screen.findAllByRole('button', { name: 'activate' })
+    ).toHaveLength(2)
+  })
+
+  it('opens the create form from the create query parameter', async () => {
+    const originalUrl = window.location.href
+    window.history.replaceState({}, '', '/admin/users?create=1')
+    try {
+      render(<AdminUsersPage />)
+      expect(
+        await screen.findByRole('dialog', { name: 'createUser' })
+      ).toBeInTheDocument()
+    } finally {
+      window.history.replaceState({}, '', originalUrl)
+    }
+  })
+
+  it('opens and cancels user actions from the mobile card', async () => {
+    const { container } = await renderLoadedPage()
+    const mobile = container.querySelector('.lg\\:hidden')
+    expect(mobile).not.toBeNull()
+    const actions = within(mobile as HTMLElement)
+    fireEvent.click(actions.getByRole('button', { name: 'deactivate' }))
+    fireEvent.click(
+      within(
+        screen.getByRole('alertdialog', { name: 'deactivateUser' })
+      ).getByRole('button', { name: 'cancel' })
+    )
+    fireEvent.click(actions.getByRole('button', { name: 'delete' }))
+    fireEvent.click(
+      within(screen.getByRole('alertdialog', { name: 'deleteUser' })).getByRole(
+        'button',
+        { name: 'cancel' }
+      )
+    )
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('submits selected native and target languages when creating a user', async () => {
+    useLanguageStore.setState({ availableLanguageCodes: ['en-GB', 'de-DE'] })
+    mockApiFetch.mockImplementation(
+      async (_url: string, options?: RequestInit) =>
+        options?.method === 'POST' ? jsonResponse(user) : listResponse()
+    )
+    const dialog = await openCreateUserForm()
+    fireEvent.change(within(dialog).getByLabelText('fieldNativeLanguage'), {
+      target: { value: 'fr' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('fieldTargetLanguage'), {
+      target: { value: 'de-DE' },
+    })
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'submitCreate' })
+    )
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/admin/users',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"target_language":"de-DE"'),
+        })
+      )
+    )
+    const call = mockApiFetch.mock.calls.find(
+      ([url, options]) =>
+        url === '/api/admin/users' && options?.method === 'POST'
+    )
+    expect(JSON.parse(call![1].body)).toMatchObject({
+      native_language: 'fr',
+      target_language: 'de-DE',
+    })
   })
 })

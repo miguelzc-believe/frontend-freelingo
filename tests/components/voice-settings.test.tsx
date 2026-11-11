@@ -103,6 +103,46 @@ describe('OmniRoute voice settings', () => {
     useAuthStore.setState({ user: null, accessToken: null })
   })
 
+  it.each(['success', 'failure'] as const)(
+    'ignores voice settings responses arriving after unmount: %s',
+    async (outcome) => {
+      useAuthStore.setState({ user: admin, accessToken: 'test' })
+      const pending = deferred<Response>()
+      mocks.apiFetch.mockReturnValue(pending.promise)
+      const view = render(<VoiceProviderSettings />)
+      expect(mocks.apiFetch).toHaveBeenCalled()
+      view.unmount()
+      await act(async () => {
+        pending.resolve(
+          outcome === 'success' ? response(ttsSaved) : response({}, 503)
+        )
+        await pending.promise
+      })
+      expect(view.container).toBeEmptyDOMElement()
+    }
+  )
+
+  it.each(['success', 'failure'] as const)(
+    'ignores read-only voice status responses after unmount: %s',
+    async (outcome) => {
+      useAuthStore.setState({ user: learner, accessToken: 'test' })
+      const pending = deferred<Response>()
+      mocks.apiFetch.mockReturnValue(pending.promise)
+      const view = render(<VoiceProviderSettings />)
+      expect(mocks.apiFetch).toHaveBeenCalledTimes(2)
+      view.unmount()
+      await act(async () => {
+        pending.resolve(
+          outcome === 'success'
+            ? response({ configured: true, model: 'voice-model' })
+            : response({}, 503)
+        )
+        await pending.promise
+      })
+      expect(view.container).toBeEmptyDOMElement()
+    }
+  )
+
   it('renders independent admin TTS/STT forms and never echoes saved credentials', async () => {
     setup()
     for (const loading of screen.getAllByRole('status')) {
@@ -449,6 +489,46 @@ describe('OmniRoute voice settings', () => {
         .getAllByRole('alert')
         .some((node) => node.textContent === 'keyRequired')
     ).toBe(true)
+  })
+
+  it.each([
+    ['ttsBaseUrl', 'not-a-valid-url', 'invalidUrl'],
+    ['ttsVoice', '', 'invalidTts'],
+    ['ttsSpeed', '0.1', 'invalidTts'],
+    ['ttsSpeed', '5', 'invalidTts'],
+  ])(
+    'rejects invalid %s before making a save request',
+    async (field, value, error) => {
+      setup()
+      await change(field, value)
+      fireEvent.click(screen.getAllByRole('button', { name: 'save' })[0]!)
+      expect(await screen.findByRole('alert')).toHaveTextContent(error)
+      expect(
+        mocks.apiFetch.mock.calls.some(
+          ([, options]) => options?.method === 'PUT'
+        )
+      ).toBe(false)
+    }
+  )
+
+  it('recovers each admin form independently after a failed initial load', async () => {
+    useAuthStore.setState({ user: admin, accessToken: 'test' })
+    mocks.apiFetch.mockRejectedValue(new Error('offline'))
+    render(<VoiceProviderSettings />)
+    expect(await screen.findAllByRole('alert')).toHaveLength(2)
+    const tts = screen.getByRole('heading', { name: 'tts' }).parentElement!
+    mocks.apiFetch.mockResolvedValue(response(ttsSaved))
+    fireEvent.click(within(tts).getByRole('button', { name: 'retry' }))
+    expect(await within(tts).findByLabelText('ttsModel')).toHaveValue(
+      ttsSaved.model
+    )
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
+  it('does not fetch settings when there is no authenticated user', () => {
+    const { container } = render(<VoiceProviderSettings />)
+    expect(container).toBeEmptyDOMElement()
+    expect(mocks.apiFetch).not.toHaveBeenCalled()
   })
 
   it('refreshes read-only status after canonical voice settings are saved', async () => {

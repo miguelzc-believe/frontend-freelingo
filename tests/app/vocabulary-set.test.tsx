@@ -106,6 +106,34 @@ beforeEach(() => {
 })
 
 describe('VocabularySetPage', () => {
+  it('uses the default language and preserves an unfamiliar part of speech', async () => {
+    useLanguageStore.setState({ activeLanguage: null })
+    mockApiFetch.mockResolvedValueOnce(
+      jsonResponse({
+        set: {
+          ...vocabularySet,
+          words: [{ ...vocabularySet.words[0], pos: 'particle' }],
+        },
+      })
+    )
+    render(<VocabularySetPage params={{ setId: 'set/one' }} />)
+    expect(await screen.findByText('particle')).toBeInTheDocument()
+    expect(screen.getByText('Haus')).toHaveAttribute('data-language', 'en-GB')
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/vocabulary/set%2Fone?language=en-GB'
+    )
+  })
+
+  it('reports an unexpected non-Error rejection when adding cards', async () => {
+    mockApiFetch.mockResolvedValueOnce(jsonResponse({ set: vocabularySet }))
+    mockApiFetch.mockRejectedValueOnce('offline')
+    render(<VocabularySetPage params={{ setId: 'set/one' }} />)
+    await screen.findByRole('heading', { name: 'Everyday words' })
+    fireEvent.click(screen.getByRole('button', { name: 'addAll' }))
+    expect(await screen.findByText('addFailed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'addAll' })).toBeEnabled()
+  })
+
   it('retains duplicate words and help nodes during unrelated UI updates', async () => {
     mockApiFetch
       .mockResolvedValueOnce(
@@ -216,6 +244,30 @@ describe('VocabularySetPage', () => {
         ],
       }),
     })
+    fireEvent.click(screen.getByRole('button', { name: 'goToFlashcards' }))
+    expect(mockPush).toHaveBeenCalledWith('/flashcards')
+  })
+
+  it('explains that bulk flashcards require an active study plan', async () => {
+    mockApiFetch
+      .mockResolvedValueOnce(jsonResponse({ set: vocabularySet }))
+      .mockResolvedValueOnce(
+        jsonResponse({ detail: 'No active study plan found' }, 400)
+      )
+    render(<VocabularySetPage params={{ setId: 'set/one' }} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'addAll' }))
+    expect(await screen.findByText('noActivePlan')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'addAll' })).toBeEnabled()
+  })
+
+  it('defaults vocabulary requests to en-GB without a selected language', async () => {
+    useLanguageStore.setState({ activeLanguage: null })
+    render(<VocabularySetPage params={{ setId: 'set/one' }} />)
+    await screen.findByRole('heading', { name: 'Everyday words' })
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/vocabulary/set%2Fone?language=en-GB'
+    )
+    expect(screen.getByText('Haus')).toHaveAttribute('data-language', 'en-GB')
   })
 
   it.each([

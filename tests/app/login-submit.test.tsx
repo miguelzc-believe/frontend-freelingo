@@ -124,6 +124,60 @@ describe('login submission', () => {
   })
 
   it.each([
+    [{ detail: [{ msg: 'INVALID EMAIL' }] }, 'invalidEmail'],
+    [
+      { detail: [{ loc: ['body', 'password'], msg: 'wrong password' }] },
+      'error',
+    ],
+    [{ detail: [] }, 'error'],
+    [{}, 'error'],
+  ])('handles structured login errors safely %#', async (payload, message) => {
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(payload), { status: 422 })
+    )
+    render(<LoginPage />)
+    const form = document.querySelector('form')!
+    const inputs = form.querySelectorAll('input')
+    fireEvent.change(inputs[0]!, { target: { value: 'learner@example.test' } })
+    fireEvent.change(inputs[1]!, { target: { value: 'password' } })
+    fireEvent.submit(form)
+    expect(
+      await screen.findByText(new RegExp(`auth\\.login\\.${message}`))
+    ).toBeInTheDocument()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('still navigates after login if the profile endpoint is unavailable', async () => {
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ access_token: 'synthetic-access' }))
+    )
+    apiFetch.mockResolvedValueOnce(new Response(null, { status: 503 }))
+    render(<LoginPage />)
+    const form = document.querySelector('form')!
+    const inputs = form.querySelectorAll('input')
+    fireEvent.change(inputs[0]!, { target: { value: 'learner@example.test' } })
+    fireEvent.change(inputs[1]!, { target: { value: 'password' } })
+    fireEvent.submit(form)
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard'))
+    expect(useAuthStore.getState().accessToken).toBe('synthetic-access')
+    expect(useAuthStore.getState().user).toBeNull()
+  })
+
+  it('shows a generic login failure on network errors', async () => {
+    apiFetch.mockRejectedValueOnce(new Error('offline'))
+    render(<LoginPage />)
+    const form = document.querySelector('form')!
+    const inputs = form.querySelectorAll('input')
+    fireEvent.change(inputs[0]!, { target: { value: 'learner@example.test' } })
+    fireEvent.change(inputs[1]!, { target: { value: 'password' } })
+    fireEvent.submit(form)
+    expect(
+      await screen.findByText(/auth\.login\.loginFailed/)
+    ).toBeInTheDocument()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it.each([
     ['', 'synthetic-password', 'emailRequired'],
     ['learner@example.test', '', 'passwordRequired'],
   ])(

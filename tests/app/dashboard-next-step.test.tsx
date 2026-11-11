@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import React from 'react'
 
 const { mockApiFetch, mockPush } = vi.hoisted(() => ({
@@ -102,6 +102,48 @@ describe('dashboard end-of-plan next step', () => {
       completedToday: [],
     })
   })
+
+  it('distinguishes the next lesson from later lessons and skips actions for missing ids', async () => {
+    const lessons = [
+      { id: 1, title: 'Next lesson' },
+      { id: 2, title: 'Later lesson' },
+      { id: null, title: 'Unassigned lesson' },
+    ].map((lesson) => ({
+      ...lesson,
+      lesson_type: 'grammar',
+      week: 1,
+      day: 1,
+      is_completed: false,
+    }))
+    mockToday(todayPayload({ lessons }))
+    render(<DashboardPage />)
+    expect(
+      await screen.findByRole('heading', { name: 'Next lesson' })
+    ).toBeInTheDocument()
+    const links = screen.getAllByRole('link', { name: 'startLesson' })
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/lesson/1',
+      '/lesson/1',
+      '/lesson/2',
+    ])
+    expect(screen.getByText('Later lesson')).toBeInTheDocument()
+    expect(screen.getByText('Unassigned lesson')).toBeInTheDocument()
+  })
+
+  it.each(['A1', null])(
+    'renders vocabulary progress when its level is missing and plan level is %s',
+    async (level) => {
+      mockDashboard(todayPayload({ cefr_level: level }), {
+        vocabulary_total: 10,
+        vocabulary_mastered: 4,
+        vocabulary_progress: 0.4,
+        vocabulary_level: null,
+      })
+      render(<DashboardPage />)
+      expect(await screen.findByText('vocabularyProgress')).toBeInTheDocument()
+      expect(screen.getByText('40%')).toBeInTheDocument()
+    }
+  )
 
   it('preserves same-day lesson slots across reorder and persistence', async () => {
     const lessons = ['Slot A', 'Slot B'].map((title) => ({
@@ -290,6 +332,31 @@ describe('dashboard end-of-plan next step', () => {
     expect(screen.getByText('planProgress')).toBeInTheDocument()
     expect(screen.getAllByText('startWithAssessment')).toHaveLength(3)
     expect(screen.queryByText('0%')).not.toBeInTheDocument()
+  })
+
+  it('handles an incomplete plan response without inventing a level or duration', async () => {
+    mockToday({
+      lessons: [
+        {
+          id: 9,
+          title: 'Minimal lesson',
+          lesson_type: 'grammar',
+          week: 1,
+          day: 1,
+          is_completed: false,
+        },
+      ],
+    })
+    render(<DashboardPage />)
+    expect(
+      (await screen.findAllByText('Minimal lesson')).length
+    ).toBeGreaterThan(0)
+    expect(useProgressStore.getState().todayLessons[0]).toMatchObject({
+      objectives: [],
+      estimatedMinutes: 25,
+    })
+    expect(screen.queryByText('A1')).not.toBeInTheDocument()
+    expect(screen.queryByText('levelTestReady')).not.toBeInTheDocument()
   })
 
   it('shows plan, vocabulary, and performance progress', async () => {
@@ -512,5 +579,87 @@ describe('dashboard end-of-plan next step', () => {
     expect(screen.getByText('noExercisesYet')).toBeInTheDocument()
     expect(screen.getByText('noSkills')).toBeInTheDocument()
     expect(screen.queryByText('pendingLessons →')).not.toBeInTheDocument()
+  })
+
+  it('recovers from a network error when retrying dashboard loading', async () => {
+    mockToday(todayPayload({}))
+    const original = mockApiFetch.getMockImplementation()!
+    let failed = false
+    mockApiFetch.mockImplementation((url: string) => {
+      if (url === '/api/progress/summary' && !failed) {
+        failed = true
+        return Promise.reject(new Error('offline'))
+      }
+      return original(url)
+    })
+    render(<DashboardPage />)
+    expect(await screen.findByText('body')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect((await screen.findAllByText('allCaughtUp')).length).toBeGreaterThan(
+      0
+    )
+  })
+
+  it('shows skip errors and keeps today’s lesson when the request fails', async () => {
+    mockToday(
+      todayPayload({
+        lessons: [
+          {
+            id: 5,
+            title: 'Lesson A',
+            lesson_type: 'grammar',
+            week: 1,
+            day: 1,
+            objectives: [],
+            estimated_minutes: 25,
+            is_completed: false,
+          },
+        ],
+      })
+    )
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/study-plan/skip-day'
+        ? Promise.reject(new Error('offline'))
+        : original(url)
+    )
+    render(<DashboardPage />)
+    const skip = await screen.findByRole('button', { name: 'skipDay' })
+    fireEvent.click(skip)
+    expect(await screen.findByText('title')).toBeInTheDocument()
+    expect(skip).toBeEnabled()
+    expect(screen.getAllByText('Lesson A').length).toBeGreaterThan(0)
+  })
+
+  it('shows a recoverable billing portal error for past-due users', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'learner',
+        displayName: 'Learner',
+        role: 'user',
+        conversation_max_duration: 30,
+        conversation_inactivity_timeout: 3,
+        subscription_status: 'past_due',
+      },
+    })
+    mockToday(todayPayload({}))
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/billing/portal'
+        ? Promise.resolve(jsonResponse({}, 503))
+        : original(url)
+    )
+    render(<DashboardPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'updatePayment' })
+    )
+    expect(await screen.findByText('portalError')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'updatePayment' })
+      ).toBeEnabled()
+    )
   })
 })

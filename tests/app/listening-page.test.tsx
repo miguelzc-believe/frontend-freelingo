@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { ListeningExercise } from '@/types/api'
 
@@ -32,8 +32,11 @@ vi.mock('use-intl', () => ({
 }))
 vi.mock('@/lib/api', () => ({ apiFetch: mockApiFetch }))
 vi.mock('@/components/ui/page-loading', () => ({
-  PageLoading: ({ label }: { label?: string }) => (
-    <div>{label ?? 'loading'}</div>
+  PageLoading: ({ label, subtext }: { label?: string; subtext?: string }) => (
+    <div>
+      {label ?? 'loading'}
+      {subtext && <span>{subtext}</span>}
+    </div>
   ),
 }))
 vi.mock('@/components/ui/WordTooltip', () => ({
@@ -295,6 +298,37 @@ describe('ListeningPage', () => {
     )
   })
 
+  it('uses B1 when selecting a transcript from an exercise without a level', async () => {
+    mockApi({
+      next: { available: true, exercise: { ...exercise, level: null } },
+    })
+    render(<ListeningPage />)
+    await screen.findByText('Am Bahnhof')
+    await answerExercise(['a', 'b'])
+    const transcript = await screen.findByText('Der Zug fährt um zehn Uhr ab.')
+    fireEvent.pointerUp(transcript)
+    expect(mockHandleTextSelection).toHaveBeenCalledWith(
+      'Der Zug fährt um zehn Uhr ab.',
+      'B1'
+    )
+  })
+
+  it('reports a generation failure when the long poll responds with an HTTP error', async () => {
+    mockApiFetch.mockImplementation((url: string) => {
+      if (url === '/api/listening/next')
+        return Promise.resolve(jsonResponse({ available: false }))
+      if (url === '/api/listening/generate')
+        return Promise.resolve(jsonResponse({}, 202))
+      if (url === '/api/listening/next?wait=true')
+        return Promise.resolve(jsonResponse({}, 503))
+      return Promise.resolve(jsonResponse({}))
+    })
+    render(<ListeningPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+    expect(await screen.findByText('generationFailed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'generate' })).toBeEnabled()
+  })
+
   it('keeps the selected-word tooltip in listening exercises, results and history', async () => {
     wordSelection.word = 'Zug'
     mockApi()
@@ -417,6 +451,19 @@ describe('ListeningPage', () => {
     )
   })
 
+  it('shows an empty history when the history endpoint returns an HTTP error', async () => {
+    mockApi()
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) =>
+      url.startsWith('/api/listening/history?')
+        ? Promise.resolve(new Response(null, { status: 503 }))
+        : original(url, options)
+    )
+    render(<ListeningPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'history' }))
+    expect(await screen.findByText('historyEmpty')).toBeInTheDocument()
+  })
+
   it('reports a rejected exercise request', async () => {
     mockApi({ nextRejects: true })
     render(<ListeningPage />)
@@ -512,6 +559,80 @@ describe('ListeningPage', () => {
 
     expect(await screen.findByText('errorLoading')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'generate' })).toBeEnabled()
+  })
+
+  it('shows a slow-generation warning and aborts the pending request on unmount', async () => {
+    let signal: AbortSignal | undefined
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/listening/next')
+        return Promise.resolve(jsonResponse({ available: false }))
+      if (url === '/api/listening/generate')
+        return Promise.resolve(jsonResponse({}, 202))
+      if (url === '/api/listening/next?wait=true') {
+        signal = options?.signal as AbortSignal
+        return new Promise(() => {})
+      }
+      throw new Error(`Unexpected apiFetch: ${url}`)
+    })
+    const view = render(<ListeningPage />)
+    const generate = await screen.findByRole('button', { name: 'generate' })
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        fireEvent.click(generate)
+        await Promise.resolve()
+      })
+      expect(screen.getByText('generatingDesc')).toBeInTheDocument()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000)
+      })
+      expect(
+        screen.getByText('generatingDesc generatingLong')
+      ).toBeInTheDocument()
+      view.unmount()
+      expect(signal?.aborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('includes the selected voice during generation and handles invalid error JSON', async () => {
+    localStorage.setItem('tts_voice', 'voice one')
+    try {
+      mockApiFetch.mockImplementation((url: string) => {
+        if (url === '/api/listening/next')
+          return Promise.resolve(jsonResponse({ available: false }))
+        if (url === '/api/listening/generate?voice=voice%20one')
+          return Promise.resolve(new Response('invalid', { status: 500 }))
+        throw new Error(`Unexpected apiFetch: ${url}`)
+      })
+      render(<ListeningPage />)
+      fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+      expect(await screen.findByText('errorLoading')).toBeInTheDocument()
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/listening/generate?voice=voice%20one',
+        { method: 'POST' }
+      )
+    } finally {
+      localStorage.removeItem('tts_voice')
+    }
+  })
+
+  it('recovers from invalid attempt error JSON without losing the answers', async () => {
+    mockApi()
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/listening/attempt'
+        ? Promise.resolve(new Response('invalid', { status: 500 }))
+        : original(url)
+    )
+    render(<ListeningPage />)
+    await screen.findByTestId('audio-player')
+    fireEvent.click(screen.getByRole('button', { name: optionLabel(0, 'a') }))
+    fireEvent.click(screen.getByRole('button', { name: optionLabel(1, 'b') }))
+    fireEvent.click(screen.getByRole('button', { name: 'submit' }))
+    expect(await screen.findByText('errorSubmit')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'submit' })).toBeEnabled()
   })
 
   it('reports a polling network error after generation starts', async () => {
@@ -657,4 +778,40 @@ describe('ListeningPage', () => {
       screen.queryByRole('button', { name: 'submit' })
     ).not.toBeInTheDocument()
   })
+
+  it.each([
+    { status: 'none', trial: false, remaining: 1 },
+    { status: 'none', trial: true, remaining: 0 },
+    { status: 'active', trial: false, remaining: 0 },
+  ] as const)(
+    'allows listening for eligible quota or subscription case %#',
+    async ({ status, trial, remaining }) => {
+      useConfigStore.setState({ stripeEnabled: true })
+      useAuthStore.setState({
+        user: {
+          ...freeUser,
+          subscription_status: status,
+          ...(trial
+            ? {
+                freemium_trial_ends_at: new Date(
+                  Date.now() + 86400000
+                ).toISOString(),
+              }
+            : {}),
+        },
+      })
+      useFreemiumStore.setState({
+        status: { listening_remaining: remaining, listening_limit: 3 } as never,
+      })
+      mockApi()
+      render(<ListeningPage />)
+      expect(await screen.findByTestId('audio-player')).toBeInTheDocument()
+      expect(screen.queryByTestId('paywall')).not.toBeInTheDocument()
+      await answerExercise(['a', 'b'])
+      await screen.findByText('resultsLabel')
+      if (status === 'none' && !trial)
+        expect(mockDecrement).toHaveBeenCalledWith('listening_remaining')
+      else expect(mockDecrement).not.toHaveBeenCalled()
+    }
+  )
 })

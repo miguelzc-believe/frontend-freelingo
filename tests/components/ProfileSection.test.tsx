@@ -652,6 +652,67 @@ describe('ProfileSection', () => {
       expect(user?.avatar).toBe('https://example.com/new-avatar.jpg')
     })
 
+    it.each([
+      [2048, 1024, 1024, 512],
+      [1024, 2048, 512, 1024],
+      [200, 300, 200, 300],
+    ])(
+      'resizes a %i×%i avatar to %i×%i before uploading',
+      async (width, height, expectedWidth, expectedHeight) => {
+        const drawImage = vi.fn()
+        vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue({
+          drawImage,
+        } as unknown as CanvasRenderingContext2D)
+        vi.stubGlobal(
+          'Image',
+          class {
+            onload: (() => void) | null = null
+            onerror: (() => void) | null = null
+            width = width
+            height = height
+            set src(_url: string) {
+              setTimeout(() => this.onload?.(), 0)
+            }
+          }
+        )
+        mockApiFetch.mockResolvedValue({
+          ok: true,
+          json: async () => ({ avatar: '/new.png' }),
+        })
+        const { container } = render(<ProfileSection />)
+        await selectFile(
+          container,
+          new File(['photo'], 'photo.png', { type: 'image/png' })
+        )
+        await waitFor(() =>
+          expect(mockApiFetch).toHaveBeenCalledWith(
+            '/api/auth/me/avatar',
+            expect.objectContaining({ method: 'POST' })
+          )
+        )
+        expect(drawImage).toHaveBeenCalledWith(
+          expect.anything(),
+          0,
+          0,
+          expectedWidth,
+          expectedHeight
+        )
+      }
+    )
+
+    it('rejects an image when canvas serialization fails', async () => {
+      vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementationOnce(
+        (callback) => callback(null)
+      )
+      const { container } = render(<ProfileSection />)
+      await selectFile(
+        container,
+        new File(['photo'], 'photo.png', { type: 'image/png' })
+      )
+      expect(await screen.findByText(/avatarTypeError/)).toBeInTheDocument()
+      expect(mockApiFetch).not.toHaveBeenCalled()
+    })
+
     it('shows error for invalid file type', async () => {
       const { container } = render(<ProfileSection />)
       const file = new File(['data'], 'file.pdf', { type: 'application/pdf' })

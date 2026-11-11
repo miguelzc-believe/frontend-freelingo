@@ -168,6 +168,21 @@ describe('ConversationPage', () => {
     expect(sessionStorage.getItem('voice_context')).toBeNull()
   })
 
+  it.each([null, 'text', 42, { unrelated: [] }])(
+    'ignores a valid JSON voice context of unexpected shape %#',
+    async (payload) => {
+      mockToday()
+      sessionStorage.setItem('voice_context', JSON.stringify(payload))
+      render(<ConversationPage />)
+      expect(await screen.findByTestId('conversation-mode')).toBeInTheDocument()
+      expect(lastProps()).toMatchObject({
+        autoStart: false,
+        initialContext: undefined,
+      })
+      expect(sessionStorage.getItem('voice_context')).toBeNull()
+    }
+  )
+
   it('hands the assessment voice trial to the conversation', async () => {
     mockToday()
     sessionStorage.setItem(

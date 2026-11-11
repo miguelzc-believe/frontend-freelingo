@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { ReadingExercise } from '@/types/api'
 
@@ -34,8 +34,11 @@ vi.mock('use-intl', () => ({
 }))
 vi.mock('@/lib/api', () => ({ apiFetch: mockApiFetch }))
 vi.mock('@/components/ui/page-loading', () => ({
-  PageLoading: ({ label }: { label?: string }) => (
-    <div>{label ?? 'loading'}</div>
+  PageLoading: ({ label, subtext }: { label?: string; subtext?: string }) => (
+    <div>
+      {label ?? 'loading'}
+      {subtext && <span>{subtext}</span>}
+    </div>
   ),
 }))
 vi.mock('@/components/ui/WordTooltip', () => ({
@@ -220,6 +223,33 @@ beforeEach(() => {
 })
 
 describe('ReadingPage', () => {
+  it('uses B1 when selecting text from an exercise without a level', async () => {
+    mockApi({
+      next: { available: true, exercise: { ...exercise, level: null } },
+    })
+    render(<ReadingPage />)
+    const text = await screen.findByText('Der Markt ist heute geschlossen.')
+    fireEvent.pointerUp(text)
+    expect(mockHandleTextSelection).toHaveBeenCalledWith(
+      'Der Markt ist heute geschlossen.',
+      'B1'
+    )
+  })
+
+  it('returns to the empty state when the generation long poll fails', async () => {
+    mockApi({ next: { available: false } })
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) =>
+      url === '/api/reading/next?wait=true'
+        ? Promise.resolve(jsonResponse({}, 503))
+        : original(url, options)
+    )
+    render(<ReadingPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+    expect(
+      await screen.findByRole('button', { name: 'generate' })
+    ).toBeEnabled()
+  })
   it('shows a loading state and then the available exercise', async () => {
     mockApi()
     render(<ReadingPage />)
@@ -341,6 +371,41 @@ describe('ReadingPage', () => {
     )
   })
 
+  it('warns about slow generation and cancels the long poll on unmount', async () => {
+    let signal: AbortSignal | undefined
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/reading/next')
+        return Promise.resolve(jsonResponse({ available: false }))
+      if (url === '/api/reading/generate')
+        return Promise.resolve(jsonResponse({}, 202))
+      if (url === '/api/reading/next?wait=true') {
+        signal = options?.signal as AbortSignal
+        return new Promise(() => {})
+      }
+      return Promise.resolve(jsonResponse({ items: [], total: 0 }))
+    })
+    const view = render(<ReadingPage />)
+    const generate = await screen.findByRole('button', { name: 'generate' })
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        fireEvent.click(generate)
+        await Promise.resolve()
+      })
+      expect(screen.getByText('generatingDesc')).toBeInTheDocument()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000)
+      })
+      expect(
+        screen.getByText('generatingDesc generatingLong')
+      ).toBeInTheDocument()
+      view.unmount()
+      expect(signal?.aborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('explains that generation needs an active study plan', async () => {
     mockApi({
       next: { available: false },
@@ -350,6 +415,51 @@ describe('ReadingPage', () => {
     render(<ReadingPage />)
     fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
     expect(await screen.findByText('noActivePlan')).toBeInTheDocument()
+  })
+
+  it.each(['http', 'invalid-json', 'network'] as const)(
+    'remains usable when reading generation fails with %s',
+    async (failure) => {
+      mockApiFetch.mockImplementation((url: string) => {
+        if (url === '/api/reading/next')
+          return Promise.resolve(jsonResponse({ available: false }))
+        if (url === '/api/reading/generate') {
+          if (failure === 'network') return Promise.reject(new Error('offline'))
+          if (failure === 'invalid-json')
+            return Promise.resolve(new Response('invalid', { status: 500 }))
+          return Promise.resolve(jsonResponse({ detail: 'other' }, 500))
+        }
+        throw new Error(`Unexpected apiFetch: ${url}`)
+      })
+      render(<ReadingPage />)
+      fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'generate' })).toBeEnabled()
+      )
+      if (failure !== 'network')
+        expect(screen.getByText('errorLoading')).toBeInTheDocument()
+    }
+  )
+
+  it('returns to the idle state when a generated exercise is not yet available', async () => {
+    mockApiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/reading/generate'
+          ? jsonResponse({}, 202)
+          : jsonResponse({ available: false })
+      )
+    )
+    render(<ReadingPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'generate' }))
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/reading/next?wait=true',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      )
+    )
+    expect(
+      await screen.findByRole('button', { name: 'generate' })
+    ).toBeEnabled()
   })
 
   it('keeps submit disabled until every question is answered', async () => {
@@ -567,4 +677,68 @@ describe('ReadingPage', () => {
       screen.queryByRole('button', { name: 'submit' })
     ).not.toBeInTheDocument()
   })
+
+  it('shows the paywall instead of generating when quota is spent and no exercise is available', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    useAuthStore.setState({ user: freeUser })
+    useFreemiumStore.setState({
+      status: { reading_remaining: 0, reading_limit: 3 } as never,
+    })
+    mockApi({ next: { available: false } })
+    render(<ReadingPage />)
+    expect(await screen.findByTestId('paywall')).toHaveTextContent('reading')
+    expect(
+      screen.queryByRole('button', { name: 'generate' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps history usable when the history request returns an HTTP error', async () => {
+    mockApi()
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string, options?: RequestInit) =>
+      url.startsWith('/api/reading/history?')
+        ? Promise.resolve(jsonResponse({}, 503))
+        : original(url, options)
+    )
+    render(<ReadingPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'history' }))
+    expect(await screen.findByText('historyEmpty')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'practiceMore' })).toBeEnabled()
+  })
+
+  it.each([
+    { status: 'none', trial: false, remaining: 1, blocked: false },
+    { status: 'none', trial: true, remaining: 0, blocked: false },
+    { status: 'active', trial: false, remaining: 0, blocked: false },
+  ] as const)(
+    'allows reading for eligible quota or subscription case %#',
+    async ({ status, trial, remaining, blocked }) => {
+      useConfigStore.setState({ stripeEnabled: true })
+      useAuthStore.setState({
+        user: {
+          ...freeUser,
+          subscription_status: status,
+          ...(trial
+            ? {
+                freemium_trial_ends_at: new Date(
+                  Date.now() + 86400000
+                ).toISOString(),
+              }
+            : {}),
+        },
+      })
+      useFreemiumStore.setState({
+        status: { reading_remaining: remaining, reading_limit: 3 } as never,
+      })
+      mockApi()
+      render(<ReadingPage />)
+      expect(await screen.findByText(exercise.text)).toBeInTheDocument()
+      expect(Boolean(screen.queryByTestId('paywall'))).toBe(blocked)
+      await answerExercise(['a', 'b'])
+      await screen.findByText('resultsLabel')
+      if (status === 'none' && !trial)
+        expect(mockDecrement).toHaveBeenCalledWith('reading_remaining')
+      else expect(mockDecrement).not.toHaveBeenCalled()
+    }
+  )
 })

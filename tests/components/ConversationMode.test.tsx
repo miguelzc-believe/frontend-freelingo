@@ -540,7 +540,7 @@ describe('explicit voice-message conversation', () => {
     expect(await screen.findByText('Hello there')).toBeInTheDocument()
     expect(screen.getByText('Welcome back')).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'play' })
+      screen.getByRole('button', { name: 'play', description: 'Hello there' })
     ).toHaveAccessibleDescription('Hello there')
     expect(
       screen.getByRole('button', { name: 'pause' })
@@ -598,6 +598,20 @@ describe('explicit voice-message conversation', () => {
     expect(capture.media).toHaveBeenCalledTimes(2)
     expect(capture.stopTrack).toHaveBeenCalledTimes(2)
     expect(capture.close).toHaveBeenCalledTimes(2)
+  })
+
+  it('handles a stopped recording with no captured audio as cancelled', async () => {
+    render(<ConversationMode />)
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'record' }))
+    await waitFor(() => expect(capture.nodes).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: 'stopAndSend' }))
+    await act(async () => capture.nodes[0]!.emit({ type: 'stopped' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('emptyRecording')
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(uploads()).toHaveLength(0)
+    expect(createUrl).not.toHaveBeenCalled()
   })
 
   it('cancels while permission is pending and ignores the late grant after recording again', async () => {
@@ -890,6 +904,46 @@ describe('explicit voice-message conversation', () => {
     expect(play).not.toHaveBeenCalled()
   })
 
+  it('keeps the session live when assistant audio fails transiently', async () => {
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url.includes('/audio/')
+        ? Promise.resolve(response({ detail: 'audio_provider_error' }, 500))
+        : original(url, options)
+    )
+    render(<ConversationMode />)
+    await start()
+    await recordAndStop()
+
+    expect(await screen.findByText('playbackFailed')).toBeInTheDocument()
+    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    expect(screen.queryByText('sessionExpired')).toBeNull()
+  })
+
+  it.each([
+    [401, 'errorUnauthorized'],
+    [410, 'sessionExpired'],
+    [429, 'errorMessage'],
+    [503, 'errorVoiceServicesUnavailable'],
+  ])(
+    'ends a session when assistant audio returns authoritative HTTP %i',
+    async (status, message) => {
+      const original = mocks.api.getMockImplementation()!
+      mocks.api.mockImplementation((url: string, options: RequestInit) =>
+        url.includes('/audio/')
+          ? Promise.resolve(response({ detail: 'unknown' }, status))
+          : original(url, options)
+      )
+      render(<ConversationMode />)
+      await start()
+      await recordAndStop()
+      expect(await screen.findByRole('alert')).toHaveTextContent(message)
+      expect(screen.getByText('Welcome back')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'startNew' })).toBeEnabled()
+    }
+  )
+
   it('ignores a stale activity 410 after a new session starts', async () => {
     const pending = deferred<ReturnType<typeof response>>()
     const original = mocks.api.getMockImplementation()!
@@ -954,6 +1008,50 @@ describe('explicit voice-message conversation', () => {
       'errorVoiceServicesUnavailable'
     )
     expect(capture.media).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [401, 'unauthorized', 'errorUnauthorized'],
+    [404, 'not_found', 'errorUnauthorized'],
+    [410, 'session_expired', 'sessionExpired'],
+    [422, 'invalid_recording', 'errorTranscription'],
+    [409, 'session_busy', 'errorConnection'],
+    [500, 'provider_error', 'errorConnection'],
+    [503, 'voice_services_unavailable', 'errorVoiceServicesUnavailable'],
+    [503, 'unknown_code', 'errorVoiceServicesUnavailable'],
+    [429, 'quota_exceeded_sessions', 'quotaExceededSessions'],
+    [429, 'quota_exceeded_time', 'quotaExceededTime'],
+    [429, 'quota_exceeded_tokens', 'quotaExceededTokens'],
+    [402, 'no_active_plan', 'noActivePlan'],
+    [403, 'subscription_required', 'noActivePlan'],
+    [403, 'services_disabled', 'errorServicesDisabled'],
+    [403, 'unknown_code', 'errorMessage'],
+  ] as const)(
+    'maps start error %i/%s to a localized message',
+    async (status, code, message) => {
+      mocks.api.mockImplementation((url: string) =>
+        url === '/api/conversation/sessions'
+          ? Promise.resolve(response({ detail: code }, status))
+          : Promise.resolve(response(null))
+      )
+      render(<ConversationMode />)
+      fireEvent.click(screen.getByRole('button', { name: 'start' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent(message)
+      expect(screen.queryByText(code)).toBeNull()
+    }
+  )
+
+  it('uses the generic connection message for non-API failures', async () => {
+    mocks.api.mockImplementation((url: string) =>
+      url === '/api/conversation/sessions'
+        ? Promise.reject(new TypeError('offline'))
+        : Promise.resolve(response(null))
+    )
+    render(<ConversationMode />)
+    fireEvent.click(screen.getByRole('button', { name: 'start' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'errorConnection'
+    )
   })
 
   it('checks the backend deadline before expiring a slow provider turn and preserves its response', async () => {
@@ -1091,6 +1189,48 @@ describe('explicit voice-message conversation', () => {
     expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
   })
 
+  it.each([401, 402, 404, 429, 503])(
+    'ends the voice session for an authoritative %s expiry-check response',
+    async (status) => {
+      const original = mocks.api.getMockImplementation()!
+      mocks.api.mockImplementation((url: string, options: RequestInit) =>
+        url === '/api/conversation/sessions/session-1'
+          ? Promise.resolve(response({ detail: 'session_unavailable' }, status))
+          : url === '/api/auth/me'
+            ? Promise.resolve(response({}, 503))
+            : original(url, options)
+      )
+      render(<ConversationMode trialMode />)
+      await start()
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      expect(await screen.findByText('sessionEnded')).toBeInTheDocument()
+      expect(screen.getByText('trialCtaTitle')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'record' })
+      ).not.toBeInTheDocument()
+      await waitFor(() =>
+        expect(mocks.api).toHaveBeenCalledWith('/api/auth/me')
+      )
+    }
+  )
+
+  it('does not reconcile a session while the document is hidden', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    try {
+      render(<ConversationMode />)
+      await start()
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      expect(
+        mocks.api.mock.calls.some(
+          ([url]) => url === '/api/conversation/sessions/session-1'
+        )
+      ).toBe(false)
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    } finally {
+      hidden.mockRestore()
+    }
+  })
+
   it('does not overlap expiry checks and ignores a stale expiry response after restarting', async () => {
     const original = mocks.api.getMockImplementation()!
     const check = deferred<ReturnType<typeof response>>()
@@ -1121,6 +1261,42 @@ describe('explicit voice-message conversation', () => {
     expect(screen.queryByText('sessionExpired')).toBeNull()
     expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
   })
+
+  it.each([30, 90])(
+    'uses a reconciled inactivity deadline of %i seconds',
+    async (seconds) => {
+      const original = mocks.api.getMockImplementation()!
+      const deadline = new Date(Date.now() + seconds * 1000).toISOString()
+      mocks.api.mockImplementation((url: string, options: RequestInit) => {
+        if (url === '/api/conversation/sessions')
+          return Promise.resolve(
+            response({ ...session, inactivity_expires_at: deadline })
+          )
+        if (url.endsWith('/greeting'))
+          return Promise.resolve(
+            response({ ...greeting, inactivity_expires_at: deadline })
+          )
+        if (url === '/api/conversation/sessions/session-1')
+          return Promise.resolve(
+            response({ ...session, inactivity_expires_at: deadline })
+          )
+        return original(url, options)
+      })
+      render(<ConversationMode />)
+      await start()
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      await waitFor(() =>
+        expect(mocks.api).toHaveBeenCalledWith(
+          '/api/conversation/sessions/session-1',
+          expect.anything()
+        )
+      )
+      if (seconds <= 60)
+        expect(await screen.findByText(/warningTimeout/)).toBeInTheDocument()
+      else expect(screen.queryByText(/warningTimeout/)).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+    }
+  )
 
   it('expires at the absolute deadline even if the backend has extended inactivity', async () => {
     const now = Date.now()
@@ -1308,5 +1484,71 @@ describe('explicit voice-message conversation', () => {
     expect(screen.getByText('freemiumVoiceRemaining')).toHaveClass(
       'text-red-500'
     )
+  })
+
+  it('keeps the session entry usable when the quota refresh is not OK', async () => {
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url === '/api/auth/quota'
+        ? Promise.resolve(response({ detail: 'quota unavailable' }, 503))
+        : original(url, options)
+    )
+
+    render(<ConversationMode />)
+    expect(screen.getByRole('button', { name: 'start' })).toBeEnabled()
+    await start()
+    expect(screen.getByRole('button', { name: 'record' })).toBeEnabled()
+  })
+
+  it('ends a trial into the premium CTA, refreshes trial usage and supports its close callback', async () => {
+    mocks.review.mockReturnValue(true)
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url === '/api/auth/me'
+        ? Promise.resolve(
+            response({
+              id: 1,
+              username: 'learner',
+              role: 'user',
+              subscription_status: 'none',
+            })
+          )
+        : original(url, options)
+    )
+    const onClose = vi.fn()
+    const view = render(
+      <ConversationMode
+        trialMode
+        voiceTrialDurationSeconds={600}
+        onClose={onClose}
+      />
+    )
+    expect(screen.getByText('trialBanner')).toBeInTheDocument()
+    expect(screen.queryByText('startersHint')).toBeNull()
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+
+    expect(screen.getByText('trialCtaTitle')).toBeInTheDocument()
+    expect(screen.getByText('reviewPrompt')).toBeInTheDocument()
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/auth/me'))
+    fireEvent.click(screen.getByRole('button', { name: /back/ }))
+    expect(onClose).toHaveBeenCalledOnce()
+
+    view.unmount()
+  })
+
+  it('keeps the ended trial CTA available when the current-user refresh is not OK', async () => {
+    const original = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation((url: string, options: RequestInit) =>
+      url === '/api/auth/me'
+        ? Promise.resolve(response({}, 503))
+        : original(url, options)
+    )
+    render(<ConversationMode trialMode />)
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: 'endSession' }))
+
+    expect(screen.getByText('trialCtaTitle')).toBeInTheDocument()
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/auth/me'))
   })
 })

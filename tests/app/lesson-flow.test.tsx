@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
   fetchStatus: vi.fn(),
   dismissTooltip: vi.fn(),
   handleTextSelection: vi.fn(),
+  push: vi.fn(),
+  stripeEnabled: false,
+  subscribed: true,
+  trialActive: false,
+  freemiumStatus: null as { lessons_remaining: number } | null,
   translations: vi.fn((key: string) =>
     key === 'invalidExplanation'
       ? spanishMessages.lesson.invalidExplanation
@@ -19,7 +24,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/navigation', () => ({
   useParams: () => ({ id: '1' }),
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: mocks.push, replace: vi.fn() }),
 }))
 vi.mock('@/components/ui/app-link', () => ({
   default: ({ children, href }: { children: ReactNode; href: string }) => (
@@ -34,8 +39,8 @@ vi.mock('@/lib/api', () => ({ apiFetch: mocks.apiFetch }))
 vi.mock('@/store/auth', () => ({
   useAuthStore: (selector: (state: object) => unknown) =>
     selector({ user: { username: 'learner', native_language: 'en' } }),
-  isSubscribed: () => true,
-  isFreemiumTrialActive: () => false,
+  isSubscribed: () => mocks.subscribed,
+  isFreemiumTrialActive: () => mocks.trialActive,
 }))
 vi.mock('@/store/language', () => ({
   useLanguageStore: (selector: (state: object) => unknown) =>
@@ -43,11 +48,11 @@ vi.mock('@/store/language', () => ({
 }))
 vi.mock('@/store/config', () => ({
   useConfigStore: (selector: (state: object) => unknown) =>
-    selector({ stripeEnabled: false }),
+    selector({ stripeEnabled: mocks.stripeEnabled }),
 }))
 vi.mock('@/store/freemium', () => ({
   useFreemiumStore: (selector: (state: object) => unknown) =>
-    selector({ status: null, fetchStatus: mocks.fetchStatus }),
+    selector({ status: mocks.freemiumStatus, fetchStatus: mocks.fetchStatus }),
 }))
 vi.mock('@/store/progress', () => ({
   useProgressStore: (selector: (state: object) => unknown) =>
@@ -58,7 +63,9 @@ vi.mock('@/data/grammar', () => ({
     Promise.resolve([{ slug: 'present-tense', title: 'Present tense' }]),
 }))
 vi.mock('@/components/billing/PaywallBanner', () => ({
-  PaywallBanner: () => null,
+  PaywallBanner: ({ feature }: { feature: string }) => (
+    <div data-testid="paywall-banner">{feature}</div>
+  ),
 }))
 vi.mock('@/components/billing/FreemiumQuotaBanner', () => ({
   FreemiumQuotaBanner: () => null,
@@ -88,7 +95,23 @@ vi.mock('@/components/ui/VoiceRecorder', () => ({
     </div>
   ),
 }))
-vi.mock('@/components/ui/confirm-dialog', () => ({ ConfirmDialog: () => null }))
+vi.mock('@/components/ui/confirm-dialog', () => ({
+  ConfirmDialog: ({
+    open,
+    onConfirm,
+    onCancel,
+  }: {
+    open: boolean
+    onConfirm: () => void
+    onCancel: () => void
+  }) =>
+    open ? (
+      <div role="alertdialog">
+        <button onClick={onConfirm}>confirm exit</button>
+        <button onClick={onCancel}>cancel exit</button>
+      </div>
+    ) : null,
+}))
 vi.mock('@/components/ui/WordTooltip', () => ({
   WordTooltip: () => null,
   useWordSave: () => ({
@@ -196,8 +219,51 @@ describe('LessonPage lesson loading and answer flow', () => {
     mocks.completeLesson.mockReset()
     mocks.fetchStatus.mockReset()
     mocks.dismissTooltip.mockReset()
+    mocks.push.mockReset()
+    mocks.stripeEnabled = false
+    mocks.subscribed = true
+    mocks.trialActive = false
+    mocks.freemiumStatus = null
     mocks.translations.mockClear()
   })
+
+  it('allows cancelling and confirming exit from a lesson', async () => {
+    mockLessonLoad(jsonResponse(lessonPayload))
+    await renderLoadedLesson()
+    fireEvent.click(await screen.findByRole('button', { name: 'exit' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'cancel exit' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(mocks.push).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'exit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'confirm exit' }))
+    expect(mocks.push).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it.each(['custom-format', ''] as const)(
+    'renders an unfamiliar lesson type safely: %j',
+    async (lessonType) => {
+      mocks.apiFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          jsonResponse(
+            url === '/api/lessons/1'
+              ? {
+                  ...lessonPayload,
+                  lesson: { ...lessonPayload.lesson, lesson_type: lessonType },
+                }
+              : {}
+          )
+        )
+      )
+      await renderLoadedLesson()
+      expect(await screen.findByText('Eine Lektion')).toBeInTheDocument()
+      if (lessonType) expect(screen.getByText(lessonType)).toBeInTheDocument()
+      else
+        expect(
+          screen.queryByText('lessonTypes.writing')
+        ).not.toBeInTheDocument()
+    }
+  )
 
   it.each([
     { text: { secret: 'private-payload' } },
@@ -294,6 +360,24 @@ describe('LessonPage lesson loading and answer flow', () => {
     expect(mocks.apiFetch).toHaveBeenCalledWith(
       '/api/lessons/1/native-explanation',
       { method: 'POST' }
+    )
+  })
+
+  it('uses B1 for selecting lesson explanation text when its level is unavailable', async () => {
+    const payload = {
+      ...lessonPayload,
+      lesson: {
+        ...lessonPayload.lesson,
+        cefr_level: null,
+        content: { explanation: { text: 'A target rule' } },
+      },
+    }
+    mockLessonLoad(jsonResponse(payload))
+    await renderLoadedLesson()
+    fireEvent.pointerUp(await screen.findByText('A target rule'))
+    expect(mocks.handleTextSelection).toHaveBeenCalledWith(
+      'A target rule',
+      'B1'
     )
   })
 
@@ -471,6 +555,30 @@ describe('LessonPage lesson loading and answer flow', () => {
     expect(screen.getByText('0%')).toBeInTheDocument()
   })
 
+  it('shows the lesson paywall after feedback when the freemium lesson quota is exhausted', async () => {
+    mocks.stripeEnabled = true
+    mocks.subscribed = false
+    mocks.freemiumStatus = { lessons_remaining: 0 }
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(lessonPayload))
+      if (url === '/api/lessons/exercises/10/answer')
+        return Promise.resolve(
+          jsonResponse({ score: 1, feedback: 'Well done' })
+        )
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    await renderLoadedLesson()
+    await enterAnswer('Ich lerne Deutsch.')
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+
+    expect(await screen.findByText('Well done')).toBeInTheDocument()
+    expect(screen.getByTestId('paywall-banner')).toHaveTextContent('lessons')
+    expect(screen.queryByRole('button', { name: 'completeLesson' })).toBeNull()
+    expect(mocks.fetchStatus).toHaveBeenCalled()
+  })
+
   it('shows regeneration errors and replaces the exercise after a retry succeeds', async () => {
     mockLessonLoad(jsonResponse(lessonPayload))
     mocks.apiFetch.mockImplementation((url: string) => {
@@ -560,8 +668,11 @@ describe('LessonPage lesson loading and answer flow', () => {
           : Promise.resolve(jsonResponse({}))
     )
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     fireEvent.click(await screen.findByRole('button', { name: 'Wrong phrase' }))
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'submitAnswer' })).toBeEnabled()
+    )
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
 
     expect(
@@ -922,6 +1033,125 @@ describe('LessonPage lesson loading and answer flow', () => {
     expect(exerciseExplanationAttempts).toBe(2)
   })
 
+  it('preserves other exercises when adding a native hint and explanation', async () => {
+    const payload = {
+      ...lessonPayload,
+      exercises: [
+        { ...lessonPayload.exercises[0], explanation: 'Exercise explanation' },
+        { ...lessonPayload.exercises[0], id: 11, question: 'Second exercise' },
+      ],
+    }
+    mocks.apiFetch.mockImplementation((url: string) => {
+      if (url === '/api/lessons/1')
+        return Promise.resolve(jsonResponse(payload))
+      if (url.endsWith('/native-hint'))
+        return Promise.resolve(jsonResponse({ native_hint: 'Helpful hint' }))
+      if (url.endsWith('/native-explanation'))
+        return Promise.resolve(
+          jsonResponse({ native_explanation: 'Helpful explanation' })
+        )
+      if (url.endsWith('/answer'))
+        return Promise.resolve(
+          jsonResponse({ score: 0, feedback: 'Try again' })
+        )
+      return Promise.resolve(jsonResponse({}))
+    })
+    await renderLoadedLesson()
+    fireEvent.click(
+      await screen.findByRole('button', { name: /showNativeHint en/ })
+    )
+    expect(await screen.findByText('Helpful hint')).toBeInTheDocument()
+    await enterAnswer('Meine Antwort')
+    fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
+    await screen.findByText('Try again')
+    fireEvent.click(
+      screen.getByRole('button', { name: /showNativeExplanation en/ })
+    )
+    expect(await screen.findByText('Helpful explanation')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /next/ }))
+    expect(await screen.findByText('Second exercise')).toBeInTheDocument()
+  })
+
+  it('keeps the native hint action available when the server returns no hint', async () => {
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/lessons/1'
+          ? jsonResponse(lessonPayload)
+          : jsonResponse({})
+      )
+    )
+    await renderLoadedLesson()
+    fireEvent.click(
+      await screen.findByRole('button', { name: /showNativeHint en/ })
+    )
+    await vi.waitFor(() =>
+      expect(mocks.apiFetch).toHaveBeenCalledWith(
+        '/api/lessons/exercises/10/native-hint',
+        { method: 'POST' }
+      )
+    )
+    expect(
+      await screen.findByRole('button', { name: /showNativeHint en/ })
+    ).toBeEnabled()
+  })
+
+  it('keeps the native lesson explanation action available when the server omits it', async () => {
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/lessons/1'
+          ? jsonResponse(lessonPayload)
+          : jsonResponse({})
+      )
+    )
+    await renderLoadedLesson()
+    fireEvent.click(await screen.findByRole('button', { name: /^en/ }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /showNativeExplanation en/ })
+    )
+    await vi.waitFor(() =>
+      expect(mocks.apiFetch).toHaveBeenCalledWith(
+        '/api/lessons/1/native-explanation',
+        { method: 'POST' }
+      )
+    )
+    expect(
+      await screen.findByRole('button', { name: /showNativeExplanation en/ })
+    ).toBeEnabled()
+  })
+
+  it('keeps the exercise explanation action available when the server omits the explanation', async () => {
+    const payload = {
+      ...lessonPayload,
+      exercises: [
+        {
+          ...lessonPayload.exercises[0],
+          score: 0,
+          feedback: 'Try again',
+          explanation: 'A rule',
+          user_answer: 'Answer',
+        },
+      ],
+    }
+    mocks.apiFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/api/lessons/1' ? jsonResponse(payload) : jsonResponse({})
+      )
+    )
+    await renderLoadedLesson()
+    fireEvent.click(
+      await screen.findByRole('button', { name: /showNativeExplanation en/ })
+    )
+    await vi.waitFor(() =>
+      expect(mocks.apiFetch).toHaveBeenCalledWith(
+        '/api/lessons/exercises/10/native-explanation',
+        { method: 'POST' }
+      )
+    )
+    expect(
+      await screen.findByRole('button', { name: /showNativeExplanation en/ })
+    ).toBeEnabled()
+  })
+
   it('submits a selected multiple-choice option and advances to the next exercise', async () => {
     const payload = {
       ...lessonPayload,
@@ -950,12 +1180,14 @@ describe('LessonPage lesson loading and answer flow', () => {
       return Promise.resolve(jsonResponse({}))
     })
 
-    render(<LessonPage />)
+    await renderLoadedLesson()
     expect(
       await screen.findByText('Choose the correct sentence.')
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Ich lernst Deutsch.' }))
-    expect(screen.getByRole('button', { name: 'submitAnswer' })).toBeEnabled()
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'submitAnswer' })).toBeEnabled()
+    )
     fireEvent.click(screen.getByRole('button', { name: 'submitAnswer' }))
 
     expect(await screen.findByText('Incorrect')).toBeInTheDocument()

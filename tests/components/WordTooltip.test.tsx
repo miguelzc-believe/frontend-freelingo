@@ -116,6 +116,66 @@ describe('useWordSave', () => {
     vi.useRealTimers()
   })
 
+  it.each(['', '  ', 'two words'])(
+    'ignores an empty or multiword selection: %j',
+    (text) => {
+      vi.useFakeTimers()
+      mockSelection(text)
+      const { result } = renderHook(() => useWordSave())
+      act(() => result.current.handleTextSelection('context'))
+      act(() => vi.advanceTimersByTime(0))
+      expect(result.current.selectedWord).toBeNull()
+    }
+  )
+
+  it.each([
+    null,
+    { isCollapsed: true, rangeCount: 1 },
+    { isCollapsed: false, rangeCount: 0 },
+  ])('ignores a missing or collapsed browser selection %#', (selection) => {
+    vi.useFakeTimers()
+    vi.spyOn(window, 'getSelection').mockReturnValue(
+      selection as Selection | null
+    )
+    const { result } = renderHook(() => useWordSave())
+    act(() => result.current.handleTextSelection('context'))
+    act(() => vi.advanceTimersByTime(0))
+    expect(result.current.selectedWord).toBeNull()
+  })
+
+  it('does not save when there is no selected word', async () => {
+    const { result } = renderHook(() => useWordSave())
+    await act(async () => result.current.handleSaveWord())
+    expect(mockApiFetch).not.toHaveBeenCalled()
+  })
+
+  it('ignores a rejected save after the selection has changed', async () => {
+    vi.useFakeTimers()
+    mockSelection('perro')
+    const { result } = renderHook(() => useWordSave())
+    act(() => result.current.handleTextSelection('context'))
+    act(() => vi.advanceTimersByTime(0))
+    let reject!: (error: Error) => void
+    mockApiFetch.mockReturnValueOnce(
+      new Promise((_resolve, fail) => {
+        reject = fail
+      })
+    )
+    let save!: Promise<void>
+    act(() => {
+      save = result.current.handleSaveWord()
+    })
+    mockSelection('gato')
+    act(() => result.current.handleTextSelection('new context'))
+    act(() => vi.advanceTimersByTime(0))
+    await act(async () => {
+      reject(new Error('offline'))
+      await save
+    })
+    expect(result.current.selectedWord).toBe('gato')
+    expect(result.current.saveState).toBe('idle')
+  })
+
   it('does not schedule dismissal or clear browser selection after unmount', async () => {
     vi.useFakeTimers()
     mockSelection('perro')

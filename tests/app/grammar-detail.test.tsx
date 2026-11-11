@@ -165,6 +165,34 @@ describe('GrammarDetailPage', () => {
     )
   })
 
+  it.each([
+    ['- First item\n- Second item', 'list'],
+    ['A plain explanation.', 'paragraph'],
+  ])(
+    'renders explanation without a table as a %s',
+    async (explanation, kind) => {
+      setup({ topics: [{ ...topic, explanation }] })
+      await screen.findByRole('heading', { name: topic.title })
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      const content = screen.getByText(
+        kind === 'list' ? 'First item' : 'A plain explanation.'
+      )
+      expect(content.closest(kind === 'list' ? 'ul' : 'div')).not.toBeNull()
+    }
+  )
+
+  it('loads the default target language when none is selected', async () => {
+    mockGetTopics.mockResolvedValue([topic])
+    mockGetNativeHelp.mockResolvedValue(nativeHelp)
+    useLanguageStore.setState({ activeLanguage: null })
+    render(<GrammarDetailPage params={{ slug: topic.slug }} />)
+    await screen.findByRole('heading', { name: topic.title })
+    expect(mockGetTopics).toHaveBeenCalledWith('en-GB')
+    await waitFor(() =>
+      expect(mockGetNativeHelp).toHaveBeenCalledWith(topic.slug, 'en-GB')
+    )
+  })
+
   it('shows a retry action when topics cannot load, then renders after retry', async () => {
     mockGetTopics
       .mockRejectedValueOnce(new Error('offline'))

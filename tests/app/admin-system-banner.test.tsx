@@ -3,12 +3,16 @@ import React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AdminSystemPage from '@/app/(app)/admin/system/page'
+import { useConfigStore } from '@/store/config'
 
-const mockApiFetch = vi.hoisted(() => vi.fn())
+const { mockApiFetch, locale } = vi.hoisted(() => ({
+  mockApiFetch: vi.fn(),
+  locale: { value: 'es' },
+}))
 
 vi.mock('@/lib/api', () => ({ apiFetch: mockApiFetch }))
 vi.mock('use-intl', () => ({
-  useLocale: () => 'es',
+  useLocale: () => locale.value,
   useTranslations:
     () => (key: string, values?: Record<string, string | number>) => {
       if (key === 'dashboardBanner.completion') {
@@ -59,6 +63,8 @@ const generatedTranslations = Object.fromEntries(
 describe('Admin system dashboard banner', () => {
   beforeEach(() => {
     mockApiFetch.mockReset()
+    locale.value = 'es'
+    useConfigStore.setState({ maintenanceMode: false, dashboardBanner: null })
     mockApiFetch.mockResolvedValueOnce(
       new Response(JSON.stringify(null), {
         status: 200,
@@ -66,6 +72,117 @@ describe('Admin system dashboard banner', () => {
       })
     )
   })
+
+  it('enables and disables maintenance after server confirmation', async () => {
+    mockApiFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ maintenance_mode: true }))
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ maintenance_mode: false }))
+      )
+    render(<AdminSystemPage />)
+    await screen.findByText('dashboardBanner.sourceLocale')
+    fireEvent.click(screen.getByRole('button', { name: 'maintenanceEnable' }))
+    expect(await screen.findByText('maintenanceOn')).toBeInTheDocument()
+    expect(useConfigStore.getState().maintenanceMode).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'maintenanceDisable' }))
+    expect(await screen.findByText('maintenanceOff')).toBeInTheDocument()
+    expect(useConfigStore.getState().maintenanceMode).toBe(false)
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/admin/maintenance',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ maintenance_mode: false }),
+      })
+    )
+  })
+
+  it.each(['http', 'network'] as const)(
+    'preserves maintenance state on %s errors',
+    async (failure) => {
+      if (failure === 'http')
+        mockApiFetch.mockResolvedValueOnce(new Response(null, { status: 503 }))
+      else mockApiFetch.mockRejectedValueOnce(new Error('offline'))
+      render(<AdminSystemPage />)
+      await screen.findByText('dashboardBanner.sourceLocale')
+      fireEvent.click(screen.getByRole('button', { name: 'maintenanceEnable' }))
+      expect(await screen.findByText('maintenanceError')).toBeInTheDocument()
+      expect(screen.getByText('maintenanceOff')).toBeInTheDocument()
+      expect(useConfigStore.getState().maintenanceMode).toBe(false)
+    }
+  )
+
+  it('renders an error when the existing banner cannot be loaded', async () => {
+    mockApiFetch
+      .mockReset()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    render(<AdminSystemPage />)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'dashboardBanner.loadError'
+    )
+  })
+
+  it('defaults to English for unsupported UI locales and missing source translations', async () => {
+    locale.value = 'ja'
+    mockApiFetch.mockReset().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          source_locale: 'en',
+          is_active: true,
+          revision: 1,
+          translations: {},
+          updated_at: null,
+        })
+      )
+    )
+    render(<AdminSystemPage />)
+    expect(
+      await screen.findByLabelText('dashboardBanner.sourceLocale')
+    ).toHaveValue('en')
+    expect(
+      screen.getAllByLabelText('dashboardBanner.fieldTitle')[0]
+    ).toHaveValue('')
+  })
+
+  it.each(['failure', 'inactive'] as const)(
+    'handles a banner save response: %s',
+    async (outcome) => {
+      mockApiFetch.mockReset()
+      const banner = {
+        source_locale: 'en',
+        is_active: false,
+        revision: 3,
+        translations: generatedTranslations,
+        updated_at: null,
+      }
+      mockApiFetch.mockResolvedValueOnce(new Response(JSON.stringify(banner)))
+      mockApiFetch.mockResolvedValueOnce(
+        outcome === 'failure'
+          ? new Response(null, { status: 503 })
+          : new Response(JSON.stringify(banner))
+      )
+      useConfigStore.setState({
+        dashboardBanner: { revision: 2, translations: generatedTranslations },
+      })
+      render(<AdminSystemPage />)
+      await screen.findByText('15/15 complete')
+      fireEvent.click(
+        screen.getByRole('button', { name: 'dashboardBanner.save' })
+      )
+      if (outcome === 'failure') {
+        expect(
+          await screen.findByText('dashboardBanner.saveError')
+        ).toBeInTheDocument()
+        expect(useConfigStore.getState().dashboardBanner?.revision).toBe(2)
+      } else {
+        expect(
+          await screen.findByText('dashboardBanner.saveSuccess')
+        ).toBeInTheDocument()
+        expect(useConfigStore.getState().dashboardBanner).toBeNull()
+      }
+    }
+  )
 
   it('translates local source content and saves editable translations', async () => {
     mockApiFetch

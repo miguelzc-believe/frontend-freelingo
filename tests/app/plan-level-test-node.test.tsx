@@ -11,9 +11,10 @@ vi.mock('use-intl', () => ({
   useTranslations: () => (key: string) => key,
 }))
 
-vi.mock('@/lib/navigation', () => ({
-  useRouter: () => ({ push: mockPush }),
-}))
+vi.mock('@/lib/navigation', () => {
+  const router = { push: mockPush }
+  return { useRouter: () => router }
+})
 
 vi.mock('@/components/ui/app-link', () => ({
   default: ({
@@ -224,6 +225,178 @@ describe('My Plan level test node', () => {
 
     expect(await screen.findByText('noPlanTitle')).toBeInTheDocument()
     expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('shows the no-plan state for a non-Error rejection', async () => {
+    mockPlan('in_progress')
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/study-plan/current'
+        ? Promise.reject('offline')
+        : original(url)
+    )
+    render(<PlanPage />)
+    expect(await screen.findByText('noPlanTitle')).toBeInTheDocument()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('starts an uncompleted generated lesson when completion metadata is absent', async () => {
+    mockPlan(
+      'in_progress',
+      {},
+      {
+        lessons: [
+          {
+            id: 44,
+            title: 'Day 1 Lesson',
+            lesson_type: 'grammar',
+            week_number: 1,
+            day_number: 1,
+            is_completed: false,
+          },
+        ],
+        today: {
+          lessons: [
+            {
+              id: 44,
+              title: 'Day 1 Lesson',
+              lesson_type: 'grammar',
+              week: 1,
+              day: 1,
+            },
+          ],
+        },
+      }
+    )
+    render(<PlanPage />)
+    fireEvent.click((await screen.findByText('Unit One')).closest('button')!)
+    const startButtons = await screen.findAllByRole('button', { name: /start/ })
+    fireEvent.click(startButtons.at(-1)!)
+    expect(mockPush).toHaveBeenCalledWith('/lesson/44')
+  })
+
+  it('retains the plan when optional progress and lesson requests fail', async () => {
+    mockPlan('in_progress')
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) =>
+      [
+        '/api/progress/competencies',
+        '/api/study-plan/today',
+        '/api/study-plan/pending-lessons',
+        '/api/study-plan/lessons',
+      ].includes(url)
+        ? Promise.reject(new Error('offline'))
+        : original(url)
+    )
+    render(<PlanPage />)
+    expect(await screen.findByText('completionTestTitle')).toBeInTheDocument()
+    expect(screen.queryByText('noPlanTitle')).not.toBeInTheDocument()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('shows unavailable scores instead of fabricating a completion result', async () => {
+    mockPlan('taken', {
+      completion_test_taken: true,
+      completion_test_score: null,
+      completion_test_recommendation: null,
+    })
+    render(<PlanPage />)
+    expect(await screen.findByText('levelTestResult')).toBeInTheDocument()
+    expect(screen.getByText('n/a')).toBeInTheDocument()
+  })
+
+  it('supports completed and absent generated lessons in today’s lesson data', async () => {
+    mockPlan(
+      'in_progress',
+      {},
+      {
+        lessons: [
+          {
+            id: 44,
+            title: 'Day 1 Lesson',
+            lesson_type: 'grammar',
+            week_number: 1,
+            day_number: 1,
+            unit_id: 'a1_unit_1',
+            is_completed: true,
+          },
+        ],
+        today: {
+          lessons: [
+            {
+              id: null,
+              title: 'Not generated',
+              lesson_type: 'review',
+              week: 1,
+              day: 2,
+            },
+            {
+              id: 44,
+              title: 'Day 1 Lesson',
+              lesson_type: 'grammar',
+              week: 1,
+              day: 1,
+              is_completed: true,
+            },
+          ],
+        },
+      }
+    )
+    render(<PlanPage />)
+    expect(await screen.findByText('completionTestTitle')).toBeInTheDocument()
+    expect(screen.queryByText('noPlanTitle')).not.toBeInTheDocument()
+  })
+
+  it('opens a unit drawer and resumes its pending lesson', async () => {
+    mockPlan(
+      'in_progress',
+      {},
+      {
+        competencies: { a1_unit_1: 0.6 },
+        pending: [
+          {
+            id: 55,
+            title: 'Day 1 Lesson',
+            lesson_type: 'grammar',
+            week_number: 1,
+            day_number: 1,
+          },
+        ],
+      }
+    )
+    render(<PlanPage />)
+    const unit = await screen.findByText('Unit One')
+    fireEvent.click(unit.closest('button')!)
+    const resumeButtons = await screen.findAllByRole('button', {
+      name: 'resume',
+    })
+    expect(resumeButtons).toHaveLength(2)
+    fireEvent.click(resumeButtons[1]!)
+    expect(mockPush).toHaveBeenCalledWith('/lesson/55')
+  })
+
+  it('opens a completed lesson in review mode from the unit drawer', async () => {
+    mockPlan(
+      'in_progress',
+      {},
+      {
+        lessons: [
+          {
+            id: 44,
+            title: 'Day 1 Lesson',
+            lesson_type: 'grammar',
+            week_number: 1,
+            day_number: 1,
+            unit_id: 'a1_unit_1',
+            is_completed: true,
+          },
+        ],
+      }
+    )
+    render(<PlanPage />)
+    fireEvent.click((await screen.findByText('Unit One')).closest('button')!)
+    fireEvent.click(await screen.findByRole('button', { name: 'reviewLesson' }))
+    expect(mockPush).toHaveBeenCalledWith('/lesson/44')
   })
 
   it('starts today’s lesson and opens it from the unit drawer', async () => {
