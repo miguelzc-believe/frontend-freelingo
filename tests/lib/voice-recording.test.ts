@@ -23,6 +23,7 @@ describe('one-shot voice capture', () => {
     expect(capture.media).not.toHaveBeenCalled()
     await recording.start()
     const node = capture.nodes[0]!
+    node.emit({ type: 'stopped' })
     node.emit({ type: 'samples', samples: generatedSamples(128) })
     const stopped = recording.stop()
     expect(recording.stop()).toBe(stopped)
@@ -65,6 +66,10 @@ describe('one-shot voice capture', () => {
     capture.nodes[0]!.emit({
       type: 'samples',
       samples: generatedSamples(32000),
+    })
+    capture.nodes[0]!.emit({
+      type: 'samples',
+      samples: generatedSamples(32),
     })
     await vi.advanceTimersByTimeAsync(1000)
     expect(limit).toHaveBeenCalledOnce()
@@ -121,6 +126,47 @@ describe('one-shot voice capture', () => {
     expect(capture.stopTrack).toHaveBeenCalledOnce()
   })
 
+  it('reports a generic resampling failure as a microphone error', async () => {
+    capture = captureFixture(48000)
+    const createOffline = capture.offline.getMockImplementation()!
+    capture.offline.mockImplementationOnce(function (channels, length) {
+      const offline = createOffline(channels, length)
+      offline.startRendering = vi
+        .fn()
+        .mockRejectedValue(new Error('resampling failed'))
+      return offline
+    })
+    const recording = createVoiceRecording(120, vi.fn())
+    await recording.start()
+    capture.nodes[0]!.emit({ type: 'samples', samples: generatedSamples(4800) })
+    const stopped = recording.stop()
+    capture.nodes[0]!.emit({ type: 'stopped' })
+
+    await expect(stopped).rejects.toMatchObject({
+      code: 'microphoneUnavailable',
+    })
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
+  })
+
+  it('fails cleanly when AudioWorklet is unavailable', async () => {
+    const originalContext = capture.context.getMockImplementation()!
+    capture.context.mockImplementation(function () {
+      const context = originalContext()
+      Object.defineProperty(context, 'audioWorklet', { value: undefined })
+      return context
+    })
+    const recording = createVoiceRecording(120, vi.fn())
+
+    await expect(recording.start()).rejects.toMatchObject({
+      code: 'microphoneUnavailable',
+    })
+    expect(capture.media).toHaveBeenCalledOnce()
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
+    expect(capture.nodes).toHaveLength(0)
+  })
+
   it('stops a permission grant delivered after cancellation and clears resources once', async () => {
     const grant = deferred<MediaStream>()
     capture.media.mockReturnValue(grant.promise)
@@ -167,6 +213,27 @@ describe('one-shot voice capture', () => {
     rendered.resolve({ getChannelData: () => generatedSamples(1600) })
     await Promise.resolve()
     expect(capture.stopTrack).toHaveBeenCalledOnce()
+
+    capture = captureFixture(48000)
+    const failedRender = deferred<{ getChannelData: () => Float32Array }>()
+    capture.offline.mockImplementationOnce(function () {
+      return {
+        destination: {},
+        createBuffer: () => ({ getChannelData: () => new Float32Array(4800) }),
+        createBufferSource: () => ({ connect: vi.fn(), start: vi.fn() }),
+        startRendering: () => failedRender.promise,
+      }
+    })
+    const cancelledFailure = createVoiceRecording(120, vi.fn())
+    await cancelledFailure.start()
+    capture.nodes[0]!.emit({ type: 'samples', samples: generatedSamples(4800) })
+    const cancelledStop = cancelledFailure.stop()
+    capture.nodes[0]!.emit({ type: 'stopped' })
+    cancelledFailure.cancel()
+    expect(await cancelledStop).toBeNull()
+    failedRender.reject(new Error('late render failure'))
+    await Promise.resolve()
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
   })
 
   it('cancels during ACK wait without encoding or retaining PCM', async () => {
@@ -179,5 +246,77 @@ describe('one-shot voice capture', () => {
     expect(await stopped).toBeNull()
     expect(capture.stopTrack).toHaveBeenCalledOnce()
     expect(capture.offline).not.toHaveBeenCalled()
+  })
+
+  it('rejects duplicate starts and resumes a suspended audio context', async () => {
+    const originalContext = capture.context.getMockImplementation()!
+    capture.context.mockImplementation(function () {
+      const context = originalContext()
+      Object.defineProperty(context, 'state', { value: 'suspended' })
+      return context
+    })
+    const recording = createVoiceRecording(120, vi.fn())
+
+    expect(await recording.start()).toBe(true)
+    expect(await recording.start()).toBe(false)
+    expect(capture.media).toHaveBeenCalledOnce()
+    expect(capture.resume).toHaveBeenCalledTimes(2)
+
+    const stopped = recording.stop()
+    capture.nodes[0]!.emit({ type: 'samples', samples: generatedSamples() })
+    capture.nodes[0]!.emit({ type: 'stopped' })
+    expect(await stopped).toBeInstanceOf(Blob)
+  })
+
+  it('abandons initialization when cancelled while resuming a suspended context', async () => {
+    const originalContext = capture.context.getMockImplementation()!
+    capture.context.mockImplementation(function () {
+      const context = originalContext()
+      Object.defineProperty(context, 'state', { value: 'suspended' })
+      return context
+    })
+    const secondResume = deferred<void>()
+    capture.resume
+      .mockResolvedValueOnce(undefined)
+      .mockReturnValueOnce(secondResume.promise)
+    const recording = createVoiceRecording(120, vi.fn())
+    const start = recording.start()
+    await vi.waitFor(() => expect(capture.addModule).toHaveBeenCalledOnce())
+    recording.cancel()
+    secondResume.resolve()
+
+    expect(await start).toBe(false)
+    expect(capture.nodes).toHaveLength(0)
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
+  })
+
+  it('ignores worklet messages delivered after cancellation', async () => {
+    const recording = createVoiceRecording(120, vi.fn())
+    await recording.start()
+    const node = capture.nodes[0]!
+    const onMessage = node.port.onmessage!
+    recording.cancel()
+    onMessage({
+      data: { type: 'samples', samples: generatedSamples() },
+    } as MessageEvent)
+
+    expect(capture.offline).not.toHaveBeenCalled()
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
+  })
+
+  it('notifies the UI and rejects stop after the processor fails before stopping', async () => {
+    const onLimit = vi.fn()
+    const recording = createVoiceRecording(120, onLimit)
+    await recording.start()
+    capture.nodes[0]!.onprocessorerror?.()
+
+    expect(onLimit).toHaveBeenCalledOnce()
+    await expect(recording.stop()).rejects.toMatchObject({
+      code: 'microphoneUnavailable',
+    })
+    expect(capture.stopTrack).toHaveBeenCalledOnce()
+    expect(capture.close).toHaveBeenCalledOnce()
   })
 })

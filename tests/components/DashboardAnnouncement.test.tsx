@@ -99,4 +99,37 @@ describe('DashboardAnnouncement', () => {
 
     expect(screen.queryByText('Novedades')).not.toBeInTheDocument()
   })
+
+  it.each([
+    [
+      { en: { title: 'English fallback', subtitle: '', description: '' } },
+      'English fallback',
+    ],
+    [
+      { fr: { title: 'French fallback', subtitle: '', description: '' } },
+      'French fallback',
+    ],
+  ])(
+    'uses an available translation when the interface locale is missing',
+    (translations, expected) => {
+      useConfigStore.setState({
+        dashboardBanner: { revision: 7, translations },
+      })
+      render(<DashboardAnnouncement />)
+      expect(
+        screen.getByRole('heading', { name: expected })
+      ).toBeInTheDocument()
+    }
+  )
+
+  it('does not render an announcement without translations or without a banner', () => {
+    useConfigStore.setState({
+      dashboardBanner: { revision: 7, translations: {} },
+    })
+    const view = render(<DashboardAnnouncement />)
+    expect(view.container).toBeEmptyDOMElement()
+    useConfigStore.setState({ dashboardBanner: null })
+    view.rerender(<DashboardAnnouncement />)
+    expect(view.container).toBeEmptyDOMElement()
+  })
 })

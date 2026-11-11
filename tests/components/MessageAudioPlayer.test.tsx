@@ -35,6 +35,22 @@ afterEach(() => {
 })
 
 describe('session-scoped message player', () => {
+  it('guards blocked playback and rejects stale playback generations', () => {
+    const playback = new VoicePlayback()
+    const audio = document.createElement('audio')
+
+    playback.blocked = true
+    expect(playback.claim(audio)).toBeNull()
+    expect(playback.current(audio)).toBe(false)
+
+    playback.blocked = false
+    const generation = playback.claim(audio)!
+    expect(playback.current(audio, generation)).toBe(true)
+    expect(playback.current(audio, generation + 1)).toBe(false)
+    playback.stop()
+    expect(playback.current(audio, generation)).toBe(false)
+  })
+
   it('shows duration/progress, seeks and switches play/pause', async () => {
     const activity = vi.fn()
     const { container } = render(
@@ -58,6 +74,130 @@ describe('session-scoped message player', () => {
     expect(activity).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: 'pause' }))
     expect(screen.getByRole('button', { name: 'play' })).toBeInTheDocument()
+  })
+
+  it('normalizes non-finite metadata and updates duration and current position', () => {
+    const { container } = render(
+      <MessageAudioPlayer
+        src="blob:generated"
+        playback={new VoicePlayback()}
+        onActivity={vi.fn()}
+      />
+    )
+    const audio = container.querySelector('audio')!
+    Object.defineProperty(audio, 'duration', {
+      configurable: true,
+      value: Number.POSITIVE_INFINITY,
+    })
+    fireEvent.loadedMetadata(audio)
+    expect(screen.getByText('0:00 / 0:00')).toBeInTheDocument()
+
+    Object.defineProperty(audio, 'duration', {
+      configurable: true,
+      value: 90,
+    })
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 12.9,
+    })
+    fireEvent.durationChange(audio)
+    fireEvent.timeUpdate(audio)
+    expect(screen.getByText('0:12 / 1:30')).toBeInTheDocument()
+  })
+
+  it('normalizes negative position and non-finite duration changes', () => {
+    const { container } = render(
+      <MessageAudioPlayer
+        src="blob:generated"
+        playback={new VoicePlayback()}
+        onActivity={vi.fn()}
+      />
+    )
+    const audio = container.querySelector('audio')!
+    Object.defineProperty(audio, 'duration', {
+      configurable: true,
+      value: Infinity,
+    })
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      value: -12,
+    })
+    fireEvent.durationChange(audio)
+    fireEvent.timeUpdate(audio)
+    expect(screen.getByText('0:00 / 0:00')).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: 'progress' })).toBeDisabled()
+  })
+
+  it('stops active playback and releases its source on unmount', async () => {
+    const playback = new VoicePlayback()
+    const view = render(
+      <MessageAudioPlayer
+        src="blob:generated"
+        playback={playback}
+        onActivity={vi.fn()}
+      />
+    )
+    const audio = view.container.querySelector('audio')!
+    fireEvent.click(screen.getByRole('button', { name: 'play' }))
+    await screen.findByRole('button', { name: 'pause' })
+    expect(playback.current(audio)).toBe(true)
+    view.unmount()
+    expect(playback.current(audio)).toBe(false)
+    expect(audio).not.toHaveAttribute('src')
+    expect(pause).toHaveBeenCalled()
+  })
+
+  it('shows a generic failure for playback errors and rewinds ended audio', async () => {
+    play.mockRejectedValueOnce(new Error('decoder failed'))
+    const { container } = render(
+      <MessageAudioPlayer
+        src="blob:generated"
+        playback={new VoicePlayback()}
+        onActivity={vi.fn()}
+      />
+    )
+    const audio = container.querySelector('audio')!
+    Object.defineProperty(audio, 'ended', { configurable: true, value: true })
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 23,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'play' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'playbackFailed'
+    )
+    expect(audio.currentTime).toBe(0)
+    fireEvent.error(audio)
+    expect(screen.getByRole('status')).toHaveTextContent('playbackFailed')
+  })
+
+  it('does not play when its control is disabled or another activity blocks playback', () => {
+    const activity = vi.fn()
+    const playback = new VoicePlayback()
+    const { rerender } = render(
+      <MessageAudioPlayer
+        src="blob:generated"
+        playback={playback}
+        disabled
+        onActivity={activity}
+      />
+    )
+    expect(screen.getByRole('button', { name: 'play' })).toBeDisabled()
+
+    rerender(
+      <MessageAudioPlayer
+        src="blob:generated"
+        playback={playback}
+        onActivity={activity}
+      />
+    )
+    playback.blocked = true
+    fireEvent.click(screen.getByRole('button', { name: 'play' }))
+    expect(play).not.toHaveBeenCalled()
+    expect(activity).not.toHaveBeenCalled()
   })
 
   it('associates audio and keyboard controls with the actual transcript', () => {

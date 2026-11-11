@@ -140,7 +140,7 @@ export default function GrammarDetailPage({
   }, [])
 
   useEffect(() => {
-    fetchTopics(targetLanguageCode)
+    void fetchTopics(targetLanguageCode)
   }, [targetLanguageCode, fetchTopics])
 
   useEffect(() => {
@@ -171,7 +171,7 @@ export default function GrammarDetailPage({
 
   useEffect(() => {
     if (nativeHelpOpen && topic && !nativeHelp && !loadingNativeHelp) {
-      generateNativeHelp()
+      void generateNativeHelp()
     }
   }, [generateNativeHelp, loadingNativeHelp, nativeHelp, nativeHelpOpen, topic])
 

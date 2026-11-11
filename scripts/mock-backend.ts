@@ -16,7 +16,7 @@ const user = {
   conversation_inactivity_timeout: 180,
   conversation_speech_pause: 1000,
 }
-const server = createServer(async (request, response) => {
+const server = createServer((request, response) => {
   const path = new URL(request.url ?? '/', 'http://localhost').pathname
   const json = (value: unknown, status = 200) => {
     response.writeHead(status, { 'content-type': 'application/json' })

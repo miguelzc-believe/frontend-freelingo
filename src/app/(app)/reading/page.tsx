@@ -175,7 +175,7 @@ function ReadingPage() {
 
   useEffect(() => {
     if (stripeEnabled && !isSubscribed(user, stripeEnabled)) {
-      fetchFreemium()
+      void fetchFreemium()
     }
   }, [stripeEnabled, user, fetchFreemium])
 
@@ -209,7 +209,7 @@ function ReadingPage() {
   }, [t, dismissTooltip])
 
   useEffect(() => {
-    loadNext()
+    void loadNext()
   }, [loadNext, activeLanguage?.code])
 
   async function handleGenerate() {

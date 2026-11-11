@@ -52,6 +52,10 @@ describe('getPhrasebookCategories', () => {
 })
 
 describe('getPhrasebookByLevel', () => {
+  it('returns an empty list when a successful response omits categories', async () => {
+    mockedApiFetch.mockResolvedValue(makeResponse(true, {}))
+    await expect(getPhrasebookByLevel('B1')).resolves.toEqual([])
+  })
   it('returns categories and encodes level and language in the request', async () => {
     const categories = [{ id: 'introductions', phrases: [] }]
     mockedApiFetch.mockResolvedValue(makeResponse(true, { categories }))

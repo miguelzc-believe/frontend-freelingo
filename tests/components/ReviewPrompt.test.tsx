@@ -182,4 +182,63 @@ describe('ReviewPrompt', () => {
     expect(screen.queryByText('Submit')).toBeNull()
     expect(mockCreateReview).not.toHaveBeenCalled()
   })
+
+  it('treats corrupt dismissal data as an empty history', () => {
+    window.localStorage.setItem('freelingo:reviewPromptDismissed', '{bad json')
+    expect(getReviewPromptDismissal()).toEqual({ count: 0, lastDismissedAt: 0 })
+  })
+
+  it('normalizes missing and nonnumeric dismissal fields', () => {
+    window.localStorage.setItem(
+      'freelingo:reviewPromptDismissed',
+      JSON.stringify({ count: 'invalid' })
+    )
+    expect(getReviewPromptDismissal()).toEqual({ count: 0, lastDismissedAt: 0 })
+  })
+
+  it.each(['success', 'failure'] as const)(
+    'ignores a status check that completes after the prompt closes: %s',
+    async (outcome) => {
+      let resolve!: (value: { has_review: boolean; review: null }) => void
+      let reject!: (error: Error) => void
+      mockFetchMyReview.mockReturnValueOnce(
+        new Promise((done, fail) => {
+          resolve = done
+          reject = fail
+        })
+      )
+      const props = { onClose: vi.fn() }
+      const view = render(<ReviewPrompt open {...props} />)
+      expect(screen.getByText('checking')).toBeInTheDocument()
+      view.rerender(<ReviewPrompt open={false} {...props} />)
+      await act(async () => {
+        if (outcome === 'success') resolve({ has_review: true, review: null })
+        else reject(new Error('offline'))
+      })
+      expect(view.container).toBeEmptyDOMElement()
+      mockFetchMyReview.mockResolvedValueOnce({
+        has_review: false,
+        review: null,
+      })
+      view.rerender(<ReviewPrompt open {...props} />)
+      expect(await screen.findByText('Rating required')).toBeInTheDocument()
+      expect(screen.queryByText('statusError')).not.toBeInTheDocument()
+    }
+  )
+
+  it('keeps the review form open with its draft after a save failure', async () => {
+    mockCreateReview.mockRejectedValueOnce(new Error('offline'))
+    const onClose = vi.fn()
+    render(<ReviewPrompt open onClose={onClose} />)
+    await screen.findByText('Rating required')
+    fireEvent.click(screen.getByLabelText('4 out of 5 stars'))
+    fireEvent.change(screen.getByLabelText('Comment optional'), {
+      target: { value: 'Helpful' },
+    })
+    fireEvent.click(screen.getByText('Submit'))
+    expect(await screen.findByText('saveError')).toBeInTheDocument()
+    expect(screen.getByLabelText('Comment optional')).toHaveValue('Helpful')
+    expect(screen.getByText('Submit')).toBeEnabled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
 })

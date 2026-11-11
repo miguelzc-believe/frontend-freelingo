@@ -445,6 +445,42 @@ describe('AudioWorklet recorder', () => {
     })
     expect(callback).not.toHaveBeenCalled()
   })
+
+  it('does not deliver transcription when response JSON arrives after unmount', async () => {
+    const body = deferred<{ text: string }>()
+    api.mockResolvedValue({ ok: true, json: () => body.promise })
+    const callback = vi.fn()
+    const view = render(
+      <VoiceRecorder studyPlanId={42} onTranscription={callback} />
+    )
+    click()
+    await settle()
+    await finish()
+    view.unmount()
+    await act(async () => {
+      body.resolve({ text: 'late' })
+      await body.promise
+    })
+    expect(callback).not.toHaveBeenCalled()
+  })
+
+  it('ignores a delivery completion after the recorder is unmounted', async () => {
+    const delivery = deferred<void>()
+    const callback = vi.fn(() => delivery.promise)
+    const view = render(
+      <VoiceRecorder studyPlanId={42} onTranscription={callback} />
+    )
+    click()
+    await settle()
+    await finish()
+    expect(callback).toHaveBeenCalledWith('hello')
+    view.unmount()
+    await act(async () => {
+      delivery.resolve()
+      await delivery.promise
+    })
+    expect(view.container).toBeEmptyDOMElement()
+  })
   it('unmount while awaiting ACK immediately releases without flush upload', async () => {
     const view = render(
       <VoiceRecorder studyPlanId={42} onTranscription={vi.fn()} />

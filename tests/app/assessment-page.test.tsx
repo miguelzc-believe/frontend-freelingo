@@ -139,6 +139,60 @@ describe('AssessmentPage', () => {
     )
   })
 
+  it('loads the default language when no target language is selected', async () => {
+    useLanguageStore.setState({ activeLanguage: null })
+    mockApi(null)
+    render(<AssessmentPage />)
+    await screen.findByRole('button', { name: /beginnerOption/ })
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/assessment/bank?language=en-GB'
+    )
+  })
+
+  it('allows beginner setup even when the question bank is unavailable', async () => {
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url === '/api/study-plan/current'
+        ? jsonResponse({}, 404)
+        : jsonResponse({}, 503)
+    )
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startWarningConfirm' }))
+    expect(
+      screen.getByRole('button', { name: /hasExperienceOption/ })
+    ).toBeInTheDocument()
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      '/api/assessment/evaluate',
+      expect.anything()
+    )
+    fireEvent.click(screen.getByRole('button', { name: /beginnerOption/ }))
+    expect(screen.getByRole('button', { name: /startMyPlan/ })).toBeEnabled()
+  })
+
+  it.each([{ available: false, token: 'token' }, { available: true }])(
+    'continues to the plan when a completion has an unusable voice offer %#',
+    async (offer) => {
+      mockApi(null)
+      const original = mockApiFetch.getMockImplementation()!
+      mockApiFetch.mockImplementation((url: string) =>
+        url === '/api/assessment/complete'
+          ? Promise.resolve(
+              jsonResponse({ plan_id: 7, cefr_level: 'A1', voice_trial: offer })
+            )
+          : original(url)
+      )
+      render(<AssessmentPage />)
+      fireEvent.click(
+        await screen.findByRole('button', { name: /beginnerOption/ })
+      )
+      fireEvent.click(screen.getByRole('button', { name: /startMyPlan/ }))
+      await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/plan'))
+      expect(screen.queryByText('voiceTrialLabel')).not.toBeInTheDocument()
+    }
+  )
+
   it('shows the existing plan and lets the student retake from the gate', async () => {
     mockApi({ cefr_level: 'B2', created_at: '2024-01-15T00:00:00Z' })
     render(<AssessmentPage />)
@@ -148,6 +202,30 @@ describe('AssessmentPage', () => {
     expect(
       await screen.findByRole('button', { name: /hasExperienceOption/ })
     ).toBeInTheDocument()
+  })
+
+  it('returns to the dashboard from an existing plan', async () => {
+    mockApi({ cefr_level: 'B2', created_at: '2024-01-15T00:00:00Z' })
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /backToDashboard/ })
+    )
+    expect(mockPush).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('cancels the quiz warning without requesting an evaluation', async () => {
+    mockApi(null)
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      '/api/assessment/evaluate',
+      expect.anything()
+    )
   })
 
   it('completes the beginner path and navigates to the new plan', async () => {
@@ -163,6 +241,51 @@ describe('AssessmentPage', () => {
       duration_weeks: 12,
       target_language: 'de',
     })
+  })
+
+  it('allows beginners to go back and requires at least one selected goal', async () => {
+    mockApi(null)
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /beginnerOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: /back/ }))
+    expect(
+      await screen.findByRole('button', { name: /beginnerOption/ })
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /beginnerOption/ }))
+    fireEvent.click(screen.getByRole('button', { name: /goals.grammar/ }))
+    fireEvent.click(screen.getByRole('button', { name: /goals.vocabulary/ }))
+    expect(screen.getByRole('button', { name: /startMyPlan/ })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /goals.reading/ }))
+    fireEvent.click(screen.getByRole('button', { name: /intensity.intensive/ }))
+    fireEvent.click(screen.getByRole('button', { name: /startMyPlan/ }))
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/plan'))
+    expect(completeRequestBody()).toMatchObject({
+      goals: ['reading'],
+      duration_weeks: 4,
+      days_per_week: 5,
+    })
+  })
+
+  it('supports level override and returning from plan settings to quiz results', async () => {
+    mockApi(null)
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startWarningConfirm' }))
+    fireEvent.click(await screen.findByRole('button', { name: /haben/ }))
+    expect(await screen.findByText('resultStep')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'C1' }))
+    expect(screen.getByText('suggestedLevel')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /createPlan/ }))
+    fireEvent.click(screen.getByRole('button', { name: /back/ }))
+    expect(screen.getByText('resultStep')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /createPlan/ }))
+    fireEvent.click(screen.getByRole('button', { name: /startMyPlan/ }))
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/plan'))
+    expect(completeRequestBody()).toMatchObject({ cefr_level: 'C1' })
   })
 
   it('stays on the plan step instead of navigating when creation fails', async () => {
@@ -206,6 +329,44 @@ describe('AssessmentPage', () => {
     expect(mockPush).not.toHaveBeenCalled()
   })
 
+  it.each([{ available: false, token: 'trial-token' }, { available: true }])(
+    'shows a safe error when a successful voice trial response has no usable offer',
+    async (voiceTrial) => {
+      useConfigStore.setState({ stripeEnabled: true })
+      useAuthStore.setState({
+        accessToken: 'token',
+        user: {
+          id: 1,
+          username: 'Student',
+          displayName: 'Student',
+          role: 'user',
+          conversation_max_duration: 900,
+          conversation_inactivity_timeout: 300,
+        },
+      })
+      mockApi({ cefr_level: 'B2', created_at: '2024-01-15T00:00:00Z' })
+      const original = mockApiFetch.getMockImplementation()!
+      mockApiFetch.mockImplementation((url: string, ...args: unknown[]) =>
+        url === '/api/assessment/voice-trial'
+          ? Promise.resolve(
+              jsonResponse({
+                plan_id: 9,
+                cefr_level: 'A2',
+                voice_trial: voiceTrial,
+              })
+            )
+          : original(url, ...args)
+      )
+      render(<AssessmentPage />)
+      fireEvent.click(
+        await screen.findByRole('button', { name: /voiceTrialStart/ })
+      )
+
+      expect(await screen.findByText(/errorMessage/)).toBeInTheDocument()
+      expect(mockPush).not.toHaveBeenCalled()
+    }
+  )
+
   it('offers the voice trial and hands it to the conversation page', async () => {
     useConfigStore.setState({ stripeEnabled: true })
     useAuthStore.setState({
@@ -233,6 +394,57 @@ describe('AssessmentPage', () => {
     ).toMatchObject({ token: 'trial-token', durationSeconds: 300 })
   })
 
+  it('lets a learner skip an offered voice trial and go to the plan', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    useAuthStore.setState({
+      accessToken: 'token',
+      user: {
+        id: 1,
+        username: 'Student',
+        displayName: 'Student',
+        role: 'user',
+        conversation_max_duration: 900,
+        conversation_inactivity_timeout: 300,
+      },
+    })
+    mockApi({ cefr_level: 'B2', created_at: '2024-01-15T00:00:00Z' })
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /voiceTrialStart/ })
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'voiceTrialSkip' })
+    )
+    expect(mockPush).toHaveBeenCalledWith('/plan')
+  })
+
+  it('offers voice practice after creating a beginner study plan', async () => {
+    mockApi(null)
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/assessment/complete'
+        ? Promise.resolve(
+            jsonResponse({
+              plan_id: 7,
+              cefr_level: 'A1',
+              voice_trial: { available: true, token: 'new-trial' },
+            })
+          )
+        : original(url)
+    )
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /beginnerOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: /startMyPlan/ }))
+    expect(await screen.findByText('voiceTrialLabel')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /voiceTrialStart/ }))
+    expect(mockPush).toHaveBeenCalledWith('/conversation')
+    expect(
+      JSON.parse(sessionStorage.getItem('assessment_voice_trial') ?? 'null')
+    ).toMatchObject({ token: 'new-trial', durationSeconds: 300, planId: 7 })
+  })
+
   it('runs the adaptive quiz, evaluates and completes from the result', async () => {
     mockApi(null)
     render(<AssessmentPage />)
@@ -252,6 +464,77 @@ describe('AssessmentPage', () => {
     expect(completeRequestBody()).toMatchObject({ cefr_level: 'B1' })
   })
 
+  it('evaluates after the maximum number of adaptive questions', async () => {
+    const questions = Array.from({ length: 16 }, (_, index) => ({
+      ...bank[0]!,
+      id: `question-${index}`,
+      question: `Question ${index}`,
+    }))
+    mockApi(null, 200, 200, questions)
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startWarningConfirm' }))
+    for (let index = 0; index < 15; index++) {
+      const prompt = await screen.findByText(/^Question \d+$/)
+      const previousQuestion = prompt.textContent
+      fireEvent.click(
+        screen.getByRole('button', { name: index % 2 === 0 ? /sind/ : /haben/ })
+      )
+      if (index < 14)
+        await waitFor(() =>
+          expect(screen.getByText(/^Question \d+$/).textContent).not.toBe(
+            previousQuestion
+          )
+        )
+    }
+    expect(await screen.findByText('resultStep')).toBeInTheDocument()
+    const call = mockApiFetch.mock.calls.find(
+      ([url]) => url === '/api/assessment/evaluate'
+    )
+    const payload = JSON.parse(String((call?.[1] as RequestInit).body)) as {
+      answers: unknown[]
+    }
+    expect(payload.answers).toHaveLength(15)
+  })
+
+  it('does not navigate or show results when evaluation fails', async () => {
+    mockApi(null)
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/assessment/evaluate'
+        ? Promise.resolve(jsonResponse({}, 503))
+        : original(url)
+    )
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startWarningConfirm' }))
+    fireEvent.click(await screen.findByRole('button', { name: /haben/ }))
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/assessment/evaluate',
+        expect.anything()
+      )
+    )
+    expect(screen.queryByText('resultStep')).not.toBeInTheDocument()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('completes a beginner plan without specifying a missing target language', async () => {
+    useLanguageStore.setState({ activeLanguage: null })
+    mockApi(null)
+    render(<AssessmentPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /beginnerOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: /startMyPlan/ }))
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/plan'))
+    expect(completeRequestBody()).not.toHaveProperty('target_language')
+  })
+
   it('keeps the learner at the gate when the question bank is empty', async () => {
     mockApi(null, 200, 200, [])
     render(<AssessmentPage />)
@@ -265,6 +548,25 @@ describe('AssessmentPage', () => {
       await screen.findByRole('button', { name: /hasExperienceOption/ })
     ).toBeInTheDocument()
     expect(screen.queryByText('step2')).not.toBeInTheDocument()
+  })
+
+  it('keeps the quiz gate when the bank has no question at the starting level', async () => {
+    mockApi(null, 200, 200, [{ ...bank[0]!, id: 'b2-only', difficulty: 'B2' }])
+    render(<AssessmentPage />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'startWarningConfirm' }))
+
+    expect(
+      await screen.findByRole('button', { name: /hasExperienceOption/ })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('step2')).not.toBeInTheDocument()
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      '/api/assessment/evaluate',
+      expect.anything()
+    )
   })
 
   it('moves up after a correct streak and down after a wrong streak', async () => {

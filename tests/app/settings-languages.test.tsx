@@ -43,7 +43,7 @@ const inactive = {
 }
 
 function setup(
-  languages = [active, inactive],
+  languages: Array<Record<string, unknown>> = [active, inactive],
   enabled = ['en-GB', 'es-ES', 'fr-FR']
 ) {
   mocks.state.userLanguages = languages
@@ -129,6 +129,52 @@ describe('language settings page', () => {
     )
     expect(mocks.refresh).toHaveBeenCalledOnce()
     expect(await screen.findByText('switched')).toBeInTheDocument()
+  })
+
+  it('does not refresh or show a success toast when switching fails', async () => {
+    mocks.switchLanguage.mockResolvedValueOnce(false)
+    setup()
+    await screen.findByText('activeLanguage')
+    fireEvent.click(screen.getByRole('button', { name: 'switchTo' }))
+    await waitFor(() =>
+      expect(mocks.switchLanguage).toHaveBeenCalledWith('es-ES')
+    )
+    expect(screen.getByRole('button', { name: 'switchTo' })).toBeEnabled()
+    expect(mocks.refresh).not.toHaveBeenCalled()
+    expect(screen.queryByText('switched')).not.toBeInTheDocument()
+  })
+
+  it('switches a language without a study plan and renders progress when available', async () => {
+    mocks.switchLanguage.mockResolvedValueOnce(true)
+    setup([
+      active,
+      { ...inactive, plan: null, progress: null },
+      {
+        ...inactive,
+        target_language: 'fr-FR',
+        plan: { cefr_level: null, completion_pct: 0 },
+        progress: { total_xp: 1000, current_streak: 2, lessons_completed: 3 },
+      },
+    ])
+    await screen.findByText('activeLanguage')
+    expect(screen.getByText(/1,000/)).toBeInTheDocument()
+    expect(screen.getByText(/levelLabel: —/)).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'switchTo' })[0]!)
+    expect(await screen.findByText('switched')).toBeInTheDocument()
+    expect(mocks.refresh).toHaveBeenCalledOnce()
+  })
+
+  it('closes the confirmation after a successful removal', async () => {
+    mocks.removeLanguage.mockResolvedValueOnce(true)
+    setup()
+    await screen.findByText('activeLanguage')
+    fireEvent.click(screen.getByRole('button', { name: 'removeLanguage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'removeConfirmButton' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    )
+    expect(mocks.removeLanguage).toHaveBeenCalledWith('es-ES')
+    expect(screen.queryByText('deleteError')).not.toBeInTheDocument()
   })
 
   it('does not switch or remove the active card, and canceling removal makes no call', async () => {

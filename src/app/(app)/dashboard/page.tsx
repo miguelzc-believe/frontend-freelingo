@@ -222,7 +222,7 @@ export default function DashboardPage() {
   }, [setProgress, setTodayLessons, activeLanguage?.code])
 
   useEffect(() => {
-    loadData()
+    void loadData()
   }, [loadData])
 
   async function skipDay() {
@@ -264,7 +264,7 @@ export default function DashboardPage() {
           onClick={() => {
             setLoadError(false)
             setLoading(true)
-            loadData()
+            void loadData()
           }}
           className="text-fl-accent font-mono text-xs tracking-widest uppercase underline"
         >

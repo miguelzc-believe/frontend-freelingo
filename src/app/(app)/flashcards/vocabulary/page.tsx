@@ -62,7 +62,7 @@ export default function VocabularyPage() {
   }, [])
 
   useEffect(() => {
-    loadPage(page, debouncedSearch)
+    void loadPage(page, debouncedSearch)
   }, [page, debouncedSearch, loadPage])
 
   async function deleteItem(id: number) {

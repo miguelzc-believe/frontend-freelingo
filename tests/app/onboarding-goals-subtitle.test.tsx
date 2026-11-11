@@ -29,10 +29,11 @@ import ru from '../../messages/ru.json'
 import sv from '../../messages/sv.json'
 import tr from '../../messages/tr.json'
 
-const { searchParams, apiFetch, routerPush } = vi.hoisted(() => ({
+const { searchParams, apiFetch, routerPush, refresh } = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
   apiFetch: vi.fn(),
   routerPush: vi.fn(),
+  refresh: vi.fn(),
 }))
 
 vi.mock('@/lib/navigation', () => ({
@@ -41,6 +42,10 @@ vi.mock('@/lib/navigation', () => ({
 }))
 
 vi.mock('@/lib/api', () => ({ apiFetch }))
+vi.mock('@/lib/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/session')>()),
+  refreshAccessToken: refresh,
+}))
 
 import OnboardingPage from '@/app/(auth)/onboarding/page'
 
@@ -111,6 +116,7 @@ beforeEach(() => {
   onIntlError.mockReset()
   apiFetch.mockReset()
   routerPush.mockReset()
+  refresh.mockReset()
   apiFetch.mockImplementation(async () => languageResponse())
   useAuthStore.setState({ ...useAuthStore.getInitialState() }, true)
   useConfigStore.setState(
@@ -259,6 +265,116 @@ describe('onboarding goals subtitle', () => {
       await screen.findByText(en.onboarding.freemiumTrialTitle)
     ).toBeInTheDocument()
     expect(routerPush).not.toHaveBeenCalled()
+    fireEvent.click(
+      screen.getByRole('button', { name: en.onboarding.goToDashboard })
+    )
+    expect(routerPush).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it.each(['monthly', 'yearly'] as const)(
+    'offers the selected %s plan first and handles checkout failure',
+    async (plan) => {
+      searchParams.set('plan', plan)
+      useAuthStore.setState({ accessToken: 'token' })
+      useConfigStore.setState({ stripeEnabled: true })
+      mockGoalSave()
+      const original = apiFetch.getMockImplementation()!
+      apiFetch.mockImplementation((path: string, options?: RequestInit) =>
+        path === '/api/billing/checkout'
+          ? Promise.resolve(new Response('', { status: 503 }))
+          : original(path, options)
+      )
+      renderOnboarding()
+      await openGoalsStep()
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+      await screen.findByText('Start with 7 days free')
+      const checkoutButtons = screen
+        .getAllByRole('button')
+        .filter((button) => button.textContent?.includes('Try free, then'))
+      expect(checkoutButtons).toHaveLength(2)
+      expect(checkoutButtons[0]).toHaveTextContent(
+        plan === 'monthly' ? '/month' : '/year'
+      )
+      fireEvent.click(checkoutButtons[0]!)
+      expect(
+        await screen.findByText(en.onboarding.trialError)
+      ).toBeInTheDocument()
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/billing/checkout',
+        expect.objectContaining({ body: JSON.stringify({ plan }) })
+      )
+      expect(checkoutButtons[0]).toBeEnabled()
+      fireEvent.click(
+        screen.getByRole('button', { name: en.onboarding.trialSkip })
+      )
+      expect(routerPush).toHaveBeenCalledWith('/dashboard')
+    }
+  )
+
+  it.each([true, false])(
+    'handles missing checkout access token after onboarding (refresh=%s)',
+    async (success) => {
+      useConfigStore.setState({ stripeEnabled: true })
+      mockGoalSave()
+      refresh.mockResolvedValueOnce(success ? 'fresh-token' : null)
+      renderOnboarding()
+      await openGoalsStep()
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+      await screen.findByText('Start with 7 days free')
+      const checkout = screen
+        .getAllByRole('button')
+        .find((button) => button.textContent?.includes('Try free, then'))!
+      fireEvent.click(checkout)
+      await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+      if (success) {
+        await waitFor(() =>
+          expect(apiFetch).toHaveBeenCalledWith(
+            '/api/billing/checkout',
+            expect.anything()
+          )
+        )
+      } else {
+        await waitFor(() => expect(routerPush).toHaveBeenCalledWith('/login'))
+        expect(apiFetch).not.toHaveBeenCalledWith(
+          '/api/billing/checkout',
+          expect.anything()
+        )
+      }
+    }
+  )
+
+  it('shows the new-language heading and paid prices when the trial was already used', async () => {
+    searchParams.set('new', 'true')
+    useAuthStore.setState({
+      accessToken: 'token',
+      user: {
+        id: 12,
+        username: 'learner',
+        displayName: 'Learner',
+        role: 'user',
+        trial_used: true,
+        conversation_max_duration: 900,
+        conversation_inactivity_timeout: 300,
+      },
+    })
+    useConfigStore.setState({ stripeEnabled: true })
+    mockGoalSave(async () => new Response(JSON.stringify({ trial_used: true })))
+    renderOnboarding()
+    expect(
+      screen.getByText(en.onboarding.newLanguageHeadline)
+    ).toBeInTheDocument()
+    await openGoalsStep()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(
+      await screen.findByText(en.onboarding.trialHeadlineTrialUsed)
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(en.onboarding.trialNoChargeTrialUsed)
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: en.onboarding.trialSkip })
+    )
+    expect(routerPush).toHaveBeenCalledWith('/dashboard')
   })
 
   it.each(['non-OK response', 'network rejection'])(

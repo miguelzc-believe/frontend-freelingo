@@ -1,6 +1,6 @@
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 
 const { mockHasActiveLandingSubscription } = vi.hoisted(() => ({
   mockHasActiveLandingSubscription: vi.fn(),
@@ -99,5 +99,50 @@ describe('LandingNav', () => {
     expect(
       screen.queryByRole('button', { name: 'closeMenu' })
     ).not.toBeInTheDocument()
+  })
+
+  it.each(['Reviews', 'Pricing', 'FAQ', 'Sign in'])(
+    'closes the mobile menu when choosing %s',
+    (name) => {
+      renderNav()
+      fireEvent.click(screen.getByRole('button', { name: 'openMenu' }))
+      const links = screen.getAllByRole('link', { name })
+      expect(links).toHaveLength(2)
+      fireEvent.click(links[1]!)
+      expect(
+        screen.getByRole('button', { name: 'openMenu' })
+      ).toBeInTheDocument()
+      expect(screen.getAllByRole('link', { name })).toHaveLength(1)
+    }
+  )
+
+  it('ignores a subscription check that resolves after the session ends', async () => {
+    let resolve!: (subscribed: boolean) => void
+    mockHasActiveLandingSubscription.mockReturnValueOnce(
+      new Promise<boolean>((done) => {
+        resolve = done
+      })
+    )
+    const view = renderNav({ hasSession: true })
+    view.rerender(
+      <LandingNav
+        hasSession={false}
+        stripeEnabled
+        navFeatures="Features"
+        navReviews="Reviews"
+        navPricing="Pricing"
+        navFAQ="FAQ"
+        showReviews
+        signIn="Sign in"
+        dashboard="Dashboard"
+      />
+    )
+    expect(screen.getByRole('link', { name: 'Pricing' })).toBeInTheDocument()
+    await act(async () => resolve(true))
+    expect(screen.getByRole('link', { name: 'Pricing' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+      'href',
+      '/login'
+    )
   })
 })

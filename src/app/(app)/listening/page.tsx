@@ -219,7 +219,7 @@ function ListeningPage() {
 
   useEffect(() => {
     if (stripeEnabled && !isSubscribed(user, stripeEnabled)) {
-      fetchFreemium()
+      void fetchFreemium()
     }
   }, [stripeEnabled, user, fetchFreemium])
   const [submitting, setSubmitting] = useState(false)
@@ -259,7 +259,7 @@ function ListeningPage() {
   }, [t, dismissTooltip])
 
   useEffect(() => {
-    loadNext()
+    void loadNext()
   }, [loadNext, activeLanguage?.code])
 
   async function handleGenerate() {

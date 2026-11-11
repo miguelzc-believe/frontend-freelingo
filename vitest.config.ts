@@ -19,7 +19,7 @@ export default defineConfig({
         'scripts/duplication.ts',
       ],
       exclude: ['src/routeTree.gen.ts'],
-      thresholds: { statements: 48, branches: 44, functions: 43, lines: 49 },
+      thresholds: { statements: 90, branches: 85, functions: 87, lines: 91 },
     },
   },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },

@@ -60,7 +60,7 @@ export default function GrammarIndexPage() {
   }, [])
 
   useEffect(() => {
-    fetchTopics(activeLanguage?.code ?? 'en-GB')
+    void fetchTopics(activeLanguage?.code ?? 'en-GB')
   }, [activeLanguage?.code, fetchTopics])
 
   const allCategories: GrammarCategory[] = useMemo(

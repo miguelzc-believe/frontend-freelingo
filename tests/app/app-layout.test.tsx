@@ -43,10 +43,23 @@ vi.mock('@/lib/session', () => ({ refreshAccessToken: mockRefresh }))
 vi.mock('@/hooks/useLogout', () => ({ useLogout: () => mockHandleLogout }))
 
 vi.mock('@/components/LanguageSwitcher', () => ({ default: () => null }))
-vi.mock('@/components/AuthAvatarImage', () => ({ AuthAvatarImage: () => null }))
+vi.mock('@/components/AuthAvatarImage', () => ({
+  AuthAvatarImage: ({ fallback }: { fallback: React.ReactNode }) => fallback,
+}))
 vi.mock('@/components/ui/loading-bar', () => ({ LoadingBar: () => null }))
 vi.mock('@/components/ui/contact-form-modal', () => ({
-  ContactFormModal: () => null,
+  ContactFormModal: ({
+    open,
+    onClose,
+  }: {
+    open: boolean
+    onClose: () => void
+  }) =>
+    open ? (
+      <div role="dialog">
+        <button onClick={onClose}>close contact</button>
+      </div>
+    ) : null,
 }))
 
 import AppLayout from '@/app/(app)/layout'
@@ -164,6 +177,38 @@ describe('AppLayout', () => {
     }
   })
 
+  it.each([
+    {
+      endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      expected: 'trialDays 1',
+    },
+    {
+      endsAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      expected: null,
+    },
+  ])(
+    'handles freemium trial countdown for end date $endsAt',
+    async ({ endsAt, expected }) => {
+      mockRefresh.mockResolvedValue('fresh-token')
+      mockAuthenticatedApi({
+        ...mePayload,
+        subscription_status: 'none',
+        freemium_trial_ends_at: endsAt,
+      })
+      useConfigStore.setState({ stripeEnabled: true, load: mockLoadConfig })
+      renderLayout()
+
+      expect(await screen.findByText('page-content')).toBeInTheDocument()
+      if (expected) {
+        expect(
+          screen.getByText(new RegExp(`^★ ${expected}$`))
+        ).toBeInTheDocument()
+      } else {
+        expect(screen.queryByText(/trialDays/)).not.toBeInTheDocument()
+      }
+    }
+  )
+
   it('skips the refresh call when an access token is already in memory', async () => {
     useAuthStore.setState({ accessToken: 'cached-token' })
     mockAuthenticatedApi()
@@ -208,6 +253,29 @@ describe('AppLayout', () => {
     })
   })
 
+  it('keeps the verification control available when resend fails', async () => {
+    mockRefresh.mockResolvedValue('fresh-token')
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/me')
+        return jsonResponse({ ...mePayload, is_verified: false })
+      if (url === '/api/auth/resend-verification') return jsonResponse({}, 503)
+      return jsonResponse({ unread_count: 0 })
+    })
+    renderLayout()
+    const resend = await screen.findByRole('button', {
+      name: 'resendVerification',
+    })
+    fireEvent.click(resend)
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/auth/resend-verification',
+        { method: 'POST' }
+      )
+    )
+    expect(resend).toBeInTheDocument()
+    expect(screen.queryByText('verifyEmailSent')).not.toBeInTheDocument()
+  })
+
   it('confirms logout through the dialog and invokes the logout handler', async () => {
     mockRefresh.mockResolvedValue('fresh-token')
     mockAuthenticatedApi()
@@ -247,6 +315,36 @@ describe('AppLayout', () => {
     expect(mockPush).not.toHaveBeenCalled()
     expect(mockReplace).not.toHaveBeenCalled()
     expect(useAuthStore.getState().user).toBeNull()
+  })
+
+  it('ignores a successful refresh after unmount without fetching the profile', async () => {
+    const refresh = deferred<string | null>()
+    mockRefresh.mockReturnValue(refresh.promise)
+    const view = renderLayout()
+    view.unmount()
+    await act(async () => {
+      refresh.resolve('fresh-token')
+      await refresh.promise
+    })
+    expect(mockApiFetch).not.toHaveBeenCalled()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('ignores a profile request rejection after unmount', async () => {
+    let reject!: (reason: Error) => void
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    mockApiFetch.mockReturnValue(
+      new Promise((_resolve, fail) => {
+        reject = fail
+      })
+    )
+    const view = renderLayout()
+    view.unmount()
+    await act(async () => {
+      reject(new Error('offline'))
+    })
+    expect(mockPush).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().accessToken).toBe('cached-token')
   })
 
   it('ignores a profile response that arrives after unmount', async () => {
@@ -366,5 +464,64 @@ describe('AppLayout', () => {
       expect(mockApiFetch).toHaveBeenCalledWith('/api/feedback/unread-summary')
     )
     expect(screen.queryByText('99+')).not.toBeInTheDocument()
+  })
+
+  it.each(['/grammar/article', '/feedback', '/admin/users'])(
+    'marks the current navigation entry on desktop and mobile for %s',
+    async (pathname) => {
+      mockPathname.value = pathname
+      useAuthStore.setState({ accessToken: 'cached-token' })
+      mockAuthenticatedApi({ ...mePayload, role: 'admin', avatar: '/avatar' })
+      renderLayout()
+      await screen.findByText('page-content')
+      fireEvent.click(screen.getByRole('button', { name: 'openMenu' }))
+      if (pathname.startsWith('/grammar')) {
+        fireEvent.click(
+          screen.getAllByRole('button', { name: /resources/ })[0]!
+        )
+      }
+      const href = pathname.startsWith('/grammar')
+        ? '/grammar'
+        : pathname.startsWith('/admin')
+          ? '/admin'
+          : '/feedback'
+      const links = screen
+        .getAllByRole('link')
+        .filter((link) => link.getAttribute('href') === href)
+      expect(links).toHaveLength(2)
+      for (const link of links) expect(link).toHaveClass('border-fl-accent')
+      fireEvent.click(links[1]!)
+      expect(
+        screen.getByRole('button', { name: 'openMenu' })
+      ).toBeInTheDocument()
+    }
+  )
+
+  it('opens and closes contact from desktop and mobile navigation', async () => {
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    mockAuthenticatedApi()
+    renderLayout()
+    await screen.findByText('page-content')
+    fireEvent.click(screen.getByRole('button', { name: 'contact' }))
+    fireEvent.click(screen.getByRole('button', { name: 'close contact' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'openMenu' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'contact' })[1]!)
+    expect(screen.getByRole('button', { name: 'openMenu' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'close contact' }))
+  })
+
+  it('opens logout confirmation from mobile and allows cancelling it', async () => {
+    useAuthStore.setState({ accessToken: 'cached-token' })
+    mockAuthenticatedApi()
+    renderLayout()
+    await screen.findByText('page-content')
+    fireEvent.click(screen.getByRole('button', { name: 'openMenu' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'logout' })[1]!)
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(mockHandleLogout).not.toHaveBeenCalled()
   })
 })

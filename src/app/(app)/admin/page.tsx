@@ -85,7 +85,7 @@ export default function AdminOverviewPage() {
         if (!cancelled) setLoadingStats(false)
       }
     }
-    loadStats()
+    void loadStats()
     return () => {
       cancelled = true
     }

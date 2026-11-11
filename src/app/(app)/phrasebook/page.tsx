@@ -303,7 +303,7 @@ export default function PhrasebookPage() {
   }, [])
 
   useEffect(() => {
-    fetchCategories(activeLanguage?.code ?? 'en-GB')
+    void fetchCategories(activeLanguage?.code ?? 'en-GB')
   }, [activeLanguage?.code, fetchCategories])
 
   const filteredCategories = useMemo(() => {

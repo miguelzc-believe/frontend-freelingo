@@ -180,6 +180,53 @@ describe('LevelTestPage', () => {
     expect(await screen.findByText('levelTest.loadFailed')).toBeInTheDocument()
   })
 
+  it.each([null, [], undefined])(
+    'reports an empty question bank (%s)',
+    async (bank) => {
+      mockApiFetch.mockImplementation(async () =>
+        jsonResponse({ plan_id: 42, cefr_level: 'A2', questions: bank })
+      )
+      render(<LevelTestPage />)
+      await confirmStart()
+      expect(
+        await screen.findByText('levelTest.noQuestions')
+      ).toBeInTheDocument()
+    }
+  )
+
+  it.each(['', '0', '-1', '1.5'])(
+    'rejects plan id %s without loading questions',
+    async (plan) => {
+      searchParamsRef.current = new URLSearchParams(plan ? `plan=${plan}` : '')
+      render(<LevelTestPage />)
+      await confirmStart()
+      expect(
+        await screen.findByText('levelTest.invalidPlan')
+      ).toBeInTheDocument()
+      expect(mockApiFetch).not.toHaveBeenCalled()
+    }
+  )
+
+  it('shows an unknown skill using its supplied label', async () => {
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url.includes('/questions/')
+        ? jsonResponse({
+            plan_id: 42,
+            cefr_level: 'A2',
+            questions: [{ ...questions[0], skill: 'pronunciation' }],
+          })
+        : jsonResponse({
+            score: 1,
+            recommendation: 'advance',
+            next_level: 'B1',
+          })
+    )
+    render(<LevelTestPage />)
+    await confirmStart()
+    await answerAndAdvance('kommt', true)
+    expect(await screen.findByText('pronunciation')).toBeInTheDocument()
+  })
+
   it('runs the quiz, submits and shows the advance recommendation', async () => {
     mockQuestions()
     render(<LevelTestPage />)

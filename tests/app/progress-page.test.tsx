@@ -93,6 +93,38 @@ beforeEach(() => {
 })
 
 describe('ProgressPage', () => {
+  it('handles empty competency and vocabulary sets without dividing by zero', async () => {
+    useLanguageStore.setState({
+      activeLanguage: { code: 'es', name: 'Español' } as never,
+    })
+    vi.mocked(getCurriculumUnits).mockResolvedValue([
+      { ...unit, competency_checklist: [] },
+    ] as never)
+    mockPageData({
+      sets: [
+        { id: 'empty', level: 'B1', topic: 'Empty vocabulary', words: [] },
+      ],
+    })
+    render(<ProgressPage />)
+    expect(await screen.findByText('Introductions')).toBeInTheDocument()
+    expect(screen.getByText('0/0 mastered')).toBeInTheDocument()
+    expect(await screen.findByText('Empty vocabulary')).toBeInTheDocument()
+    expect(screen.getByText('0/0')).toBeInTheDocument()
+  })
+
+  it('keeps the plan usable when summary and competency endpoints return errors', async () => {
+    mockPageData()
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) =>
+      url === '/api/progress/summary' || url === '/api/progress/competencies'
+        ? Promise.resolve(response({}, false))
+        : original(url)
+    )
+    render(<ProgressPage />)
+    expect(await screen.findByText('Introductions')).toBeInTheDocument()
+    expect(screen.getByText('noCompetencies')).toBeInTheDocument()
+    expect(screen.queryByText('No study plan')).not.toBeInTheDocument()
+  })
   it('keeps the loading state until summary requests settle', async () => {
     const finishRequests: (() => void)[] = []
     mockApiFetch.mockImplementation((url: string) => {
@@ -123,6 +155,23 @@ describe('ProgressPage', () => {
     expect(mockApiFetch).toHaveBeenCalledWith('/api/flashcards/all')
     expect(mockApiFetch).toHaveBeenCalledWith('/api/vocabulary?language=en-GB')
     expect(getCurriculumUnits).not.toHaveBeenCalled()
+  })
+
+  it('keeps the progress page usable when optional flashcards, vocabulary and curriculum fail', async () => {
+    mockPageData()
+    const original = mockApiFetch.getMockImplementation()!
+    mockApiFetch.mockImplementation((url: string) => {
+      if (url === '/api/flashcards/all' || url.startsWith('/api/vocabulary?'))
+        return Promise.reject(new Error('offline'))
+      return original(url)
+    })
+    vi.mocked(getCurriculumUnits).mockRejectedValueOnce(new Error('offline'))
+    render(<ProgressPage />)
+    await waitFor(() =>
+      expect(getCurriculumUnits).toHaveBeenCalledWith('B1', 'en-GB')
+    )
+    expect(screen.queryByText('No study plan')).not.toBeInTheDocument()
+    expect(screen.queryByText('loading')).not.toBeInTheDocument()
   })
 
   it('renders progress metrics, competency states and matching mastered vocabulary', async () => {

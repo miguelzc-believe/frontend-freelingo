@@ -1534,7 +1534,7 @@ export default function LessonPage() {
 
   useEffect(() => {
     if (stripeEnabled && !isSubscribed(user, stripeEnabled)) {
-      fetchFreemium()
+      void fetchFreemium()
     }
   }, [stripeEnabled, user, fetchFreemium])
 
@@ -1599,7 +1599,7 @@ export default function LessonPage() {
   }, [id])
 
   useEffect(() => {
-    loadLesson()
+    void loadLesson()
   }, [loadLesson])
 
   const generateNativeExplanation = async () => {
@@ -1871,7 +1871,7 @@ export default function LessonPage() {
         <button
           onClick={() => {
             setLoadError(false)
-            loadLesson()
+            void loadLesson()
           }}
           className="text-fl-accent font-mono text-xs tracking-widest uppercase underline"
         >

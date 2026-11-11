@@ -61,7 +61,14 @@ describe('ReviewSection', () => {
   })
 
   it('loads an existing pending review and updates its rating and comment', async () => {
+    const fetch = deferred<{ has_review: boolean; review: ReviewAdmin }>()
+    mockFetchMyReview.mockReturnValueOnce(fetch.promise)
     render(<ReviewSection />)
+
+    await act(async () => {
+      fetch.resolve({ has_review: true, review })
+      await fetch.promise
+    })
 
     expect(await screen.findByText('reviewPending')).toBeInTheDocument()
     expect(mockFetchMyReview).toHaveBeenCalled()
@@ -71,13 +78,9 @@ describe('ReviewSection', () => {
       'true'
     )
 
-    fireEvent.click(screen.getByLabelText('5 out of 5 stars'))
-    await waitFor(() =>
-      expect(screen.getByLabelText('5 out of 5 stars')).toHaveAttribute(
-        'aria-checked',
-        'true'
-      )
-    )
+    const fiveStarRadio = screen.getByLabelText('5 out of 5 stars')
+    fireEvent.click(fiveStarRadio)
+    expect(fiveStarRadio).toHaveAttribute('aria-checked', 'true')
     fireEvent.change(screen.getByLabelText('commentLabel'), {
       target: { value: '  Even more useful  ' },
     })
@@ -165,5 +168,55 @@ describe('ReviewSection', () => {
     expect(screen.getByText('submit')).toBeInTheDocument()
     expect(mockCreateReview).not.toHaveBeenCalled()
     expect(mockUpdateMyReview).not.toHaveBeenCalled()
+  })
+
+  it('creates a new review and resets the success notice', async () => {
+    const fetch = deferred<{ has_review: boolean; review: null }>()
+    mockFetchMyReview.mockReturnValueOnce(fetch.promise)
+    mockCreateReview.mockResolvedValue({ ...review, rating: 4, comment: null })
+    render(<ReviewSection title="Your review" />)
+    expect(screen.getByText('Your review')).toBeInTheDocument()
+    await act(async () => {
+      fetch.resolve({ has_review: false, review: null })
+      await fetch.promise
+    })
+    const submit = await screen.findByRole('button', { name: 'submit' })
+    fireEvent.click(screen.getByLabelText('4 out of 5 stars'))
+    fireEvent.click(submit)
+    await waitFor(() =>
+      expect(mockCreateReview).toHaveBeenCalledWith({ rating: 4 })
+    )
+    expect(await screen.findByText('reviewSaved')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'reviewDelete' })
+    ).toBeInTheDocument()
+  })
+
+  it('reports a failed initial review status request', async () => {
+    mockFetchMyReview.mockRejectedValue(new Error('offline'))
+    render(<ReviewSection />)
+    expect(await screen.findByText('statusError')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'submit' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('reports deletion failures after confirmation', async () => {
+    mockDeleteMyReview.mockRejectedValue(new Error('offline'))
+    render(<ReviewSection />)
+    await screen.findByText('reviewPending')
+    fireEvent.click(screen.getByRole('button', { name: 'reviewDelete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'reviewDeleteConfirm' }))
+    expect(await screen.findByText('reviewDeleteError')).toBeInTheDocument()
+    expect(mockDeleteMyReview).toHaveBeenCalledOnce()
+  })
+
+  it('allows cancelling deletion without making a request', async () => {
+    render(<ReviewSection />)
+    await screen.findByText('reviewPending')
+    fireEvent.click(screen.getByRole('button', { name: 'reviewDelete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(mockDeleteMyReview).not.toHaveBeenCalled()
   })
 })

@@ -32,4 +32,19 @@ describe('TranscriptBubble', () => {
     const bubble = screen.getByText('Hello')
     expect(bubble.className).not.toContain('word-selectable')
   })
+
+  it('displays speaking and streaming indicators for an active assistant message', () => {
+    const { container, rerender } = render(
+      <TranscriptBubble role="assistant" text="Hello" speaking streaming />
+    )
+    expect(
+      container.querySelector('.animate-halo-speaking')
+    ).toBeInTheDocument()
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument()
+    rerender(<TranscriptBubble role="assistant" text="Hello" />)
+    expect(
+      container.querySelector('.animate-halo-speaking')
+    ).not.toBeInTheDocument()
+    expect(container.querySelector('.animate-pulse')).not.toBeInTheDocument()
+  })
 })

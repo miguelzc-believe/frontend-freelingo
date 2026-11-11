@@ -45,3 +45,53 @@ it('does not cache a failed registration request and coalesces concurrent public
   expect(result.every((item) => item.allowRegistration)).toBe(true)
   expect(fetcher).toHaveBeenCalledTimes(3)
 })
+
+it('uses safe defaults for malformed config and review payloads', async () => {
+  const fetcher = vi.fn(async (url: string) =>
+    Response.json(url.includes('/config') ? null : { items: [] })
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const data = await createLandingLoader()(
+    new Request('http://frontend'),
+    'http://backend'
+  )
+  expect(data).toMatchObject({
+    hasSession: false,
+    allowRegistration: false,
+    stripeEnabled: false,
+    trialDays: 7,
+    priceMonthly: 0,
+    priceYearly: 0,
+    reviews: [],
+  })
+})
+
+it('preserves numeric public pricing and rejects nonnumeric configuration', async () => {
+  const config = {
+    allow_registration: true,
+    stripe_enabled: true,
+    stripe_trial_days: 14,
+    price_monthly: 10,
+    price_yearly: 100,
+    total_price_monthly: '120',
+    total_price_yearly: 110,
+  }
+  const fetcher = vi.fn(async (url: string) =>
+    Response.json(url.includes('/config') ? config : [{ id: 1, rating: 5 }])
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const data = await createLandingLoader()(
+    new Request('http://frontend'),
+    'http://backend'
+  )
+  expect(data).toMatchObject({
+    allowRegistration: true,
+    stripeEnabled: true,
+    trialDays: 14,
+    priceMonthly: 10,
+    priceYearly: 100,
+    totalPriceMonthly: 0,
+    totalPriceYearly: 110,
+    reviews: [{ id: 1, rating: 5 }],
+  })
+})

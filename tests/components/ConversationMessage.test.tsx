@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import ConversationMessage, {
   type TranscriptEntry,
@@ -37,6 +37,31 @@ const failed: TranscriptEntry = {
 }
 
 describe('conversation message presentation', () => {
+  it('does not associate unreliable STT text with audio and defaults the retry count', () => {
+    const pause = vi
+      .spyOn(HTMLMediaElement.prototype, 'pause')
+      .mockImplementation(() => {})
+    const load = vi
+      .spyOn(HTMLMediaElement.prototype, 'load')
+      .mockImplementation(() => {})
+    try {
+      const { onRetry } = setup({
+        ...failed,
+        attempts: undefined,
+        text: 'Uncertain text',
+        audio: 'blob:fixture',
+      })
+      expect(screen.getByRole('button', { name: 'play' })).not.toHaveAttribute(
+        'aria-describedby'
+      )
+      fireEvent.click(screen.getByRole('button', { name: /retry/ }))
+      expect(onRetry).toHaveBeenCalledWith(true)
+    } finally {
+      cleanup()
+      pause.mockRestore()
+      load.mockRestore()
+    }
+  })
   it('keeps the retry button outside native status text and requests an STT retry', () => {
     const { onRetry } = setup(failed)
     const status = screen.getByText('transcriptionFailed')

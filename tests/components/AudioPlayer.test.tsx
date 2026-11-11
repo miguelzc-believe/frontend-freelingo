@@ -141,6 +141,53 @@ describe('AudioPlayer', () => {
 
   // ───────────── PLAY FLOW ─────────────
 
+  it.each([true, false])(
+    'logs development timing metrics with optional server headers (present=%s)',
+    async (present) => {
+      vi.stubEnv('NODE_ENV', 'development')
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+      try {
+        const response = makeOkResponse()
+        if (present) {
+          response.headers.set('X-TTS-Trace-ID', 'server-trace')
+          response.headers.set('X-TTS-Backend-Synth-Ms', '11')
+          response.headers.set('X-TTS-Backend-Total-Ms', '12')
+          response.headers.set('X-TTS-Proxy-Fetch-Ms', '13')
+          response.headers.set('X-TTS-Proxy-Buffer-Ms', '14')
+          response.headers.set('X-TTS-Proxy-Total-Ms', '15')
+        }
+        fetchMock.mockResolvedValueOnce(response)
+        render(<AudioPlayer text="Hello" />)
+        fireEvent.click(screen.getByRole('button'))
+        await waitFor(() => expect(info).toHaveBeenCalled())
+        const line = String(info.mock.calls[0]![0])
+        expect(line).toContain('[tts] tts-metrics')
+        const metrics = JSON.parse(line.slice(line.indexOf('{'))) as {
+          traceId: string
+          proxy: {
+            fetchMs: number | null
+            bufferMs: number | null
+            totalMs: number | null
+          }
+          backend: { synthMs: number | null; totalMs: number | null }
+        }
+        expect(metrics.proxy).toEqual({
+          fetchMs: present ? 13 : null,
+          bufferMs: present ? 14 : null,
+          totalMs: present ? 15 : null,
+        })
+        expect(metrics.backend).toEqual({
+          synthMs: present ? 11 : null,
+          totalMs: present ? 12 : null,
+        })
+        expect(metrics.traceId).toMatch(present ? /^server-trace$/ : /^tts-/)
+      } finally {
+        vi.unstubAllEnvs()
+        info.mockRestore()
+      }
+    }
+  )
+
   it('calls POST /api/tts with correct body and headers on click', async () => {
     fetchMock.mockResolvedValueOnce(makeOkResponse())
 

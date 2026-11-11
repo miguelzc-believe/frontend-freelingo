@@ -79,4 +79,33 @@ describe('ConversationSection', () => {
     expect(await screen.findByText('✕ saveFailed')).toBeInTheDocument()
     expect(screen.getByText('saveConversation')).not.toBeDisabled()
   })
+
+  it('uses default limits for zero values and supports a custom section title', async () => {
+    useAuthStore.setState({
+      user: {
+        ...defaultUser,
+        conversation_max_duration: 0,
+        conversation_inactivity_timeout: 0,
+      },
+    })
+    render(<ConversationSection title="Voice preferences" />)
+    expect(screen.getByText('Voice preferences')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('saveConversation'))
+    await waitFor(() => expect(mockApiFetch).toHaveBeenCalledOnce())
+    expect(savedBody()).toEqual({
+      conversation_max_duration: 1800,
+      conversation_inactivity_timeout: 180,
+    })
+  })
+
+  it('keeps default limits if the user is not loaded yet', async () => {
+    useAuthStore.setState({ user: null })
+    render(<ConversationSection />)
+    fireEvent.click(screen.getByText('saveConversation'))
+    await waitFor(() => expect(mockApiFetch).toHaveBeenCalledOnce())
+    expect(savedBody()).toEqual({
+      conversation_max_duration: 1800,
+      conversation_inactivity_timeout: 180,
+    })
+  })
 })

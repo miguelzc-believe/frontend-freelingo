@@ -149,6 +149,142 @@ describe('AdminFeedbackPage', () => {
     ).toHaveValue('pending')
   })
 
+  it('updates only the selected entry when multiple feedback items are displayed', async () => {
+    const other = { ...entry, id: 18, title: 'Another request' }
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) =>
+        options?.method === 'PATCH'
+          ? jsonResponse({})
+          : feedbackResponse([entry, other])
+    )
+    const { row } = await renderLoadedPage()
+    fireEvent.change(
+      within(row).getByRole('combobox', { name: 'feedbackStatusAction' }),
+      { target: { value: 'planned' } }
+    )
+    await waitFor(() =>
+      expect(
+        within(row).getByRole('combobox', { name: 'feedbackStatusAction' })
+      ).toHaveValue('planned')
+    )
+    const otherRow = screen.getByRole('row', { name: /Another request/ })
+    expect(
+      within(otherRow).getByRole('combobox', { name: 'feedbackStatusAction' })
+    ).toHaveValue('pending')
+  })
+
+  it('returns to the first page when a status filter changes on later results', async () => {
+    mockApiFetch.mockImplementation(async () => feedbackResponse([entry], 11))
+    await renderLoadedPage()
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(([url]) => String(url).includes('skip=10'))
+      ).toBe(true)
+    )
+    const before = mockApiFetch.mock.calls.length
+    setFilter('filterStatus', 'planned')
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls
+          .slice(before)
+          .some(
+            ([url]) =>
+              String(url).includes('skip=0') &&
+              String(url).includes('status=planned')
+          )
+      ).toBe(true)
+    )
+  })
+
+  it('renders bug entries and preserves unfamiliar status labels on desktop and mobile', async () => {
+    const bug = {
+      ...entry,
+      id: 18,
+      type: 'bug',
+      status: 'legacy',
+      title: 'Playback issue',
+    }
+    mockApiFetch.mockImplementation(async () =>
+      feedbackResponse([entry, bug], 2)
+    )
+    const { container } = render(<AdminFeedbackPage />)
+    const row = await screen.findByRole('row', { name: /Playback issue/ })
+    expect(within(row).getByText('tabBugs')).toBeInTheDocument()
+    expect(within(row).getByText('legacy')).toBeInTheDocument()
+    const mobile = container.querySelector('.lg\\:hidden')!
+    expect(
+      within(mobile as HTMLElement).getByText('tabBugs')
+    ).toBeInTheDocument()
+    expect(
+      within(mobile as HTMLElement).getByText('legacy')
+    ).toBeInTheDocument()
+  })
+
+  it('submits a search with Enter but not other keys', async () => {
+    await renderLoadedPage()
+    const input = screen.getByPlaceholderText('feedbackSearchPlaceholder')
+    fireEvent.change(input, { target: { value: 'offline' } })
+    const before = mockApiFetch.mock.calls.length
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(mockApiFetch).toHaveBeenCalledTimes(before)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls
+          .slice(before)
+          .some(([url]) => String(url).includes('q=offline'))
+      ).toBe(true)
+    )
+  })
+
+  it('keeps the list available when category totals fail or omit a total', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      const params = new URL(url, 'http://localhost').searchParams
+      if (params.get('limit') === '1') {
+        return params.get('type') === 'feature'
+          ? jsonResponse({}, 503)
+          : jsonResponse({})
+      }
+      return feedbackResponse()
+    })
+    const { row } = await renderLoadedPage()
+    expect(
+      within(row).getByText('Offline lesson downloads')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('errorLoad')).not.toBeInTheDocument()
+  })
+
+  it('initializes valid filters from the URL and rejects invalid values', async () => {
+    mockSearchParams.set('type', 'bug')
+    mockSearchParams.set('status', 'done')
+    mockSearchParams.set('sort', 'votes')
+    const view = render(<AdminFeedbackPage />)
+    await screen.findByRole('row', { name: /Offline lesson downloads/ })
+    expect(
+      screen.getByRole('combobox', { name: 'feedbackTypeFilter' })
+    ).toHaveValue('bug')
+    expect(screen.getByRole('combobox', { name: 'filterStatus' })).toHaveValue(
+      'done'
+    )
+    expect(screen.getByRole('combobox', { name: 'sortBy' })).toHaveValue(
+      'votes'
+    )
+    view.unmount()
+    mockSearchParams.set('type', 'unknown')
+    mockSearchParams.set('status', 'unknown')
+    mockSearchParams.set('sort', 'unknown')
+    render(<AdminFeedbackPage />)
+    await screen.findByRole('row', { name: /Offline lesson downloads/ })
+    expect(
+      screen.getByRole('combobox', { name: 'feedbackTypeFilter' })
+    ).toHaveValue('all')
+    expect(screen.getByRole('combobox', { name: 'filterStatus' })).toHaveValue(
+      ''
+    )
+    expect(screen.getByRole('combobox', { name: 'sortBy' })).toHaveValue('date')
+  })
+
   it('renders an empty-list message after a successful empty response', async () => {
     mockApiFetch.mockResolvedValue(feedbackResponse([], 0))
 
@@ -244,6 +380,121 @@ describe('AdminFeedbackPage', () => {
     fireEvent.change(status, { target: { value: 'done' } })
     expect(await screen.findByText('feedbackStatusError')).toBeInTheDocument()
     expect(status).toHaveValue('planned')
+  })
+
+  it('reloads filtered entries when a status change removes the current entry', async () => {
+    let updated = false
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') {
+          updated = true
+          return jsonResponse({})
+        }
+        return updated ? feedbackResponse([], 0) : feedbackResponse()
+      }
+    )
+    await renderLoadedPage()
+    setFilter('filterStatus', 'pending')
+    const row = await screen.findByRole('row', {
+      name: /Offline lesson downloads/,
+    })
+    fireEvent.change(
+      within(row).getByRole('combobox', { name: 'feedbackStatusAction' }),
+      { target: { value: 'done' } }
+    )
+    expect(await screen.findByText('noFilteredFeedback')).toBeInTheDocument()
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/feedback/17/status',
+      expect.objectContaining({ method: 'PATCH' })
+    )
+  })
+
+  it('returns to the first page when a search is submitted on a later page', async () => {
+    mockApiFetch.mockImplementation(async () => feedbackResponse([entry], 11))
+    await renderLoadedPage()
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(([url]) => String(url).includes('skip=10'))
+      ).toBe(true)
+    )
+    fireEvent.change(screen.getByPlaceholderText('feedbackSearchPlaceholder'), {
+      target: { value: ' offline ' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'feedbackSearchAction' })
+    )
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(
+          ([url]) =>
+            String(url).includes('skip=0') && String(url).includes('q=offline')
+        )
+      ).toBe(true)
+    )
+  })
+
+  it('returns to the previous page when deleting its last item', async () => {
+    let deleted = false
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (options?.method === 'DELETE') {
+          deleted = true
+          return jsonResponse({})
+        }
+        return feedbackResponse([entry], deleted ? 10 : 11)
+      }
+    )
+    await renderLoadedPage()
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(([url]) => String(url).includes('skip=10'))
+      ).toBe(true)
+    )
+    const row = await screen.findByRole('row', {
+      name: /Offline lesson downloads/,
+    })
+    const callsBeforeDelete = mockApiFetch.mock.calls.length
+    fireEvent.click(within(row).getByRole('button', { name: 'delete' }))
+    fireEvent.click(screen.getByText('confirm delete'))
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls
+          .slice(callsBeforeDelete)
+          .some(
+            ([url]) =>
+              String(url).includes('skip=0') && String(url).includes('limit=10')
+          )
+      ).toBe(true)
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('clears filters and returns to the first page from later results', async () => {
+    mockApiFetch.mockImplementation(async () => feedbackResponse([entry], 11))
+    await renderLoadedPage()
+    setFilter('feedbackTypeFilter', 'bug')
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(([url]) =>
+          String(url).includes('type=bug')
+        )
+      ).toBe(true)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'nextPage' }))
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(([url]) => String(url).includes('skip=10'))
+      ).toBe(true)
+    )
+    fireEvent.click(screen.getByRole('button', { name: /clearFilters/i }))
+    expect(
+      screen.getByRole('combobox', { name: 'feedbackTypeFilter' })
+    ).toHaveValue('all')
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'prevPage' })).toBeDisabled()
+    )
   })
 
   it('cancels deletion, then deletes the entry after confirmation', async () => {

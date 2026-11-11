@@ -137,7 +137,9 @@ export default function MessageAudioPlayer({
           setPlaying(false)
           setError('playbackFailed')
         }}
-      />
+      >
+        <track kind="captions" />
+      </audio>
       <div className="flex items-center gap-3">
         <button
           type="button"

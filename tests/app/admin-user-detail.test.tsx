@@ -365,6 +365,31 @@ describe('AdminUserStatsPage subscription visibility', () => {
     })
   })
 
+  it('keeps the last quota usage if refreshing it after a successful save fails', async () => {
+    let quotaRequests = 0
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') return jsonResponse(user)
+        if (url.endsWith('/stats')) return jsonResponse(stats)
+        if (url.endsWith('/quota')) {
+          quotaRequests += 1
+          return quotaRequests === 1
+            ? jsonResponse({ sessions_this_week: 2, sessions_limit: 5 })
+            : jsonResponse({}, 503)
+        }
+        return jsonResponse(user)
+      }
+    )
+    render(<AdminUserStatsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'tabQuota' }))
+    expect(screen.getByText('2 / 5')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'quotaSave' }))
+    expect(
+      await screen.findByRole('button', { name: 'quotaSaved' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('2 / 5')).toBeInTheDocument()
+  })
+
   it('applies a monthly subscription override and sends its active period', async () => {
     useConfigStore.setState({ stripeEnabled: true })
     const updatedUser = { ...user, subscription_status: 'active' }
@@ -401,6 +426,85 @@ describe('AdminUserStatsPage subscription visibility', () => {
     expect(screen.getAllByText('statusActive').length).toBeGreaterThan(0)
   })
 
+  it.each([
+    [null, 'monthly'],
+    [new Date(Date.now() + 30 * 86400000).toISOString(), 'monthly'],
+    [new Date(Date.now() + 365 * 86400000).toISOString(), 'yearly'],
+  ])(
+    'infers the current subscription plan from end date %s',
+    async (end, expected) => {
+      useConfigStore.setState({ stripeEnabled: true })
+      mockApiFetch.mockImplementation(async (url: string) => {
+        if (url.endsWith('/stats')) return jsonResponse(stats)
+        if (url.endsWith('/quota')) return jsonResponse({})
+        return jsonResponse({
+          ...user,
+          subscription_status: 'active',
+          subscription_ends_at: end,
+        })
+      })
+      render(<AdminUserStatsPage />)
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'tabSubscription' })
+      )
+      await waitFor(() =>
+        expect(
+          screen.getByRole('combobox', { name: 'subscriptionOverride' })
+        ).toHaveValue(expected)
+      )
+    }
+  )
+
+  it('applies a yearly subscription override with a one-year expiry', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH')
+          return jsonResponse({
+            ...user,
+            subscription_ends_at: new Date(
+              Date.now() + 365 * 86400000
+            ).toISOString(),
+          })
+        if (url.endsWith('/stats')) return jsonResponse(stats)
+        if (url.endsWith('/quota')) return jsonResponse({})
+        return jsonResponse({
+          ...user,
+          subscription_status: 'none',
+          subscription_ends_at: null,
+        })
+      }
+    )
+    render(<AdminUserStatsPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'tabSubscription' })
+    )
+    fireEvent.change(
+      screen.getByRole('combobox', { name: 'subscriptionOverride' }),
+      { target: { value: 'yearly' } }
+    )
+    const before = Date.now()
+    fireEvent.click(screen.getByRole('button', { name: 'subscriptionConfirm' }))
+    await waitFor(() =>
+      expect(
+        mockApiFetch.mock.calls.some(
+          ([, options]) => options?.method === 'PATCH'
+        )
+      ).toBe(true)
+    )
+    const call = mockApiFetch.mock.calls.find(
+      ([, options]) => options?.method === 'PATCH'
+    )
+    const payload = JSON.parse(String(call?.[1]?.body)) as {
+      subscription_status: string
+      subscription_ends_at: string
+    }
+    expect(payload.subscription_status).toBe('active')
+    expect(Date.parse(payload.subscription_ends_at)).toBeGreaterThanOrEqual(
+      before + 365 * 86400000
+    )
+  })
+
   it('removes a subscription override and reflects the returned user', async () => {
     useConfigStore.setState({ stripeEnabled: true })
     const updatedUser = {
@@ -435,6 +539,31 @@ describe('AdminUserStatsPage subscription visibility', () => {
       subscription_status: 'none',
       subscription_ends_at: null,
     })
+  })
+
+  it('shows a subscription update error and leaves the existing status intact', async () => {
+    useConfigStore.setState({ stripeEnabled: true })
+    mockApiFetch.mockImplementation(
+      async (url: string, options?: RequestInit) => {
+        if (options?.method === 'PATCH') return jsonResponse({}, 503)
+        if (url.endsWith('/stats')) return jsonResponse(stats)
+        if (url.endsWith('/quota')) return jsonResponse({})
+        return jsonResponse(user)
+      }
+    )
+    render(<AdminUserStatsPage />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'tabSubscription' })
+    )
+    fireEvent.change(
+      screen.getByRole('combobox', { name: 'subscriptionOverride' }),
+      { target: { value: 'none' } }
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'subscriptionConfirm' }))
+    expect(
+      await screen.findByText('subscriptionUpdateError')
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('statusActive').length).toBeGreaterThan(0)
   })
 
   it.each([
@@ -491,5 +620,41 @@ describe('AdminUserStatsPage subscription visibility', () => {
     expect(screen.getAllByText('-').length).toBeGreaterThan(0)
     fireEvent.click(screen.getByRole('button', { name: 'tabActivity' }))
     expect(screen.getByText('statsTokensNote')).toBeInTheDocument()
+  })
+
+  it('renders active language statistics and token details', async () => {
+    const fullStats = {
+      ...stats,
+      per_language: [
+        {
+          target_language: 'en-GB',
+          cefr_level: 'B1',
+          xp_total: 1200,
+          streak_current: 3,
+          active_days: 4,
+          lessons_completed: 5,
+          exercises_correct: 7,
+          exercises_total: 10,
+        },
+      ],
+    }
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith('/stats')) return jsonResponse(fullStats)
+      if (url.endsWith('/quota')) return jsonResponse({})
+      return jsonResponse(user)
+    })
+    render(<AdminUserStatsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'tabLanguages' }))
+    expect(screen.getByText(/B1 \/ statsActive/)).toBeInTheDocument()
+    expect(screen.getByText(/7\/10 \(70%\)/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'tabActivity' }))
+    expect(screen.getByText('statsTokensTotal')).toBeInTheDocument()
+    expect(screen.queryByText('statsTokensNote')).not.toBeInTheDocument()
+  })
+
+  it('shows empty language statistics when the user has none', async () => {
+    render(<AdminUserStatsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'tabLanguages' }))
+    expect(screen.getByText('statsNoData')).toBeInTheDocument()
   })
 })

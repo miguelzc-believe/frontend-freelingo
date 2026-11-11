@@ -288,4 +288,67 @@ describe('LanguageSwitcher', () => {
     render(<LanguageSwitcher />)
     expect(mockFetch).toHaveBeenCalled()
   })
+
+  it('closes on outside click and ignores an already active language', () => {
+    const active = useLanguageStore.getState().userLanguages[0]!
+    const switchLanguage = vi.fn()
+    useLanguageStore.setState({
+      userLanguages: [
+        active,
+        {
+          target_language: 'es-ES',
+          is_active: false,
+          plan: null,
+          progress: null,
+        },
+      ],
+      switchLanguage,
+    })
+    render(<LanguageSwitcher />)
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByText('es-ES')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getAllByText('en-US')[1]!)
+    expect(switchLanguage).not.toHaveBeenCalled()
+    expect(screen.queryByText('es-ES')).not.toBeInTheDocument()
+  })
+
+  it.each([true, false])(
+    'handles language switches without a plan (success=%s)',
+    async (success) => {
+      const active = useLanguageStore.getState().userLanguages[0]!
+      const switchLanguage = vi.fn().mockResolvedValue(success)
+      useLanguageStore.setState({
+        userLanguages: [
+          active,
+          {
+            target_language: 'es-ES',
+            is_active: false,
+            plan: null,
+            progress: null,
+          },
+          {
+            target_language: 'unsupported',
+            is_active: false,
+            plan: null,
+            progress: null,
+          },
+        ],
+        switchLanguage,
+      })
+      render(<LanguageSwitcher />)
+      fireEvent.click(screen.getByRole('button'))
+      expect(screen.queryByText('unsupported')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByText('es-ES'))
+      await waitFor(() => expect(switchLanguage).toHaveBeenCalledWith('es-ES'))
+      if (success) {
+        expect(await screen.findByText('es-ES')).toBeInTheDocument()
+        expect(mockRefresh).toHaveBeenCalledOnce()
+      } else {
+        expect(screen.queryByText('es-ES')).not.toBeInTheDocument()
+        expect(mockRefresh).not.toHaveBeenCalled()
+      }
+    }
+  )
 })

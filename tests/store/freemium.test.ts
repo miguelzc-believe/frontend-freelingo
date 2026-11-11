@@ -50,4 +50,43 @@ describe('freemium store', () => {
     expect(apiFetchMock).toHaveBeenCalledWith('/api/freemium/status')
     expect(useFreemiumStore.getState().status).toEqual(refreshed)
   })
+
+  it('refreshes an expired cache without requiring a forced request', async () => {
+    useFreemiumStore.setState({
+      status,
+      loaded: true,
+      lastFetch: Date.now() - 60_001,
+    })
+    const refreshed = { ...status, chat_remaining: 1 }
+    apiFetchMock.mockResolvedValue({ ok: true, json: async () => refreshed })
+    await useFreemiumStore.getState().fetchStatus()
+    expect(useFreemiumStore.getState().status).toEqual(refreshed)
+  })
+
+  it.each(['http', 'network'] as const)(
+    'keeps the previous quota after a %s failure',
+    async (failure) => {
+      useFreemiumStore.setState({ status, loaded: true, lastFetch: 1 })
+      if (failure === 'http') apiFetchMock.mockResolvedValueOnce({ ok: false })
+      else apiFetchMock.mockRejectedValueOnce(new Error('offline'))
+      await expect(
+        useFreemiumStore.getState().fetchStatus()
+      ).resolves.toBeUndefined()
+      expect(useFreemiumStore.getState()).toMatchObject({
+        status,
+        loaded: true,
+        lastFetch: 1,
+      })
+    }
+  )
+
+  it('does not decrement missing status or reduce a quota below zero', () => {
+    useFreemiumStore.getState().decrement('chat_remaining')
+    expect(useFreemiumStore.getState().status).toBeNull()
+    useFreemiumStore.setState({ status: { ...status, chat_remaining: 1 } })
+    useFreemiumStore.getState().decrement('chat_remaining')
+    useFreemiumStore.getState().decrement('chat_remaining')
+    expect(useFreemiumStore.getState().status?.chat_remaining).toBe(0)
+    expect(useFreemiumStore.getState().status?.lessons_remaining).toBe(2)
+  })
 })

@@ -25,6 +25,21 @@ const mocks = vi.hoisted(() => ({
   dismissTooltip: vi.fn(),
   handleTextSelection: vi.fn(),
   push: vi.fn(),
+  subscribed: true,
+  trialActive: false,
+  stripeEnabled: false,
+  quota: null as { chat_remaining: number } | null,
+  user: {
+    username: 'learner',
+    displayName: 'Learner',
+    avatar: null as string | null,
+    subscription_status: 'active',
+  } as {
+    username: string
+    displayName: string
+    avatar: string | null
+    subscription_status: string
+  } | null,
 }))
 
 vi.mock('use-intl', () => ({
@@ -37,15 +52,10 @@ vi.mock('@/lib/navigation', () => ({
 vi.mock('@/store/auth', () => ({
   useAuthStore: (selector: (state: object) => unknown) =>
     selector({
-      user: {
-        username: 'learner',
-        displayName: 'Learner',
-        avatarUrl: null,
-        subscription_status: 'active',
-      },
+      user: mocks.user,
     }),
-  isSubscribed: () => true,
-  isFreemiumTrialActive: () => false,
+  isSubscribed: () => mocks.subscribed,
+  isFreemiumTrialActive: () => mocks.trialActive,
 }))
 vi.mock('@/store/language', () => ({
   useLanguageStore: (selector: (state: object) => unknown) =>
@@ -53,12 +63,12 @@ vi.mock('@/store/language', () => ({
 }))
 vi.mock('@/store/config', () => ({
   useConfigStore: (selector: (state: object) => unknown) =>
-    selector({ stripeEnabled: false }),
+    selector({ stripeEnabled: mocks.stripeEnabled }),
 }))
 vi.mock('@/store/freemium', () => ({
   useFreemiumStore: (selector: (state: object) => unknown) =>
     selector({
-      status: null,
+      status: mocks.quota,
       fetchStatus: mocks.fetchFreemium,
       decrement: mocks.decrementFreemium,
     }),
@@ -67,7 +77,7 @@ vi.mock('@/components/billing/MaintenanceBanner', () => ({
   MaintenanceGate: ({ children }: { children: ReactNode }) => children,
 }))
 vi.mock('@/components/billing/PaywallBanner', () => ({
-  PaywallBanner: () => null,
+  PaywallBanner: () => <div>chat paywall</div>,
 }))
 vi.mock('@/components/billing/FreemiumQuotaBanner', () => ({
   FreemiumQuotaBanner: () => null,
@@ -209,6 +219,16 @@ describe('chat memory stream', () => {
     mocks.decrementFreemium.mockReset()
     mocks.dismissTooltip.mockReset()
     mocks.handleTextSelection.mockReset()
+    mocks.subscribed = true
+    mocks.trialActive = false
+    mocks.stripeEnabled = false
+    mocks.quota = null
+    mocks.user = {
+      username: 'learner',
+      displayName: 'Learner',
+      avatar: null,
+      subscription_status: 'active',
+    }
     Element.prototype.scrollIntoView = vi.fn()
     chatEvents = [
       { conversation_id: 7 },
@@ -277,6 +297,56 @@ describe('chat memory stream', () => {
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
     fireEvent.click(screen.getByTitle('toggleSidebarShow'))
     expect(screen.getByRole('complementary')).toBeInTheDocument()
+  })
+
+  it.each([
+    [null, '?'],
+    [
+      {
+        username: 'alex',
+        displayName: '',
+        avatar: null,
+        subscription_status: 'active',
+      },
+      'A',
+    ],
+  ])(
+    'uses a safe avatar fallback when user identity is incomplete',
+    async (user, initial) => {
+      mocks.user = user
+      mocks.apiFetch.mockImplementation((path: string) =>
+        Promise.resolve(
+          path === '/api/chat/conversations'
+            ? jsonResponse([{ id: 7, title: 'History', source: 'text' }])
+            : path.endsWith('/messages')
+              ? jsonResponse({
+                  messages: [{ role: 'user', content: 'Past message' }],
+                })
+              : jsonResponse([])
+        )
+      )
+      render(<ChatPage />)
+      expect(await screen.findByText('Past message')).toBeInTheDocument()
+      expect(screen.getByText(initial)).toBeInTheDocument()
+    }
+  )
+
+  it('sends on Enter but not on Shift+Enter or unrelated keys', async () => {
+    render(<ChatPage />)
+    const input = await screen.findByPlaceholderText('placeholder')
+    fireEvent.change(input, { target: { value: 'Hello from the keyboard' } })
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(mocks.apiFetch.mock.calls.some(([url]) => url === '/api/chat')).toBe(
+      false
+    )
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(
+      await screen.findByText('Complete normal response.')
+    ).toBeInTheDocument()
+    expect(
+      mocks.apiFetch.mock.calls.filter(([url]) => url === '/api/chat')
+    ).toHaveLength(1)
   })
 
   it('ignores other keys and closes the open sidebar on Escape', async () => {
@@ -492,6 +562,41 @@ describe('chat memory stream', () => {
     }
   )
 
+  it('reports a failed list reload after deleting a conversation', async () => {
+    let deleted = false
+    mocks.apiFetch.mockImplementation((path: string, options?: RequestInit) => {
+      if (options?.method === 'DELETE') {
+        deleted = true
+        return Promise.resolve(jsonResponse({}))
+      }
+      if (path === '/api/chat/conversations') {
+        return Promise.resolve(
+          deleted
+            ? new Response(null, { status: 503 })
+            : jsonResponse([{ id: 7, title: 'Current', source: 'text' }])
+        )
+      }
+      return Promise.resolve(
+        jsonResponse({
+          messages: [{ role: 'assistant', content: 'Current history' }],
+        })
+      )
+    })
+    render(<ChatPage />)
+    await screen.findByText('Current history')
+    const primary = screen.getByRole('button', { name: 'Current' })
+    fireEvent.click(
+      within(primary.parentElement!).getByRole('button', {
+        name: 'deleteConfirm',
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'confirmDelete' }))
+    expect(
+      await screen.findByRole('button', { name: 'retry' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('Current history')).toBeInTheDocument()
+  })
+
   it('cancels and confirms inactive deletion without selecting its conversation', async () => {
     let deleted = false
     const respond = (path: string, options?: RequestInit) => {
@@ -578,6 +683,77 @@ describe('chat memory stream', () => {
       '/api/chat/conversations/9/messages'
     )
   })
+
+  it('keeps the conversation-list error when retry also fails', async () => {
+    mocks.apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === '/api/chat/conversations'
+          ? new Response(null, { status: 503 })
+          : jsonResponse([])
+      )
+    )
+    render(<ChatPage />)
+
+    expect(await screen.findByText('error')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }))
+    expect(await screen.findByText('error')).toBeInTheDocument()
+    expect(
+      mocks.apiFetch.mock.calls.filter(
+        ([path]) => path === '/api/chat/conversations'
+      )
+    ).toHaveLength(2)
+  })
+
+  it('recovers from an unavailable history list even when retry returns no conversations', async () => {
+    let calls = 0
+    mocks.apiFetch.mockImplementation((path: string) => {
+      if (path === '/api/chat/conversations') {
+        calls += 1
+        return Promise.resolve(
+          calls === 1 ? new Response(null, { status: 503 }) : jsonResponse([])
+        )
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    render(<ChatPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'retry' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'retry' })
+      ).not.toBeInTheDocument()
+    )
+    expect(screen.getByPlaceholderText('placeholder')).toBeEnabled()
+  })
+
+  it.each(['missing messages', 'HTTP failure', 'network failure'] as const)(
+    'keeps chat usable when loading messages has %s',
+    async (failure) => {
+      mocks.apiFetch.mockImplementation((path: string) => {
+        if (path === '/api/chat/conversations')
+          return Promise.resolve(
+            jsonResponse([{ id: 7, title: 'Existing', source: 'text' }])
+          )
+        if (path === '/api/chat/conversations/7/messages') {
+          if (failure === 'network failure')
+            return Promise.reject(new Error('offline'))
+          return Promise.resolve(
+            failure === 'HTTP failure'
+              ? new Response(null, { status: 503 })
+              : jsonResponse({})
+          )
+        }
+        return Promise.resolve(jsonResponse([]))
+      })
+      render(<ChatPage />)
+      await waitFor(() =>
+        expect(mocks.apiFetch).toHaveBeenCalledWith(
+          '/api/chat/conversations/7/messages'
+        )
+      )
+      expect(await screen.findByPlaceholderText('placeholder')).toBeEnabled()
+      expect(screen.queryByText('errorMessage')).not.toBeInTheDocument()
+    }
+  )
 
   it('starts a new chat without creating a conversation and sends a null id', async () => {
     mocks.apiFetch.mockImplementation((path: string) => {
@@ -671,6 +847,44 @@ describe('chat memory stream', () => {
     expect(mocks.apiFetch).toHaveBeenCalledWith(
       '/api/chat/conversations/3/messages'
     )
+  })
+
+  it('clears the active chat when deleting its last conversation', async () => {
+    let deleted = false
+    mocks.apiFetch.mockImplementation((path: string, options?: RequestInit) => {
+      if (
+        path === '/api/chat/conversations/7' &&
+        options?.method === 'DELETE'
+      ) {
+        deleted = true
+        return Promise.resolve(jsonResponse({}))
+      }
+      if (path === '/api/chat/conversations') {
+        return Promise.resolve(
+          jsonResponse(
+            deleted
+              ? []
+              : [{ id: 7, title: 'Only conversation', source: 'text' }]
+          )
+        )
+      }
+      if (path === '/api/chat/conversations/7/messages') {
+        return Promise.resolve(
+          jsonResponse({
+            messages: [{ role: 'assistant', content: 'Only history' }],
+          })
+        )
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    render(<ChatPage />)
+    await screen.findByText('Only history')
+    fireEvent.click(screen.getByRole('button', { name: 'deleteConfirm' }))
+    fireEvent.click(screen.getByRole('button', { name: 'confirmDelete' }))
+
+    expect(await screen.findByText('noConversation')).toBeInTheDocument()
+    expect(screen.getByText('newConversation')).toBeInTheDocument()
+    expect(screen.queryByText('Only history')).not.toBeInTheDocument()
   })
 
   it('passes only the last 20 nonblank messages to voice and navigates', async () => {
@@ -873,6 +1087,83 @@ describe('chat memory stream', () => {
     expect(await screen.findByText('memorySavedToast')).toBeInTheDocument()
   })
 
+  it('decrements freemium chat usage only after a completed response', async () => {
+    mocks.subscribed = false
+    chatEvents = [{ done: true }]
+    render(<ChatPage />)
+
+    const input = await screen.findByPlaceholderText('placeholder')
+    fireEvent.change(input, { target: { value: 'Use one chat message' } })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    await waitFor(() =>
+      expect(mocks.decrementFreemium).toHaveBeenCalledWith('chat_remaining')
+    )
+  })
+
+  it('warns when a chat response takes longer than one minute', async () => {
+    const stream = controlledChatStreamResponse()
+    mocks.apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(path === '/api/chat' ? stream.response : jsonResponse([]))
+    )
+    render(<ChatPage />)
+    const input = await screen.findByPlaceholderText('placeholder')
+    vi.useFakeTimers()
+    try {
+      fireEvent.change(input, { target: { value: 'Hello' } })
+      fireEvent.click(screen.getByRole('button', { name: 'send' }))
+      expect(screen.getByText('thinking')).toBeInTheDocument()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+      expect(screen.getByText('takingLonger')).toBeInTheDocument()
+      await act(async () => {
+        stream.enqueue({ token: 'Finished' })
+        stream.enqueue({ done: true })
+        stream.close()
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(await screen.findByText('Finished')).toBeInTheDocument()
+    expect(screen.queryByText('takingLonger')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { subscribed: false, trialActive: false, remaining: 0, paywall: true },
+    { subscribed: false, trialActive: false, remaining: 1, paywall: false },
+    { subscribed: false, trialActive: true, remaining: 0, paywall: false },
+    { subscribed: true, trialActive: false, remaining: 0, paywall: false },
+  ])(
+    'applies chat quota gating for subscription and trial state %#',
+    async ({ subscribed, trialActive, remaining, paywall }) => {
+      mocks.stripeEnabled = true
+      mocks.subscribed = subscribed
+      mocks.trialActive = trialActive
+      mocks.quota = { chat_remaining: remaining }
+      render(<ChatPage />)
+      await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalled())
+      expect(Boolean(screen.queryByText('chat paywall'))).toBe(paywall)
+      expect(Boolean(screen.queryByPlaceholderText('placeholder'))).toBe(
+        !paywall
+      )
+      if (subscribed) expect(mocks.fetchFreemium).not.toHaveBeenCalled()
+      else expect(mocks.fetchFreemium).toHaveBeenCalled()
+    }
+  )
+
+  it('does not decrement chat quota for an active freemium trial', async () => {
+    mocks.subscribed = false
+    mocks.trialActive = true
+    chatEvents = [{ done: true }]
+    render(<ChatPage />)
+    const input = await screen.findByPlaceholderText('placeholder')
+    fireEvent.change(input, { target: { value: 'Hello' } })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    await waitFor(() => expect(input).toBeEnabled())
+    expect(mocks.decrementFreemium).not.toHaveBeenCalled()
+  })
+
   it('keeps the confirmed memory toast when a later stream error arrives', async () => {
     chatEvents = [
       { conversation_id: 7 },
@@ -887,6 +1178,22 @@ describe('chat memory stream', () => {
 
     expect(await screen.findByText('memorySavedToast')).toBeInTheDocument()
     expect(await screen.findByText(/errorMessage/)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['missing body', new Response(null, { status: 200 })],
+    ['stream without a terminal event', chatStreamResponse([])],
+  ])('reports an incomplete chat response: %s', async (_scenario, response) => {
+    mocks.apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(path === '/api/chat' ? response : jsonResponse([]))
+    )
+    render(<ChatPage />)
+    const input = await screen.findByPlaceholderText('placeholder')
+    fireEvent.change(input, { target: { value: 'Hello' } })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    expect(await screen.findByText(/errorMessage/)).toBeInTheDocument()
+    await waitFor(() => expect(input).not.toBeDisabled())
   })
 
   it.each([

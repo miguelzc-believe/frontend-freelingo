@@ -181,14 +181,14 @@ export default function AdminFeedbackPage() {
   )
 
   useEffect(() => {
-    loadEntries(page, searchTerm, typeFilter, statusFilter, sortFilter)
+    void loadEntries(page, searchTerm, typeFilter, statusFilter, sortFilter)
   }, [loadEntries, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (page !== 0) {
       setPage(0)
     } else {
-      loadEntries(0, searchTerm, typeFilter, statusFilter, sortFilter)
+      void loadEntries(0, searchTerm, typeFilter, statusFilter, sortFilter)
     }
   }, [typeFilter, statusFilter, sortFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -198,7 +198,7 @@ export default function AdminFeedbackPage() {
     if (page !== 0) {
       setPage(0)
     } else {
-      loadEntries(0, term, typeFilter, statusFilter, sortFilter)
+      void loadEntries(0, term, typeFilter, statusFilter, sortFilter)
     }
   }
 
@@ -211,7 +211,7 @@ export default function AdminFeedbackPage() {
     if (page !== 0) {
       setPage(0)
     } else {
-      loadEntries(0, '', 'all', '', 'date')
+      void loadEntries(0, '', 'all', '', 'date')
     }
   }
 

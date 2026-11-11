@@ -21,7 +21,7 @@ export default function LanguageSwitcher() {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetchLanguages()
+    void fetchLanguages()
   }, [fetchLanguages])
 
   useEffect(() => {

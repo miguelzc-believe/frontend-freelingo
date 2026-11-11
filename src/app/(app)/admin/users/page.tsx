@@ -373,7 +373,7 @@ export default function AdminUsersPage() {
   )
 
   useEffect(() => {
-    loadUsers(
+    void loadUsers(
       page,
       searchTerm,
       activeSubscriptionFilter,
@@ -386,7 +386,7 @@ export default function AdminUsersPage() {
     if (page !== 0) {
       setPage(0)
     } else {
-      loadUsers(
+      void loadUsers(
         0,
         searchTerm,
         activeSubscriptionFilter,
@@ -402,7 +402,13 @@ export default function AdminUsersPage() {
     if (page !== 0) {
       setPage(0)
     } else {
-      loadUsers(0, term, activeSubscriptionFilter, roleFilter, activeFilter)
+      void loadUsers(
+        0,
+        term,
+        activeSubscriptionFilter,
+        roleFilter,
+        activeFilter
+      )
     }
   }
 
@@ -415,7 +421,7 @@ export default function AdminUsersPage() {
     if (page !== 0) {
       setPage(0)
     } else {
-      loadUsers(0, '', '', '', '')
+      void loadUsers(0, '', '', '', '')
     }
   }
 

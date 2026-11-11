@@ -116,6 +116,44 @@ describe('BillingSuccessPage', () => {
     expect(mockPush).not.toHaveBeenCalled()
   })
 
+  it('ignores a failed profile request after unmount', async () => {
+    let reject!: (error: Error) => void
+    mockApiFetch.mockReturnValueOnce(
+      new Promise((_resolve, fail) => {
+        reject = fail
+      })
+    )
+    const view = render(<BillingSuccessPage />)
+    view.unmount()
+    await act(async () => {
+      reject(new Error('offline'))
+    })
+    expect(view.container).toBeEmptyDOMElement()
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('ignores a failed session refresh after unmount', async () => {
+    useAuthStore.setState({ accessToken: null, user: null })
+    let resolve!: (response: Response) => void
+    const request = new Promise<Response>((done) => {
+      resolve = done
+    })
+    const fetch = vi.spyOn(globalThis, 'fetch').mockReturnValueOnce(request)
+    try {
+      const view = render(<BillingSuccessPage />)
+      view.unmount()
+      await act(async () => {
+        resolve(new Response(null, { status: 401 }))
+        await request
+      })
+      expect(view.container).toBeEmptyDOMElement()
+      expect(mockApiFetch).not.toHaveBeenCalled()
+      expect(mockPush).not.toHaveBeenCalled()
+    } finally {
+      fetch.mockRestore()
+    }
+  })
+
   it('keeps ongoing polling after unmount without publishing user updates', async () => {
     vi.useFakeTimers()
     mockApiFetch.mockImplementation(() =>
@@ -152,5 +190,49 @@ describe('BillingSuccessPage', () => {
     expect(screen.getByText('successPendingTitle')).toBeDefined()
     expect(screen.queryByText('successTitle')).toBeNull()
     expect(screen.queryByText('successRedirect:5')).toBeNull()
+  })
+
+  it('redirects after the confirmed countdown', async () => {
+    vi.useFakeTimers()
+    mockApiFetch.mockResolvedValueOnce(jsonResponse(me('active')))
+    render(<BillingSuccessPage />)
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(screen.getByText('successRedirect:5')).toBeInTheDocument()
+    for (let i = 0; i < 5; i++)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+    expect(mockPush).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it.each(['http', 'network'] as const)(
+    'shows the error state when /me fails: %s',
+    async (failure) => {
+      if (failure === 'http')
+        mockApiFetch.mockResolvedValueOnce(jsonResponse({}, 503))
+      else mockApiFetch.mockRejectedValueOnce(new Error('offline'))
+      render(<BillingSuccessPage />)
+      expect(await screen.findByText('successErrorTitle')).toBeInTheDocument()
+      expect(screen.queryByText('successTitle')).not.toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'successCta' })).toHaveAttribute(
+        'href',
+        '/dashboard'
+      )
+      expect(mockPush).not.toHaveBeenCalled()
+    }
+  )
+
+  it('shows the error state when the session cannot be refreshed', async () => {
+    useAuthStore.setState({ accessToken: null, user: null })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(null, { status: 401 })
+    )
+    render(<BillingSuccessPage />)
+    expect(await screen.findByText('successErrorTitle')).toBeInTheDocument()
+    expect(mockApiFetch).not.toHaveBeenCalled()
   })
 })

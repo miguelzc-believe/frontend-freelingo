@@ -44,4 +44,21 @@ describe('readSseData', () => {
       for await (const event of readSseData(stream)) void event
     }).rejects.toThrow('Incomplete SSE event')
   })
+
+  it('accepts a complete final event without a trailing separator and ignores comments', async () => {
+    const stream = streamFrom([': keepalive\n\n', 'data: {"done":true}'])
+    const events = []
+    for await (const event of readSseData(stream)) events.push(event)
+    expect(events).toEqual([{ done: true }])
+    expect(stream.locked).toBe(false)
+  })
+
+  it('releases the reader when a consumer stops early', async () => {
+    const stream = streamFrom(['data: {"value":1}\n\ndata: {"value":2}\n\n'])
+    for await (const event of readSseData(stream)) {
+      expect(event).toEqual({ value: 1 })
+      break
+    }
+    expect(stream.locked).toBe(false)
+  })
 })

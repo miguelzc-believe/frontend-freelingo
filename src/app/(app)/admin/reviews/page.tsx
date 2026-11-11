@@ -89,14 +89,14 @@ export default function AdminReviewsPage() {
   )
 
   useEffect(() => {
-    loadReviews(page, approvalFilter, ratingFilter)
+    void loadReviews(page, approvalFilter, ratingFilter)
   }, [loadReviews, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (page !== 0) {
       setPage(0)
     } else {
-      loadReviews(0, approvalFilter, ratingFilter)
+      void loadReviews(0, approvalFilter, ratingFilter)
     }
   }, [approvalFilter, ratingFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 

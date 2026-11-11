@@ -98,4 +98,44 @@ describe('reviews API client', () => {
       method: 'DELETE',
     })
   })
+
+  it('uses default pagination and public limits, and respects explicitly false filters', async () => {
+    mockApiFetch.mockImplementation(() => Promise.resolve(jsonResponse([])))
+    await fetchPublicReviews()
+    await fetchAdminReviews()
+    await fetchAdminReviews({
+      isApproved: false,
+      rating: 0,
+      targetLanguage: '',
+      order: 'asc',
+      skip: 5,
+      limit: 2,
+    })
+    expect(mockApiFetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/reviews/public?limit=100'
+    )
+    expect(mockApiFetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/admin/reviews?order=desc&skip=0&limit=10'
+    )
+    expect(mockApiFetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/admin/reviews?order=asc&skip=5&limit=2&is_approved=false&rating=0'
+    )
+  })
+
+  it.each([
+    ['read', () => fetchMyReview()],
+    ['create', () => createReview({ rating: 3 })],
+    ['update', () => updateMyReview({ rating: 3 })],
+    ['delete own', () => deleteMyReview()],
+    ['public', () => fetchPublicReviews()],
+    ['admin', () => fetchAdminReviews()],
+    ['approve', () => updateReviewApproval(7, false)],
+    ['delete admin', () => deleteReview(7)],
+  ])('surfaces HTTP errors for %s', async (_name, call) => {
+    mockApiFetch.mockResolvedValueOnce(jsonResponse({}, 403))
+    await expect(call()).rejects.toThrow('reviews_api_error_403')
+  })
 })

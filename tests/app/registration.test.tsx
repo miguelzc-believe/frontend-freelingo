@@ -351,6 +351,38 @@ describe('registration availability', () => {
     expect(apiFetch).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['learner', 'weak', 'weak', true, 'invalidPassword'],
+    ['learner', 'Test1234!@', 'Mismatch123!', true, 'passwordMismatch'],
+    ['learner', 'Test1234!@', 'Test1234!@', false, 'termsRequired'],
+    ['learner!', 'Test1234!@', 'Test1234!@', true, 'invalidUsernameChars'],
+  ])(
+    'rejects invalid registration input before contacting the backend: %s',
+    async (username, password, confirm, terms, message) => {
+      vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
+      const { container } = render(<RegisterPage />)
+      await screen.findByRole('button', { name: 'auth.register.submit' })
+      const form = container.querySelector('form')!
+      const inputs = form.querySelectorAll('input')
+      const values = [
+        username,
+        'Learner',
+        'learner@example.com',
+        password,
+        confirm,
+      ]
+      values.forEach((value, index) =>
+        fireEvent.change(inputs[index]!, { target: { value } })
+      )
+      if (terms) fireEvent.click(screen.getByRole('checkbox'))
+      fireEvent.submit(form)
+      expect(
+        screen.getByText(new RegExp(`auth\\.register\\.${message}`))
+      ).toBeInTheDocument()
+      expect(apiFetch).not.toHaveBeenCalled()
+    }
+  )
+
   it('toggles visibility of both password fields', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(configResponse(true))
     const { container } = render(<RegisterPage />)

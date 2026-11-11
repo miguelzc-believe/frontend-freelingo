@@ -114,6 +114,25 @@ describe('AI settings', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
+  it.each(['success', 'failure'] as const)(
+    'ignores an admin settings load that resolves after unmount: %s',
+    async (outcome) => {
+      useAuthStore.setState({ user, accessToken: 'test-only-token' })
+      const pending = deferred<Response>()
+      mocks.apiFetch.mockReturnValue(pending.promise)
+      const view = render(<AiSection />)
+      expect(mocks.apiFetch).toHaveBeenCalled()
+      view.unmount()
+      await act(async () => {
+        pending.resolve(
+          outcome === 'success' ? response(saved) : response({}, 503)
+        )
+        await pending.promise
+      })
+      expect(view.container).toBeEmptyDOMElement()
+    }
+  )
+
   it('shows only provider and model to regular users using the safe status API', async () => {
     setup(saved, 'user')
     const loading = screen.getByRole('status')
